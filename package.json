@@ -1,0 +1,25 @@
+{
+  "name": "blocknet-wallet",
+  "version": "0.3.0",
+  "description": "Blocknet GUI Wallet",
+  "author": "Blocknet Privacy",
+  "license": "BSD-3-Clause",
+  "repository": "https://github.com/blocknetprivacy/blocknet-tauri",
+  "scripts": {
+    "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:tauri\"",
+    "dev:frontend": "python3 -m http.server 1420",
+    "dev:tauri": "sleep 2 && tauri dev",
+    "build": "tauri build"
+  },
+  "dependencies": {
+    "@tauri-apps/api": "^2.0.0",
+    "@tauri-apps/plugin-fs": "^2.0.0",
+    "@tauri-apps/plugin-shell": "^2.0.0",
+    "qrcode": "^1.5.4",
+    "qrcodejs": "^1.0.0"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2.0.0",
+    "concurrently": "^8.2.2"
+  }
+}

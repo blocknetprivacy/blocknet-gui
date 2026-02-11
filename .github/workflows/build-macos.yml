@@ -1,0 +1,45 @@
+name: Build macOS arm64
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  VERSION: "0.3.0"
+
+jobs:
+  build-macos-arm64:
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Prepare frontend
+        run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
+
+      - name: Build Tauri app
+        run: npx tauri build --config '{"bundle":{"targets":["app"],"resources":["binaries/blocknet-aarch64-apple-darwin"]}}'
+
+      - name: Ad-hoc sign and remove quarantine
+        run: |
+          APP_PATH="src-tauri/target/release/bundle/macos/blocknet.app"
+          codesign --force --deep --sign - "$APP_PATH"
+          xattr -cr "$APP_PATH"
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          APP_PATH="src-tauri/target/release/bundle/macos/blocknet.app"
+          DMG_NAME="blocknet-arm64-darwin-blocknet_${VERSION}_aarch64.dmg"
+          hdiutil create -volname "Blocknet" -srcfolder "$APP_PATH" -ov -format UDZO "dist/${DMG_NAME}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blocknet-macos-arm64-${{ env.VERSION }}
+          path: dist/*

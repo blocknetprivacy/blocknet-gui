@@ -1,0 +1,390 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>blocknet</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <!-- Splash Screen -->
+  <div id="splash">
+    <img src="blocknet.png" alt="blocknet" id="splash-logo">
+  </div>
+
+  <!-- Password / Onboarding Screen (hidden initially) -->
+  <div id="password-screen" style="display: none;">
+    <div class="password-container">
+      <h1 id="password-title">Welcome to blocknet</h1>
+      <p id="password-subtitle">Enter your wallet password</p>
+
+      <!-- First-run choice (hidden by default, shown when no wallet exists) -->
+      <div id="onboard-choice" style="display: none;">
+        <button class="onboard-btn" id="onboard-create">
+          <span class="onboard-btn-label">Create New Wallet</span>
+          <span class="onboard-btn-hint">Generate a fresh wallet and recovery seed</span>
+        </button>
+        <button class="onboard-btn" id="onboard-import">
+          <span class="onboard-btn-label">Import from Seed</span>
+          <span class="onboard-btn-hint">Restore an existing wallet with a 12-word phrase</span>
+        </button>
+      </div>
+
+      <form id="password-form">
+        <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
+        <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
+        <button type="submit" id="password-submit">Continue</button>
+      </form>
+      
+      <div id="password-status" class="status-message"></div>
+      <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
+    </div>
+  </div>
+
+  <!-- Main App (hidden initially) -->
+  <div id="app" style="display: none;">
+    <nav id="sidebar">
+      <div class="nav-header">
+        <img src="blocknet.svg" class="brand-icon" alt="blocknet">
+        <span class="brand-text g">blocknet</span>
+        <div class="status-dot" id="status-dot"></div>
+      </div>
+      <div class="nav-links">
+        <button class="nav-link active" data-view="dashboard">
+          <img src="icons/dashboard.svg" class="nav-icon" alt="">
+          <span class="nav-text">Dashboard</span>
+        </button>
+        <button class="nav-link" data-view="send">
+          <img src="icons/send.svg" class="nav-icon" alt="">
+          <span class="nav-text">Send</span>
+        </button>
+        <button class="nav-link" data-view="receive">
+          <img src="icons/receive.svg" class="nav-icon" alt="">
+          <span class="nav-text">Receive</span>
+        </button>
+        <button class="nav-link" data-view="history">
+          <img src="icons/history.svg" class="nav-icon" alt="">
+          <span class="nav-text">History</span>
+        </button>
+        <button class="nav-link" data-view="mining">
+          <img src="icons/mining.svg" class="nav-icon" alt="">
+          <span class="nav-text">Mining</span>
+        </button>
+        <button class="nav-link" data-view="network">
+          <img src="icons/network.svg" class="nav-icon" alt="">
+          <span class="nav-text">Network</span>
+        </button>
+        <button class="nav-link" data-view="settings">
+          <img src="icons/settings.svg" class="nav-icon" alt="">
+          <span class="nav-text">Settings</span>
+        </button>
+      </div>
+    </nav>
+
+    <div id="main-content">
+      <!-- Dashboard -->
+      <div id="view-dashboard" class="view active">
+        <div class="container">
+          <div class="balance-card">
+            <div class="balance-label">Spendable Balance</div>
+            <div class="balance-value"><span id="dash-balance">--</span> <span class="d">BNT</span></div>
+            <div class="balance-sub">
+              <span id="pending-label">Pending: <span id="dash-pending">--</span> BNT</span>
+              <span>Total: <span id="dash-total">--</span> BNT</span>
+            </div>
+          </div>
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Chain Height</div>
+              <div class="stat-value" id="dash-height">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Peers</div>
+              <div class="stat-value" id="dash-peers">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Mempool</div>
+              <div class="stat-value" id="dash-mempool">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Status</div>
+              <div class="stat-value" id="dash-syncing">--</div>
+            </div>
+          </div>
+          <div class="recent-tx-section">
+            <h2>Recent Activity</h2>
+            <div id="dash-recent-tx" class="recent-tx-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Send -->
+      <div id="view-send" class="view">
+        <div class="container">
+          <h1>Send</h1>
+          <form id="send-form">
+            <div class="form-group">
+              <label>Recipient Address</label>
+              <input type="text" id="send-address" placeholder="Stealth address">
+              <div id="address-book-suggestions" class="address-suggestions"></div>
+            </div>
+            <div class="form-group">
+              <label>Amount (BNT)</label>
+              <input type="number" id="send-amount" step="0.00000001" min="0" placeholder="0.00">
+            </div>
+            <div class="send-actions">
+              <button type="submit" class="btn-primary" id="send-submit">Send</button>
+              <button type="button" class="btn-secondary" id="save-contact-btn">Save Contact</button>
+            </div>
+          </form>
+          <div id="send-status" class="status-message" style="display: none;"></div>
+
+          <div class="address-book-section">
+            <h2>Address Book</h2>
+            <div id="address-book-list" class="address-book-list"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Receive -->
+      <div id="view-receive" class="view">
+        <div class="container">
+          <h1>Receive</h1>
+          <div class="qr-container" id="qr-container"></div>
+          <div class="form-group">
+            <label>Your Stealth Address</label>
+            <div class="address-display" id="receive-address">Loading...</div>
+            <button class="btn-primary" id="copy-address" style="margin-top: 12px;">Copy Address</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- History -->
+      <div id="view-history" class="view">
+        <div class="history-bg" aria-hidden="true">
+          <div class="history-sparkline" id="history-balance-sparkline"></div>
+        </div>
+        <div class="container">
+          <div class="history-header-row">
+            <h1>History</h1>
+            <button class="btn-secondary" id="export-csv-btn">Export CSV</button>
+          </div>
+          <div id="history-list">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Mining -->
+      <div id="view-mining" class="view">
+        <div class="mining-bg" aria-hidden="true">
+          <div class="mining-sparkline" id="mining-difficulty-sparkline"></div>
+        </div>
+        <div class="container">
+          <h1>Mining</h1>
+          <div class="mining-panel">
+            <div class="mining-header">
+              <button class="mining-toggle-btn" id="mining-toggle">Start Mining</button>
+              <div class="mining-indicator" id="mining-indicator">
+                <span class="indicator-dot"></span>
+                <span class="indicator-text" id="mining-status">Stopped</span>
+              </div>
+            </div>
+            <div class="mining-thread-control">
+              <div class="thread-stepper-row">
+                <span class="thread-stepper-label">Threads</span>
+                <div class="thread-stepper">
+                  <button class="stepper-btn" id="threads-dec" aria-label="Decrease threads">&minus;</button>
+                  <span class="stepper-value" id="mining-threads">1</span>
+                  <button class="stepper-btn" id="threads-inc" aria-label="Increase threads">+</button>
+                </div>
+              </div>
+              <span class="thread-hint" id="thread-hint">~2 GB RAM</span>
+            </div>
+          </div>
+          <div class="stats-grid mining-stats">
+            <div class="stat-card">
+              <div class="stat-label">Hashrate</div>
+              <div class="stat-value" id="mining-hashrate">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Blocks Found</div>
+              <div class="stat-value" id="mining-blocks">--</div>
+            </div>
+          </div>
+          <div class="mempool-panel">
+            <div class="mempool-header-row">
+              <h2>Pending Transactions</h2>
+              <span class="mempool-meta" id="mining-mempool-meta">Loading...</span>
+            </div>
+            <div class="mempool-list" id="mining-mempool-list">Loading...</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Network -->
+      <div id="view-network" class="view">
+        <div class="container">
+          <h1>Network</h1>
+          <h2>Connected Peers (<span id="network-peer-count">0</span>)</h2>
+          <div id="network-peers" style="margin: 16px 0 32px 0;">Loading...</div>
+          <h2>Banned Peers (<span id="network-banned-count">0</span>)</h2>
+          <div id="network-banned">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Settings -->
+      <div id="view-settings" class="view">
+        <div class="container">
+          <h1>Settings</h1>
+          <div class="settings-layout">
+            <section class="settings-category">
+              <h2>Wallet Security</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">View Recovery Seed</span>
+                      <span
+                        class="settings-help"
+                        name="view-recovery-seed-help"
+                        tabindex="0"
+                        aria-label="Shows your 12-word recovery seed after confirmation."
+                        title="Shows your 12-word recovery seed after confirmation."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Displays your wallet phrase after a confirmation click. Keep it offline and private.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-primary" id="view-seed-btn">View Recovery Seed</button>
+                    <div id="seed-status" class="status-message" style="display: none;"></div>
+                    <div id="seed-display" class="seed-display" style="display: none;"></div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Lock Wallet</span>
+                      <span
+                        class="settings-help"
+                        name="lock-wallet-help"
+                        tabindex="0"
+                        aria-label="Immediately locks wallet actions until you unlock again."
+                        title="Immediately locks wallet actions until you unlock again."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Stops spending and balance calls until the wallet is unlocked again.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-primary" id="lock-wallet-btn">Lock Wallet</button>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
+              <h2>Sound</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <span class="settings-item-title">Volume</span>
+                  </div>
+                  <div class="settings-item-control sound-volume-row">
+                    <button class="sound-mute-btn" id="sound-mute-btn" title="Mute">
+                      <span id="sound-mute-icon">&#9834;</span>
+                    </button>
+                    <input type="range" id="sound-volume" class="sound-slider" min="0" max="100" value="80">
+                    <span class="sound-volume-label" id="sound-volume-label">80%</span>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
+              <h2>Wallets</h2>
+              <div class="wallet-active" id="wallet-active-display"></div>
+              <div class="wallet-list" id="wallet-list"></div>
+              <div class="wallet-actions">
+                <button class="btn-secondary" id="import-seed-btn">Import from Seed</button>
+                <button class="btn-secondary" id="import-file-btn">Load from File</button>
+              </div>
+              <div id="import-seed-form" class="wallet-import-form" style="display: none;">
+                <textarea id="import-seed-input" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>
+                <input type="password" id="import-seed-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">
+                <input type="text" id="import-seed-filename" class="seed-pw-input" placeholder="Filename (optional, e.g. restored.dat)">
+                <div class="wallet-import-actions">
+                  <button class="btn-primary" id="import-seed-submit">Import</button>
+                  <button class="btn-secondary" id="import-seed-cancel">Cancel</button>
+                </div>
+                <div id="import-seed-status" class="status-message" style="display: none;"></div>
+              </div>
+            </section>
+
+            <section class="settings-category danger-zone">
+              <h2>Data</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Reset Blockchain Data</span>
+                      <span
+                        class="settings-help"
+                        name="reset-chain-data-help"
+                        tabindex="0"
+                        aria-label="Clears local chain data and triggers a full resync from height zero."
+                        title="Clears local chain data and triggers a full resync from height zero."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Removes local chain state and re-syncs from block 0. Wallet data stays intact.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-danger" id="reset-chain-btn">Reset Blockchain Data</button>
+                  </div>
+                </div>
+              </div>
+              <div id="settings-status" class="status-message" style="display: none;"></div>
+            </section>
+
+            <section class="settings-category">
+              <h2>About</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <span class="settings-item-title">Version</span>
+                  </div>
+                  <div class="settings-item-control">
+                    <span class="settings-item-value">v0.3.0</span>
+                  </div>
+                </div>
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <span class="settings-item-title">License</span>
+                  </div>
+                  <div class="settings-item-control">
+                    <a href="https://opensource.org/license/bsd-3-clause" target="_blank" class="settings-link">BSD-3-Clause</a>
+                  </div>
+                </div>
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <span class="settings-item-title">GitHub</span>
+                  </div>
+                  <div class="settings-item-control">
+                    <a href="https://github.com/blocknetprivacy" target="_blank" class="settings-link">blocknetprivacy</a>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="qr-overlay" class="qr-overlay">
+    <div id="qr-overlay-inner"></div>
+  </div>
+
+  <script src="qr.js"></script>
+  <script src="main.js"></script>
+</body>
+</html>

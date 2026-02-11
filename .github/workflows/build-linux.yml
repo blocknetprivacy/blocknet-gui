@@ -1,0 +1,49 @@
+name: Build Linux amd64
+
+on:
+  workflow_dispatch:
+  workflow_call:
+
+env:
+  VERSION: "0.3.0"
+
+jobs:
+  build-linux-amd64:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rust-lang/setup-rust-toolchain@v1
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install system dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libwebkit2gtk-4.1-dev \
+            libayatana-appindicator3-dev \
+            librsvg2-dev \
+            patchelf
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      - name: Prepare frontend
+        run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
+
+      - name: Build Tauri app
+        run: npx tauri build --config '{"bundle":{"targets":["deb","appimage"],"resources":["binaries/blocknet-amd64-linux"]}}'
+
+      - name: Package
+        run: |
+          mkdir -p dist
+          cp src-tauri/target/release/bundle/deb/*.deb dist/
+          cp src-tauri/target/release/bundle/appimage/*.AppImage dist/
+          cd dist
+          for f in *; do mv "$f" "blocknet-amd64-linux-${f}"; done
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: blocknet-linux-amd64-${{ env.VERSION }}
+          path: dist/*

@@ -1,0 +1,28 @@
+[package]
+name = "blocknet-wallet"
+version = "0.3.0"
+description = "Blocknet GUI Wallet"
+authors = ["Blocknet Privacy"]
+license = "BSD-3-Clause"
+repository = "https://github.com/blocknetprivacy/blocknet-tauri"
+edition = "2021"
+
+[build-dependencies]
+tauri-build = { version = "2.0", features = [] }
+
+[dependencies]
+tauri = { version = "2.0", features = ["tray-icon"] }
+tauri-plugin-shell = "2.0"
+tauri-plugin-fs = "2.0"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tokio = { version = "1", features = ["full"] }
+reqwest = { version = "0.12", features = ["json"] }
+dirs-next = "2"
+tauri-plugin-window-state = "2"
+tauri-plugin-dialog = "2"
+
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+

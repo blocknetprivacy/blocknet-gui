@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "blocknet",
+  "version": "0.3.0",
+  "identifier": "com.blocknet.wallet",
+  "build": {
+    "beforeDevCommand": "",
+    "devUrl": "http://localhost:1420",
+    "beforeBuildCommand": "",
+    "frontendDist": "../ui"
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "license": "BSD-3-Clause",
+    "licenseFile": "../LICENSE",
+    "copyright": "Copyright 2026 Blocknet Privacy",
+    "category": "Finance",
+    "shortDescription": "Blocknet Wallet",
+    "longDescription": "GUI Wallet for the Blocknet private blockchain",
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": []
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "blocknet",
+        "width": 1200,
+        "height": 800,
+        "resizable": true,
+        "fullscreen": false
+      }
+    ],
+    "withGlobalTauri": true,
+    "security": {
+      "csp": null
+    }
+  }
+}
