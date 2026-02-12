@@ -10,7 +10,7 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/version-0.3.0-aaff00?style=flat-square&labelColor=000">
+  <img src="https://img.shields.io/badge/version-0.3.1-aaff00?style=flat-square&labelColor=000">
   <img src="https://img.shields.io/badge/license-BSD--3--Clause-aaff00?style=flat-square&labelColor=000">
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-aaff00?style=flat-square&labelColor=000">
 </p>
@@ -36,13 +36,13 @@ Every release includes a `SHA256SUMS.txt`. After downloading, verify your file:
 sha256sum -c SHA256SUMS.txt
 
 # or check a single file
-sha256sum blocknet-arm64-darwin-blocknet_0.3.0_aarch64.dmg
+sha256sum blocknet-arm64-darwin-blocknet_0.3.1_aarch64.dmg
 ```
 
 On Windows (PowerShell):
 
 ```powershell
-Get-FileHash .\blocknet-amd64-windows-blocknet_0.3.0_x64-setup.exe -Algorithm SHA256
+Get-FileHash .\blocknet-amd64-windows-blocknet_0.3.1_x64-setup.exe -Algorithm SHA256
 ```
 
 Compare the output against the hash in `SHA256SUMS.txt`.
@@ -83,11 +83,11 @@ No special steps. Install the `.deb` or run the `.AppImage` directly:
 
 ```bash
 # Debian/Ubuntu
-sudo dpkg -i blocknet-amd64-linux-blocknet_0.3.0_amd64.deb
+sudo dpkg -i blocknet-amd64-linux-blocknet_0.3.1_amd64.deb
 
 # AppImage
-chmod +x blocknet-amd64-linux-blocknet_0.3.0_amd64.AppImage
-./blocknet-amd64-linux-blocknet_0.3.0_amd64.AppImage
+chmod +x blocknet-amd64-linux-blocknet_0.3.1_amd64.AppImage
+./blocknet-amd64-linux-blocknet_0.3.1_amd64.AppImage
 ```
 
 ---
