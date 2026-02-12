@@ -21,6 +21,35 @@ let sendArmed = false;
 let sendArmTimer = null;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
+let activeWalletName = 'wallet.dat';
+
+function walletKey(base) {
+  return base + ':' + activeWalletName;
+}
+
+function setActiveWalletName(name) {
+  if (typeof name === 'string' && name.trim()) {
+    activeWalletName = name.trim();
+  }
+}
+
+function migrateLocalStorageKeys() {
+  // One-time migration: move unnamespaced txCache/addressBook to the active wallet's namespace
+  try {
+    var oldTx = localStorage.getItem('txCache');
+    if (oldTx && !localStorage.getItem(walletKey('txCache'))) {
+      localStorage.setItem(walletKey('txCache'), oldTx);
+    }
+    localStorage.removeItem('txCache');
+  } catch (_) {}
+  try {
+    var oldBook = localStorage.getItem('addressBook');
+    if (oldBook && !localStorage.getItem(walletKey('addressBook'))) {
+      localStorage.setItem(walletKey('addressBook'), oldBook);
+    }
+    localStorage.removeItem('addressBook');
+  } catch (_) {}
+}
 
 // --- Sound Engine ---
 
@@ -240,12 +269,13 @@ async function loadDashboard() {
       dashLastHeight = statusHeight;
       var data = await api('/api/wallet/history');
       var container = document.getElementById('dash-recent-tx');
-      var outputs = data.outputs && data.outputs.length > 0 ? data.outputs : null;
+      var hasOutputsArray = data && Array.isArray(data.outputs);
+      var outputs = hasOutputsArray ? data.outputs : null;
       var fromCache = false;
-      if (outputs) {
-        try { localStorage.setItem('txCache', JSON.stringify(outputs)); } catch (_) {}
+      if (hasOutputsArray) {
+        try { localStorage.setItem(walletKey('txCache'), JSON.stringify(outputs)); } catch (_) {}
       } else {
-        try { outputs = JSON.parse(localStorage.getItem('txCache') || 'null'); fromCache = true; } catch (_) {}
+        try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
       }
       if (!outputs || outputs.length === 0) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
@@ -340,12 +370,13 @@ async function loadHistory() {
   const data = await api('/api/wallet/history');
   const container = document.getElementById('history-list');
 
-  var outputs = data.outputs && data.outputs.length > 0 ? data.outputs : null;
+  var hasOutputsArray = data && Array.isArray(data.outputs);
+  var outputs = hasOutputsArray ? data.outputs : null;
   var fromCache = false;
-  if (outputs) {
-    try { localStorage.setItem('txCache', JSON.stringify(outputs)); } catch (_) {}
+  if (hasOutputsArray) {
+    try { localStorage.setItem(walletKey('txCache'), JSON.stringify(outputs)); } catch (_) {}
   } else {
-    try { outputs = JSON.parse(localStorage.getItem('txCache') || 'null'); fromCache = true; } catch (_) {}
+    try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
   }
 
   if (!outputs || outputs.length === 0) {
@@ -394,9 +425,10 @@ async function exportHistoryCSV() {
   btn.textContent = 'Exporting...';
   try {
     var data = await api('/api/wallet/history');
-    var outputs = data.outputs && data.outputs.length > 0 ? data.outputs : null;
-    if (!outputs) {
-      try { outputs = JSON.parse(localStorage.getItem('txCache') || 'null'); } catch (_) {}
+    var hasOutputsArray = data && Array.isArray(data.outputs);
+    var outputs = hasOutputsArray ? data.outputs : null;
+    if (!hasOutputsArray) {
+      try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); } catch (_) {}
     }
     if (!outputs || outputs.length === 0) {
       btn.textContent = 'No data';
@@ -788,14 +820,14 @@ async function loadNetwork() {
 
 function getAddressBook() {
   try {
-    return JSON.parse(localStorage.getItem('addressBook') || '[]');
+    return JSON.parse(localStorage.getItem(walletKey('addressBook')) || '[]');
   } catch (_) {
     return [];
   }
 }
 
 function saveAddressBook(book) {
-  localStorage.setItem('addressBook', JSON.stringify(book));
+  localStorage.setItem(walletKey('addressBook'), JSON.stringify(book));
 }
 
 function renderAddressBook() {
@@ -1060,6 +1092,7 @@ function showSendStatus(msg, type) {
 async function loadWalletList() {
   var wallets = await invoke('list_wallets');
   var active = await invoke('get_active_wallet');
+  setActiveWalletName(active);
   var activeEl = document.getElementById('wallet-active-display');
   var listEl = document.getElementById('wallet-list');
 
@@ -1103,8 +1136,15 @@ async function handleSwitchWallet(name) {
   try {
     stopPolling();
     await invoke('switch_wallet', { name: name });
+    setActiveWalletName(name);
     sessionPassword = '';
     dashLastHeight = -1;
+    dashLastTxCount = -1;
+    // Clear stale DOM so old wallet data doesn't flash on next load
+    var recentEl = document.getElementById('dash-recent-tx');
+    if (recentEl) recentEl.innerHTML = '';
+    var histEl = document.getElementById('history-list');
+    if (histEl) histEl.innerHTML = '';
     showUnlockScreen();
     showStatus('Switched to ' + name.replace(/\.dat$/, '') + '. Enter password to unlock.', 'info');
   } catch (e) {
@@ -1642,7 +1682,9 @@ function showUnlockScreen() {
   if (passwordScreen) passwordScreen.style.display = 'flex';
 }
 
-function showApp() {
+async function showApp() {
+  try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
+  migrateLocalStorageKeys();
   const passwordScreen = document.getElementById('password-screen');
   const app = document.getElementById('app');
   if (passwordScreen) passwordScreen.style.display = 'none';
@@ -1653,7 +1695,9 @@ function showApp() {
   invoke('set_tray_unlocked', { unlocked: true }).catch(function() {});
 }
 
-function showAppFromSplash() {
+async function showAppFromSplash() {
+  try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
+  migrateLocalStorageKeys();
   const splash = document.getElementById('splash');
   const app = document.getElementById('app');
   splash.classList.add('fade-out');
