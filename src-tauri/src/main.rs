@@ -842,10 +842,15 @@ async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
 fn set_tray_unlocked(unlocked: bool, tray_state: State<'_, TrayState>) -> Result<(), String> {
     let mut guard = tray_state.icon.lock().map_err(|e| e.to_string())?;
     if let Some(tray) = guard.as_mut() {
-        let _ = unlocked;
-        let img = tauri::include_image!("icons/128x128@2x.png");
-        tray.set_icon_as_template(false).map_err(|e| format!("Failed to set template mode: {}", e))?;
-        tray.set_icon(Some(img)).map_err(|e| format!("Failed to set icon: {}", e))?;
+        if unlocked {
+            tray.set_icon_as_template(false).map_err(|e| format!("Failed to set template mode: {}", e))?;
+            let img = tauri::include_image!("icons/tray-icon-unlocked@2x.png");
+            tray.set_icon(Some(img)).map_err(|e| format!("Failed to set icon: {}", e))?;
+        } else {
+            let img = tauri::include_image!("icons/tray-icon@2x.png");
+            tray.set_icon(Some(img)).map_err(|e| format!("Failed to set icon: {}", e))?;
+            tray.set_icon_as_template(true).map_err(|e| format!("Failed to set template mode: {}", e))?;
+        }
     }
     Ok(())
 }
@@ -868,7 +873,8 @@ async fn main() {
             let menu = Menu::with_items(app, &[&show_i, &hide_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
-                .icon(tauri::include_image!("icons/128x128@2x.png"))
+                .icon(tauri::include_image!("icons/tray-icon@2x.png"))
+                .icon_as_template(true)
                 .tooltip("blocknet")
                 .menu(&menu)
                 .show_menu_on_left_click(false)

@@ -27,7 +27,7 @@ jobs:
         run: npm ci
 
       - name: Prepare frontend
-        run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
+        run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp "src-tauri/icons/blocknet_bg_black.png" ui/icons/ && cp blocknet.png blocknet.svg ui/
 
       - name: Validate version sync from daemon
         shell: bash
