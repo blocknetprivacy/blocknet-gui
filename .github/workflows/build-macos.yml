@@ -42,7 +42,7 @@ jobs:
           mkdir -p dist
           APP_PATH="src-tauri/target/release/bundle/macos/blocknet.app"
           DMG_NAME="blocknet-arm64-darwin-blocknet_${DAEMON_VERSION}_aarch64.dmg"
-          hdiutil create -volname "Blocknet" -srcfolder "$APP_PATH" -ov -format UDZO "dist/${DMG_NAME}"
+          bash scripts/customize-dmg.sh "dist/${DMG_NAME}" "$APP_PATH"
 
       - uses: actions/upload-artifact@v4
         with:

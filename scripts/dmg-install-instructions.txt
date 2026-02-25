@@ -1,0 +1,13 @@
+Blocknet macOS install instructions
+==================================
+
+1) Drag blocknet.app to Applications.
+2) Open Terminal and run:
+
+xattr -cr /Applications/blocknet.app
+
+3) Launch Blocknet from Applications.
+
+Notes:
+- This app is currently unsigned/not notarized.
+- The xattr command removes macOS quarantine flags for local use.

@@ -14,10 +14,10 @@
     "targets": "all",
     "license": "BSD-3-Clause",
     "licenseFile": "../LICENSE",
-    "copyright": "Copyright 2026 Blocknet Privacy",
+    "copyright": "Copyright 2026 Blocknet",
     "category": "Finance",
     "shortDescription": "Blocknet Wallet",
-    "longDescription": "GUI Wallet for the Blocknet private blockchain",
+    "longDescription": "GUI Wallet for the Blocknet blockchain",
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -30,7 +30,7 @@
   "app": {
     "windows": [
       {
-        "title": "blocknet",
+        "title": "Blocknet",
         "width": 1200,
         "height": 800,
         "resizable": true,

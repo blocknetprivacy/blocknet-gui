@@ -11,6 +11,7 @@ ui:
 release: ui
 	bash scripts/update-core-binaries.sh
 	CI=false npm run build
+	bash scripts/customize-dmg.sh
 
 clean:
 	cd src-tauri && cargo clean
