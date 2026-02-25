@@ -1,5 +1,6 @@
 let currentView = 'dashboard';
 let pollInterval = null;
+let realtimeUnlisten = null;
 let isNewWallet = false;
 let daemonStartPromise = null;
 let sessionPassword = '';
@@ -225,10 +226,30 @@ async function loadView(view) {
       case 'history': await loadHistory(); break;
       case 'mining': await loadMining(); break;
       case 'network': await loadNetwork(); break;
-      case 'settings': await loadWalletList(); break;
+      case 'settings': await loadWalletList(); await loadVersions(); break;
     }
   } catch (e) {
     console.error('Error loading ' + view + ':', e);
+  }
+}
+
+async function loadVersions() {
+  var walletEl = document.getElementById('wallet-version-value');
+  var daemonEl = document.getElementById('daemon-version-value');
+
+  if (walletEl) walletEl.textContent = '--';
+  if (daemonEl) daemonEl.textContent = '--';
+
+  try {
+    var walletVersion = await invoke('get_wallet_version');
+    if (walletEl) walletEl.textContent = walletVersion ? ('v' + String(walletVersion).trim()) : '--';
+  } catch (_) {}
+
+  try {
+    var daemonVersion = await invoke('get_daemon_version');
+    if (daemonEl) daemonEl.textContent = daemonVersion ? String(daemonVersion).trim() : '--';
+  } catch (_) {
+    if (daemonEl) daemonEl.textContent = 'unavailable';
   }
 }
 
@@ -1283,7 +1304,7 @@ async function handleImportSeed() {
     showImportStatus('Starting daemon...', 'info');
     await ensureDaemonReady();
 
-    showImportStatus('Importing wallet from seed...', 'info');
+    showImportStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
     var body = { mnemonic: words.join(' '), password: password };
     if (filename) body.filename = filename;
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
@@ -1338,7 +1359,7 @@ async function handlePasswordScreenImportSubmit() {
   try {
     await ensureDaemonReady();
 
-    showPsStatus('Importing wallet from seed...', 'info');
+    showPsStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
     var body = { mnemonic: words.join(' '), password: password };
     if (filename) body.filename = filename;
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
@@ -1349,7 +1370,21 @@ async function handlePasswordScreenImportSubmit() {
     sessionPassword = password;
     showApp();
   } catch (e) {
-    showPsStatus(normalizeError(e), 'error');
+    var msg = normalizeError(e);
+    // Recovery path: if prior import already created the file, try loading it now.
+    if (msg.toLowerCase().includes('wallet file already exists')) {
+      try {
+        showPsStatus('Wallet file exists; attempting to load it now...', 'info');
+        await loadOrUnlockWallet(password);
+        sessionPassword = password;
+        showApp();
+        return;
+      } catch (loadErr) {
+        showPsStatus(normalizeError(loadErr), 'error');
+      }
+    } else {
+      showPsStatus(msg, 'error');
+    }
     btn.disabled = false;
     btn.textContent = 'Import';
   }
@@ -1514,22 +1549,66 @@ async function checkInboundTx() {
   } catch (_) {}
 }
 
+async function handleRealtimeEvent(payload) {
+  if (!payload || typeof payload !== 'object') return;
+  var eventName = payload.event || '';
+  if (eventName !== 'connected' && eventName !== 'new_block' && eventName !== 'mined_block') {
+    return;
+  }
+
+  // Force next dashboard refresh to pull latest chain-linked wallet state.
+  dashLastHeight = -1;
+
+  try {
+    if (currentView === 'dashboard') await loadDashboard();
+    if (currentView === 'history') await loadHistory();
+    if (currentView === 'mining') await loadMining();
+    if (currentView === 'network') await loadNetwork();
+    if (currentView !== 'dashboard') await checkInboundTx();
+  } catch (_) {}
+}
+
 function startPolling() {
   stopPolling();
-  pollInterval = setInterval(async () => {
-    try {
-      if (currentView === 'dashboard') await loadDashboard();
-      if (currentView === 'mining') await loadMining();
-      // Check for inbound tx on every tick regardless of view,
-      // but skip if dashboard already did it this tick
-      if (currentView !== 'dashboard') await checkInboundTx();
-    } catch (e) {
-      // API might be temporarily unavailable
+
+  // Start daemon SSE bridge in Rust.
+  invoke('start_api_events').catch(function (e) {
+    console.error('Failed to start api events:', e);
+  });
+
+  // Subscribe to bridged realtime API events.
+  try {
+    var eventApi = window.__TAURI__ && window.__TAURI__.event;
+    if (eventApi && typeof eventApi.listen === 'function') {
+      eventApi.listen('api-events', async function (evt) {
+        await handleRealtimeEvent(evt && evt.payload ? evt.payload : null);
+      }).then(function (unlisten) {
+        realtimeUnlisten = unlisten;
+      }).catch(function (e) {
+        console.error('Failed to subscribe api events:', e);
+      });
     }
-  }, 1000);
+  } catch (e) {
+    console.error('Realtime subscribe error:', e);
+  }
+
+  // Keep only low-frequency refresh for non-chain realtime panels.
+  pollInterval = setInterval(async function () {
+    try {
+      if (currentView === 'mining') await loadMining();
+      if (currentView === 'network') await loadNetwork();
+    } catch (_) {}
+  }, 15000);
 }
 
 function stopPolling() {
+  if (realtimeUnlisten) {
+    try { realtimeUnlisten(); } catch (_) {}
+    realtimeUnlisten = null;
+  }
+
+  invoke('stop_api_events').catch(function () {});
+
   if (pollInterval) {
     clearInterval(pollInterval);
     pollInterval = null;
@@ -1772,8 +1851,10 @@ async function handlePasswordSubmit(e) {
       showStatus('Check your password and try again', 'error');
     } else if (msg.includes('wallet already loaded')) {
       showStatus('Wallet is already loaded', 'error');
+    } else if (msg.includes('api port 8332 is already in use')) {
+      showStatus('API port 8332 is already in use. Stop other blocknet daemons and try again.', 'error');
     } else {
-      showStatus('Unable to start wallet. Check console and try again.', 'error');
+      showStatus(normalizeError(error), 'error');
     }
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
@@ -1781,7 +1862,7 @@ async function handlePasswordSubmit(e) {
 }
 
 async function waitForDaemon() {
-  const maxAttempts = 60;
+  const maxAttempts = 120;
   let attempts = 0;
   while (attempts < maxAttempts) {
     const ready = await invoke('check_daemon_ready');
@@ -1798,12 +1879,7 @@ async function ensureDaemonReady() {
 
   if (!daemonStartPromise) {
     daemonStartPromise = (async () => {
-      try {
-        await invoke('start_daemon');
-      } catch (e) {
-        if (String(e || '').includes('SECURITY_BLOCKED')) throw e;
-        // If daemon is already starting/running, proceed to readiness polling.
-      }
+      await invoke('start_daemon');
       await waitForDaemon();
     })().finally(() => {
       daemonStartPromise = null;

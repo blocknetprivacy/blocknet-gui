@@ -1,9 +1,12 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 use std::sync::Mutex;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use tauri::{AppHandle, Manager, State, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
+use tauri::Emitter;
 
 
 struct DaemonState {
@@ -13,6 +16,22 @@ struct DaemonState {
 struct TrayState {
     icon: Mutex<Option<TrayIcon>>,
 }
+
+struct EventsState {
+    worker: Mutex<Option<EventsWorker>>,
+}
+
+struct EventsWorker {
+    stop: Arc<AtomicBool>,
+    handle: tokio::task::JoinHandle<()>,
+}
+
+struct ApiPortState {
+    port: Mutex<u16>,
+}
+
+const GUI_API_PORT_MIN: u16 = 18432;
+const GUI_API_PORT_MAX: u16 = 18531;
 
 impl Drop for DaemonState {
     fn drop(&mut self) {
@@ -34,9 +53,28 @@ fn get_binary_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
         "blocknet-amd64-windows.exe"
     };
 
-    let resource_dir = app.path().resource_dir()
-        .map_err(|e| format!("Failed to get resource dir: {}", e))?;
-    let binary_path = resource_dir.join("binaries").join(binary_name);
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        candidates.push(resource_dir.join("binaries").join(binary_name));
+        candidates.push(resource_dir.join(binary_name));
+    }
+
+    if let Ok(exe) = std::env::current_exe() {
+        if let Some(exe_dir) = exe.parent() {
+            candidates.push(exe_dir.join("binaries").join(binary_name));
+            candidates.push(exe_dir.join(binary_name));
+            candidates.push(exe_dir.join("../Resources/binaries").join(binary_name));
+        }
+    }
+
+    // Dev fallback: workspace src-tauri/binaries.
+    candidates.push(std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("binaries").join(binary_name));
+
+    let binary_path = candidates
+        .into_iter()
+        .find(|p| p.exists())
+        .ok_or_else(|| format!("Daemon binary not found: {}", binary_name))?;
 
     #[cfg(target_os = "macos")]
     {
@@ -142,6 +180,89 @@ fn kill_port_8332() {
     }
 }
 
+fn kill_blocknet_daemon_processes() {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg("pkill -9 -f 'blocknet-aarch64-apple-darwin|blocknet-amd64-linux|blocknet-amd64-windows.exe' >/dev/null 2>&1 || true")
+            .status();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let _ = std::process::Command::new("cmd")
+            .args(["/C", "taskkill /IM blocknet-amd64-windows.exe /F >NUL 2>&1"])
+            .status();
+    }
+}
+
+fn kill_listeners_in_gui_port_range() {
+    #[cfg(any(target_os = "macos", target_os = "linux"))]
+    {
+        let cmd = format!(
+            "pids=$(lsof -ti tcp:{}-{} 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi",
+            GUI_API_PORT_MIN, GUI_API_PORT_MAX
+        );
+        let _ = std::process::Command::new("sh")
+            .arg("-c")
+            .arg(cmd)
+            .status();
+    }
+    #[cfg(target_os = "windows")]
+    {
+        for p in GUI_API_PORT_MIN..=GUI_API_PORT_MAX {
+            let cmd = format!(
+                "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{}') do taskkill /PID %a /F",
+                p
+            );
+            let _ = std::process::Command::new("cmd")
+                .args(["/C", &cmd])
+                .status();
+        }
+    }
+}
+
+fn is_port_in_use(port: u16) -> bool {
+    let addr = format!("127.0.0.1:{}", port);
+    std::net::TcpStream::connect_timeout(
+        &addr.parse().unwrap(),
+        std::time::Duration::from_millis(250),
+    )
+    .is_ok()
+}
+
+fn pick_gui_api_port() -> Result<u16, String> {
+    let span = (GUI_API_PORT_MAX - GUI_API_PORT_MIN + 1) as u128;
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("Clock error: {}", e))?
+        .as_nanos();
+    let offset = (seed % span) as u16;
+
+    for i in 0..span as u16 {
+        let port = GUI_API_PORT_MIN + ((offset + i) % span as u16);
+        if !is_port_in_use(port) {
+            return Ok(port);
+        }
+    }
+
+    Err(format!(
+        "No free GUI API port in {}-{}",
+        GUI_API_PORT_MIN, GUI_API_PORT_MAX
+    ))
+}
+
+fn api_base_url(port: u16, path: &str) -> String {
+    format!("http://127.0.0.1:{}{}", port, path)
+}
+
+fn current_api_port(state: &ApiPortState) -> u16 {
+    match state.port.lock() {
+        Ok(guard) if *guard != 0 => *guard,
+        _ => 8332,
+    }
+}
+
 fn stop_daemon_inner(state: &DaemonState) {
     if let Ok(mut guard) = state.child.lock() {
         if let Some(mut child) = guard.take() {
@@ -149,6 +270,148 @@ fn stop_daemon_inner(state: &DaemonState) {
             let _ = child.wait();
         }
     }
+}
+
+fn stop_api_events_inner(state: &EventsState) {
+    if let Ok(mut guard) = state.worker.lock() {
+        if let Some(worker) = guard.take() {
+            worker.stop.store(true, Ordering::Relaxed);
+            worker.handle.abort();
+        }
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+struct ApiEventPayload {
+    event: String,
+    data: serde_json::Value,
+}
+
+fn emit_sse_event(app: &AppHandle, event_name: &str, data_buf: &str) {
+    let data = serde_json::from_str::<serde_json::Value>(data_buf)
+        .unwrap_or_else(|_| serde_json::Value::String(data_buf.to_string()));
+    let payload = ApiEventPayload {
+        event: if event_name.is_empty() {
+            "message".to_string()
+        } else {
+            event_name.to_string()
+        },
+        data,
+    };
+    let _ = app.emit("api-events", payload);
+}
+
+async fn sse_loop(app: AppHandle, stop: Arc<AtomicBool>, data_dir: std::path::PathBuf, api_port: u16) {
+    let client = reqwest::Client::builder()
+        .build();
+    let client = match client {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    while !stop.load(Ordering::Relaxed) {
+        let token = std::fs::read_to_string(data_dir.join("api.cookie"))
+            .map(|s| s.trim().to_string())
+            .unwrap_or_default();
+
+        if token.is_empty() {
+            tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+            continue;
+        }
+
+        let response = client
+            .get(api_base_url(api_port, "/api/events"))
+            .header("Authorization", format!("Bearer {}", token))
+            .send()
+            .await;
+
+        let mut resp = match response {
+            Ok(r) if r.status().is_success() => r,
+            _ => {
+                tokio::time::sleep(std::time::Duration::from_secs(2)).await;
+                continue;
+            }
+        };
+
+        let mut stream_buf = String::new();
+        let mut current_event = String::new();
+        let mut current_data = String::new();
+
+        loop {
+            if stop.load(Ordering::Relaxed) {
+                return;
+            }
+
+            let chunk = match resp.chunk().await {
+                Ok(Some(c)) => c,
+                _ => break,
+            };
+
+            stream_buf.push_str(&String::from_utf8_lossy(&chunk));
+
+            while let Some(pos) = stream_buf.find('\n') {
+                let mut line = stream_buf[..pos].to_string();
+                stream_buf.drain(..=pos);
+
+                if line.ends_with('\r') {
+                    line.pop();
+                }
+
+                if line.is_empty() {
+                    if !current_data.is_empty() {
+                        emit_sse_event(&app, &current_event, &current_data);
+                    }
+                    current_event.clear();
+                    current_data.clear();
+                    continue;
+                }
+
+                if line.starts_with(':') {
+                    continue;
+                }
+
+                if let Some(rest) = line.strip_prefix("event:") {
+                    current_event = rest.trim().to_string();
+                    continue;
+                }
+
+                if let Some(rest) = line.strip_prefix("data:") {
+                    if !current_data.is_empty() {
+                        current_data.push('\n');
+                    }
+                    current_data.push_str(rest.trim());
+                }
+            }
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+}
+
+#[tauri::command]
+async fn start_api_events(app: AppHandle, state: State<'_, EventsState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
+    let data_dir = get_data_dir(&app)?;
+    let api_port = current_api_port(&api_state);
+    let mut guard = state.worker.lock().map_err(|e| format!("Lock error: {}", e))?;
+    if guard.is_some() {
+        return Ok(());
+    }
+
+    let stop = Arc::new(AtomicBool::new(false));
+    let stop_clone = Arc::clone(&stop);
+    let app_clone = app.clone();
+    let handle = tokio::spawn(async move {
+        sse_loop(app_clone, stop_clone, data_dir, api_port).await;
+    });
+
+    *guard = Some(EventsWorker { stop, handle });
+    Ok(())
+}
+
+#[tauri::command]
+async fn stop_api_events(state: State<'_, EventsState>) -> Result<(), String> {
+    stop_api_events_inner(&state);
+    Ok(())
 }
 
 #[tauri::command]
@@ -193,7 +456,18 @@ async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
 }
 
 #[tauri::command]
-async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>) -> Result<(), String> {
+async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
+    // Proactively kill old daemon processes and listeners in GUI-managed range.
+    kill_blocknet_daemon_processes();
+    kill_listeners_in_gui_port_range();
+    std::thread::sleep(std::time::Duration::from_millis(250));
+
+    let api_port = pick_gui_api_port()?;
+    {
+        let mut guard = api_state.port.lock().map_err(|e| format!("Lock error: {}", e))?;
+        *guard = api_port;
+    }
+
     let (data_dir, wallet_path) = get_paths(&app)?;
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("Failed to create data dir: {}", e))?;
@@ -204,7 +478,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>) -> Result<(
 
     let mut args = vec![
         "--daemon".to_string(),
-        "--api".to_string(), "127.0.0.1:8332".to_string(),
+        "--api".to_string(), format!("127.0.0.1:{}", api_port),
         "--data".to_string(), data_dir.to_str().unwrap().to_string(),
     ];
 
@@ -241,7 +515,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>) -> Result<(
             }
             Err(format!("Daemon exited with code: {}", status))
         },
-        Ok(Some(_)) => Ok(()),
+        Ok(Some(_)) => Err("Daemon exited during startup".to_string()),
         Ok(None) => {
             let mut guard = state.child.lock().map_err(|e| format!("Lock error: {}", e))?;
             *guard = Some(child);
@@ -252,9 +526,10 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>) -> Result<(
 }
 
 #[tauri::command]
-async fn check_daemon_ready(app: AppHandle) -> Result<bool, String> {
+async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) -> Result<bool, String> {
     let data_dir = get_data_dir(&app)?;
     let cookie_path = data_dir.join("api.cookie");
+    let api_port = current_api_port(&api_state);
 
     if !cookie_path.exists() {
         return Ok(false);
@@ -270,30 +545,27 @@ async fn check_daemon_ready(app: AppHandle) -> Result<bool, String> {
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
     let res = client
-        .get("http://127.0.0.1:8332/api/status")
+        .get(api_base_url(api_port, "/api/status"))
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await;
 
     match res {
         Ok(r) if r.status().is_success() => Ok(true),
-        _ => {
-            // Stale cookie from a previous run ; clean it up
-            let _ = std::fs::remove_file(&cookie_path);
-            Ok(false)
-        }
+        _ => Ok(false),
     }
 }
 
 #[tauri::command]
-async fn api_call(app: AppHandle, method: String, path: String, body: Option<String>) -> Result<String, String> {
+async fn api_call(app: AppHandle, api_state: State<'_, ApiPortState>, method: String, path: String, body: Option<String>) -> Result<String, String> {
     let data_dir = get_data_dir(&app)?;
     let token = std::fs::read_to_string(data_dir.join("api.cookie"))
         .map(|s| s.trim().to_string())
         .map_err(|e| format!("Failed to read auth cookie: {}", e))?;
 
     let client = reqwest::Client::new();
-    let url = format!("http://127.0.0.1:8332{}", path);
+    let api_port = current_api_port(&api_state);
+    let url = api_base_url(api_port, &path);
 
     let mut req = match method.as_str() {
         "POST" => client.post(&url),
@@ -512,15 +784,44 @@ async fn import_wallet_file(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn get_wallet_version() -> Result<String, String> {
+    Ok(env!("CARGO_PKG_VERSION").to_string())
+}
+
+#[tauri::command]
+async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
+    let binary_path = get_binary_path(&app)?;
+
+    let attempts: [&[&str]; 2] = [
+        &["--version"],
+        &["version"],
+    ];
+
+    for args in attempts {
+        let output = std::process::Command::new(&binary_path)
+            .args(args)
+            .output()
+            .map_err(|e| format!("Failed to run daemon version command: {}", e))?;
+
+        let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        let text = if !stdout.is_empty() { stdout } else { stderr };
+
+        if !text.is_empty() {
+            return Ok(text.lines().next().unwrap_or(&text).to_string());
+        }
+    }
+
+    Err("Unable to read daemon version".to_string())
+}
+
+#[tauri::command]
 fn set_tray_unlocked(unlocked: bool, tray_state: State<'_, TrayState>) -> Result<(), String> {
     let mut guard = tray_state.icon.lock().map_err(|e| e.to_string())?;
     if let Some(tray) = guard.as_mut() {
-        let img = if unlocked {
-            tauri::include_image!("icons/squircle.png")
-        } else {
-            tauri::include_image!("icons/icon-black.png")
-        };
-        tray.set_icon_as_template(true).map_err(|e| format!("Failed to set template mode: {}", e))?;
+        let _ = unlocked;
+        let img = tauri::include_image!("icons/128x128@2x.png");
+        tray.set_icon_as_template(false).map_err(|e| format!("Failed to set template mode: {}", e))?;
         tray.set_icon(Some(img)).map_err(|e| format!("Failed to set icon: {}", e))?;
     }
     Ok(())
@@ -531,6 +832,8 @@ async fn main() {
     tauri::Builder::default()
         .manage(DaemonState { child: Mutex::new(None) })
         .manage(TrayState { icon: Mutex::new(None) })
+        .manage(EventsState { worker: Mutex::new(None) })
+        .manage(ApiPortState { port: Mutex::new(0) })
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
@@ -542,7 +845,7 @@ async fn main() {
             let menu = Menu::with_items(app, &[&show_i, &hide_i, &quit_i])?;
 
             let _tray = TrayIconBuilder::new()
-                .icon(tauri::include_image!("icons/tray-icon@2x.png"))
+                .icon(tauri::include_image!("icons/128x128@2x.png"))
                 .tooltip("blocknet")
                 .menu(&menu)
                 .show_menu_on_left_click(false)
@@ -614,7 +917,11 @@ async fn main() {
             rename_wallet,
             delete_wallet,
             import_wallet_file,
+            get_wallet_version,
+            get_daemon_version,
             set_tray_unlocked,
+            start_api_events,
+            stop_api_events,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

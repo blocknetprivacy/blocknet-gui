@@ -3,7 +3,7 @@
   "info": {
     "title": "Blocknet Daemon API",
     "description": "Authenticated JSON API for the Blocknet privacy blockchain daemon. All private endpoints require Bearer token authentication via a cookie file (`<dataDir>/api.cookie`) written on daemon startup. Public routes (GET-only blockchain queries) are also served unauthenticated when using `--explorer` mode.",
-    "version": "0.2.6",
+    "version": "0.5.3",
     "license": {
       "name": "MIT"
     }
@@ -172,9 +172,33 @@
                     "summary": "Confirmed transaction (in blockchain)",
                     "value": {
                       "tx": {
-                        "inputs": [{ "key_image": "d4e5f6...", "ring_size": 11 }],
-                        "outputs": [{ "commitment": "a1b2c3...", "range_proof_size": 674 }],
-                        "fee": 15000
+                        "version": 1,
+                        "inputs": [
+                          {
+                            "key_image": [206,194,102,91,117,127,68,44,128,196,45,250,102,215,110,191,198,108,77,236,91,173,42,44,240,161,206,21,137,3,217,104],
+                            "ring_members": [
+                              [226,131,206,64,181,243,28,67,77,209,63,49,60,73,151,89,90,209,74,106,163,255,119,131,60,185,95,37,147,5,24,172],
+                              [110,193,204,172,204,197,212,189,47,92,19,190,204,227,117,159,115,159,54,160,111,127,196,151,224,41,224,215,131,35,150,164]
+                            ],
+                            "ring_commitments": [
+                              [244,65,131,220,148,209,81,144,194,225,99,194,172,101,176,2,181,151,98,87,133,213,118,209,176,204,1,57,103,0,158,85],
+                              [227,105,135,213,239,147,102,10,53,157,38,16,29,213,153,189,151,99,51,202,204,88,135,235,168,65,66,228,199,214,91,184]
+                            ],
+                            "pseudo_output": [185,41,236,101,236,26,183,66,110,82,226,90,90,18,56,11,87,242,214,41,217,44,73,158,2,195,168,69,207,102,28,108],
+                            "ring_signature": "gGqM7cNe9fNWJnrrBzqo/CSrAowGo9OFVEUYyxIYr3WVUeAd1XVgO/hXi426JGVYtSk6QEZMLBDCVbV2Uq4br99gnVs4S/4GdsAxeOMpUlXjv4GgF8sKmVFDBZKXlD/8"
+                          }
+                        ],
+                        "outputs": [
+                          {
+                            "commitment": [57,12,140,125,114,71,52,44,216,16,15,47,111,119,13,101,214,112,229,142,3,81,216,174,142,79,110,172,52,47,194,49],
+                            "public_key": [183,176,135,22,235,63,193,40,150,185,98,35,23,116,148,40,119,51,194,142,232,186,83,189,181,107,136,36,87,125,83,236],
+                            "range_proof": "UTfDE/BxZuuznHRyDGLMqI4jjrPMqQ47hVuHEzfesKDfO8VhghbfAGS63COpoD+ZntGnzpdBYtfCWZrPAJuSa9yk7uLibfJWK5GrL3iec2VLDBd98yXp1GPE/cx8SwI22XBa7Rl/PulE7aLi2uRR8+aEfo34eozhJ5J4i6ujKUZNdsRObSDU0Knu1B9p18cKwvQDtJjH1nD5cIvf+A7HrM9U70ENyQ0q20XsXRmFwqds6Keswo7XgSnwCRqzciMUD35mCk56QPI6b+6DvFU6U583DZ/Ay2UmfDSaPRWx270jrgbX+jbduetO3lqK9+7fiaV9LI7mfO3CrA79pl35bLWEro+NBWEre9D6e/P75QgvlnHPfJy88rDZqbToipyAdj1ioT1eYm73jZAzY5d0uFuaB0CMFxuVQPs0BpHw9eGuXhqB9DohzfslG01Mmyt/PNVzwubimNucHjJqbIcpUHpYJlAB0ebwlRB2k5DoJHeHZdk6c0yISCQeVJ2T4D/vm86L/OApFN2lgA0udQqJFFnw4o5c3/su8LLRqqQ1UqjS/ZPNEugtoYGlO84A7NMbYLn/4hpoiEOT4Pg+DnpRnwfQL3M67DxO/5WL1PfxfOlKxGFFI43UrogBkJj6TOT3sKrB6aRgesR30hai8sPFTf0SQKkz4TPpB0nRTybwh63LKajCovkSI3iTdC7eMjPjVZkOF6Yclre/3Ep90lxXWSjDe/5JduyC64IE7pNQJeKwmdmA6ZplxPc2ecO3l5cLyowEGf6SdbRwYYBGMRSe4RG6Qy6Xp9RZZkO7i1SD9petOu8mSHPLuy7KB4c/6LyGw743d/EMp3Eg7ZrRO0cXE5v8OzF4RcbovdZP1DL60I8QvW/j43i5Mry3H8uNYT7o",
+                            "encrypted_amount": [81,216,32,197,195,239,128,5],
+                            "encrypted_memo": [58,136,174,57,150,222,80,232,1,134,91,54,152,101,78,191,82,0,165,250,9,57,185,157,122,29,123,40,43,248,35,64,65,243,84,135,216,108,102,159,204,191,224,231,61,126,115,32,173,10,117,112,3,36,30,117,34,16,169,36,121,142,248,109,67,242,124,242,208,97,48,49,220,181,216,210,239,27,50,31,206,173,55,127,98,97,229,71,216,93,142,236,127,38,226,50,25,7,47,121,85,208,248,246,109,205,30,84,194,1,199,135,232,146,216,249,79,97,151,111,29,31,160,29,25,244,80,29]
+                          }
+                        ],
+                        "fee": 15000,
+                        "tx_public_key": [194,138,112,166,28,117,16,161,205,137,33,108,161,108,255,202,234,73,135,71,126,134,219,204,185,112,70,252,46,24,56,78]
                       },
                       "block_height": 14205,
                       "confirmations": 3,
@@ -185,9 +209,33 @@
                     "summary": "Unconfirmed transaction (in mempool)",
                     "value": {
                       "tx": {
-                        "inputs": [{ "key_image": "f1e2d3...", "ring_size": 11 }],
-                        "outputs": [{ "commitment": "b2c3d4...", "range_proof_size": 674 }],
-                        "fee": 12000
+                        "version": 1,
+                        "inputs": [
+                          {
+                            "key_image": [206,194,102,91,117,127,68,44,128,196,45,250,102,215,110,191,198,108,77,236,91,173,42,44,240,161,206,21,137,3,217,104],
+                            "ring_members": [
+                              [226,131,206,64,181,243,28,67,77,209,63,49,60,73,151,89,90,209,74,106,163,255,119,131,60,185,95,37,147,5,24,172],
+                              [110,193,204,172,204,197,212,189,47,92,19,190,204,227,117,159,115,159,54,160,111,127,196,151,224,41,224,215,131,35,150,164]
+                            ],
+                            "ring_commitments": [
+                              [244,65,131,220,148,209,81,144,194,225,99,194,172,101,176,2,181,151,98,87,133,213,118,209,176,204,1,57,103,0,158,85],
+                              [227,105,135,213,239,147,102,10,53,157,38,16,29,213,153,189,151,99,51,202,204,88,135,235,168,65,66,228,199,214,91,184]
+                            ],
+                            "pseudo_output": [185,41,236,101,236,26,183,66,110,82,226,90,90,18,56,11,87,242,214,41,217,44,73,158,2,195,168,69,207,102,28,108],
+                            "ring_signature": "gGqM7cNe9fNWJnrrBzqo/CSrAowGo9OFVEUYyxIYr3WVUeAd1XVgO/hXi426JGVYtSk6QEZMLBDCVbV2Uq4br99gnVs4S/4GdsAxeOMpUlXjv4GgF8sKmVFDBZKXlD/8"
+                          }
+                        ],
+                        "outputs": [
+                          {
+                            "commitment": [57,12,140,125,114,71,52,44,216,16,15,47,111,119,13,101,214,112,229,142,3,81,216,174,142,79,110,172,52,47,194,49],
+                            "public_key": [183,176,135,22,235,63,193,40,150,185,98,35,23,116,148,40,119,51,194,142,232,186,83,189,181,107,136,36,87,125,83,236],
+                            "range_proof": "UTfDE/BxZuuznHRyDGLMqI4jjrPMqQ47hVuHEzfesKDfO8VhghbfAGS63COpoD+ZntGnzpdBYtfCWZrPAJuSa9yk7uLibfJWK5GrL3iec2VLDBd98yXp1GPE/cx8SwI22XBa7Rl/PulE7aLi2uRR8+aEfo34eozhJ5J4i6ujKUZNdsRObSDU0Knu1B9p18cKwvQDtJjH1nD5cIvf+A7HrM9U70ENyQ0q20XsXRmFwqds6Keswo7XgSnwCRqzciMUD35mCk56QPI6b+6DvFU6U583DZ/Ay2UmfDSaPRWx270jrgbX+jbduetO3lqK9+7fiaV9LI7mfO3CrA79pl35bLWEro+NBWEre9D6e/P75QgvlnHPfJy88rDZqbToipyAdj1ioT1eYm73jZAzY5d0uFuaB0CMFxuVQPs0BpHw9eGuXhqB9DohzfslG01Mmyt/PNVzwubimNucHjJqbIcpUHpYJlAB0ebwlRB2k5DoJHeHZdk6c0yISCQeVJ2T4D/vm86L/OApFN2lgA0udQqJFFnw4o5c3/su8LLRqqQ1UqjS/ZPNEugtoYGlO84A7NMbYLn/4hpoiEOT4Pg+DnpRnwfQL3M67DxO/5WL1PfxfOlKxGFFI43UrogBkJj6TOT3sKrB6aRgesR30hai8sPFTf0SQKkz4TPpB0nRTybwh63LKajCovkSI3iTdC7eMjPjVZkOF6Yclre/3Ep90lxXWSjDe/5JduyC64IE7pNQJeKwmdmA6ZplxPc2ecO3l5cLyowEGf6SdbRwYYBGMRSe4RG6Qy6Xp9RZZkO7i1SD9petOu8mSHPLuy7KB4c/6LyGw743d/EMp3Eg7ZrRO0cXE5v8OzF4RcbovdZP1DL60I8QvW/j43i5Mry3H8uNYT7o",
+                            "encrypted_amount": [81,216,32,197,195,239,128,5],
+                            "encrypted_memo": [58,136,174,57,150,222,80,232,1,134,91,54,152,101,78,191,82,0,165,250,9,57,185,157,122,29,123,40,43,248,35,64,65,243,84,135,216,108,102,159,204,191,224,231,61,126,115,32,173,10,117,112,3,36,30,117,34,16,169,36,121,142,248,109,67,242,124,242,208,97,48,49,220,181,216,210,239,27,50,31,206,173,55,127,98,97,229,71,216,93,142,236,127,38,226,50,25,7,47,121,85,208,248,246,109,205,30,84,194,1,199,135,232,146,216,249,79,97,151,111,29,31,160,29,25,244,80,29]
+                          }
+                        ],
+                        "fee": 12000,
+                        "tx_public_key": [194,138,112,166,28,117,16,161,205,137,33,108,161,108,255,202,234,73,135,71,126,134,219,204,185,112,70,252,46,24,56,78]
                       },
                       "confirmations": 0,
                       "in_mempool": true
@@ -239,6 +287,66 @@
                   "min_fee": 10000,
                   "max_fee": 25000,
                   "avg_fee": 14600.0
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/mempool/txs": {
+      "get": {
+        "operationId": "getMempoolTxs",
+        "tags": ["Blockchain"],
+        "summary": "Full mempool transactions",
+        "description": "Returns all currently unconfirmed mempool transactions as full transaction objects in a JSON array. Each item matches the same `Transaction` schema returned by `GET /api/tx/{hash}`. Returns an empty array when the mempool is empty.",
+        "responses": {
+          "200": {
+            "description": "Array of mempool transactions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MempoolTransactions"
+                },
+                "examples": {
+                  "non_empty": {
+                    "summary": "Mempool has transactions",
+                    "value": [
+                      {
+                        "version": 1,
+                        "inputs": [
+                          {
+                            "key_image": [206,194,102,91,117,127,68,44,128,196,45,250,102,215,110,191,198,108,77,236,91,173,42,44,240,161,206,21,137,3,217,104],
+                            "ring_members": [
+                              [226,131,206,64,181,243,28,67,77,209,63,49,60,73,151,89,90,209,74,106,163,255,119,131,60,185,95,37,147,5,24,172],
+                              [110,193,204,172,204,197,212,189,47,92,19,190,204,227,117,159,115,159,54,160,111,127,196,151,224,41,224,215,131,35,150,164]
+                            ],
+                            "ring_commitments": [
+                              [244,65,131,220,148,209,81,144,194,225,99,194,172,101,176,2,181,151,98,87,133,213,118,209,176,204,1,57,103,0,158,85],
+                              [227,105,135,213,239,147,102,10,53,157,38,16,29,213,153,189,151,99,51,202,204,88,135,235,168,65,66,228,199,214,91,184]
+                            ],
+                            "pseudo_output": [185,41,236,101,236,26,183,66,110,82,226,90,90,18,56,11,87,242,214,41,217,44,73,158,2,195,168,69,207,102,28,108],
+                            "ring_signature": "gGqM7cNe9fNWJnrrBzqo/CSrAowGo9OFVEUYyxIYr3WVUeAd1XVgO/hXi426JGVYtSk6QEZMLBDCVbV2Uq4br99gnVs4S/4GdsAxeOMpUlXjv4GgF8sKmVFDBZKXlD/8"
+                          }
+                        ],
+                        "outputs": [
+                          {
+                            "commitment": [57,12,140,125,114,71,52,44,216,16,15,47,111,119,13,101,214,112,229,142,3,81,216,174,142,79,110,172,52,47,194,49],
+                            "public_key": [183,176,135,22,235,63,193,40,150,185,98,35,23,116,148,40,119,51,194,142,232,186,83,189,181,107,136,36,87,125,83,236],
+                            "encrypted_amount": [81,216,32,197,195,239,128,5],
+                            "encrypted_memo": [58,136,174,57,150,222,80,232,1,134,91,54,152,101,78,191,82,0,165,250,9,57,185,157,122,29,123,40,43,248,35,64,65,243,84,135,216,108,102,159,204,191,224,231,61,126,115,32,173,10,117,112,3,36,30,117,34,16,169,36,121,142,248,109,67,242,124,242,208,97,48,49,220,181,216,210,239,27,50,31,206,173,55,127,98,97,229,71,216,93,142,236,127,38,226,50,25,7,47,121,85,208,248,246,109,205,30,84,194,1,199,135,232,146,216,249,79,97,151,111,29,31,160,29,25,244,80,29]
+                          }
+                        ],
+                        "fee": 12000,
+                        "tx_public_key": [194,138,112,166,28,117,16,161,205,137,33,108,161,108,255,202,234,73,135,71,126,134,219,204,185,112,70,252,46,24,56,78]
+                      }
+                    ]
+                  },
+                  "empty": {
+                    "summary": "Mempool is empty",
+                    "value": []
+                  }
                 }
               }
             }
@@ -330,12 +438,92 @@
         }
       }
     },
+    "/api/verify": {
+      "post": {
+        "operationId": "verifyMessage",
+        "tags": ["Node"],
+        "summary": "Verify a signed message",
+        "description": "Verifies an ed25519 signature against a Blocknet stealth address. Does not require a wallet — uses only stateless cryptographic verification. Useful for 'login with Blocknet' flows where any node can validate a signature produced by `POST /api/wallet/sign`. Rate-limited per IP.",
+        "security": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VerifyRequest"
+              },
+              "example": {
+                "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
+                "message": "blocknet-auth:1:blocknet.id:a1b2c3d4e5f6:1708531200",
+                "signature": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Verification result",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "valid": { "type": "boolean", "description": "True if the signature is valid for the given address and message" }
+                  }
+                },
+                "examples": {
+                  "valid": {
+                    "summary": "Valid signature",
+                    "value": { "valid": true }
+                  },
+                  "invalid": {
+                    "summary": "Invalid signature",
+                    "value": { "valid": false }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "bad_address": {
+                    "summary": "Unparseable address",
+                    "value": { "error": "invalid address" }
+                  },
+                  "bad_signature": {
+                    "summary": "Malformed signature",
+                    "value": { "error": "invalid signature: must be 64 bytes hex-encoded" }
+                  },
+                  "missing_message": {
+                    "summary": "Missing message",
+                    "value": { "error": "message is required" }
+                  }
+                }
+              }
+            }
+          },
+          "429": {
+            "description": "Rate limit exceeded",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "verify rate limit exceeded" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/wallet/load": {
       "post": {
         "operationId": "loadWallet",
         "tags": ["Wallet"],
         "summary": "Load or create wallet",
-        "description": "Loads an existing wallet from disk (decrypting with the given password) or creates a new one if no wallet file exists. Primarily used in `--daemon` mode where the app starts without a wallet. After loading, all wallet endpoints become available, miner reward keys are pointed at this wallet, and any blocks that arrived before the wallet was loaded are scanned automatically. Can only be called once ; returns 409 if a wallet is already loaded.",
+        "description": "Loads an existing wallet from disk (decrypting with the given password) or creates a new one if no wallet file exists. Primarily used in `--daemon` mode where the app starts without a wallet. After loading, all wallet endpoints become available, miner reward keys are pointed at this wallet, and any blocks that arrived before the wallet was loaded are scanned automatically. Can only be called once — returns 409 if a wallet is already loaded.",
         "requestBody": {
           "required": true,
           "content": {
@@ -419,12 +607,129 @@
         }
       }
     },
+    "/api/wallet/import": {
+      "post": {
+        "operationId": "importWallet",
+        "tags": ["Wallet"],
+        "summary": "Import wallet from recovery seed",
+        "description": "Creates a new wallet from a BIP39 12-word recovery seed, encrypts it with the given password, and saves it to disk. The wallet is loaded into the running daemon and the entire blockchain is scanned for outputs belonging to this seed. Can only be called when no wallet is currently loaded (returns 409 otherwise). If `filename` is provided, only the basename is used and the file is placed in the same directory as the configured `--wallet` path; if omitted, the default wallet path is used. Will not overwrite an existing file.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["mnemonic", "password"],
+                "properties": {
+                  "mnemonic": {
+                    "type": "string",
+                    "description": "BIP39 12-word recovery phrase"
+                  },
+                  "password": {
+                    "type": "string",
+                    "minLength": 3,
+                    "description": "Encryption password for the wallet file (min 3 characters)"
+                  },
+                  "filename": {
+                    "type": "string",
+                    "description": "Optional wallet filename (basename only, no path separators). Defaults to the configured --wallet path."
+                  }
+                }
+              },
+              "example": {
+                "mnemonic": "abandon ability able about above absent absorb abstract absurd abuse access accident",
+                "password": "my-wallet-passphrase",
+                "filename": "restored.dat"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Wallet imported and loaded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "imported": { "type": "boolean" },
+                    "address": {
+                      "type": "string",
+                      "description": "Wallet stealth address (base58-encoded)"
+                    },
+                    "filename": {
+                      "type": "string",
+                      "description": "Basename of the created wallet file"
+                    }
+                  }
+                },
+                "example": {
+                  "imported": true,
+                  "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
+                  "filename": "restored.dat"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "bad_mnemonic": {
+                    "summary": "Invalid seed phrase",
+                    "value": { "error": "invalid mnemonic phrase" }
+                  },
+                  "short_password": {
+                    "summary": "Password too short",
+                    "value": { "error": "password must be at least 3 characters" }
+                  },
+                  "bad_filename": {
+                    "summary": "Invalid filename",
+                    "value": { "error": "invalid filename" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "409": {
+            "description": "Wallet already loaded or file already exists",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "already_loaded": {
+                    "summary": "Wallet already active",
+                    "value": { "error": "wallet already loaded" }
+                  },
+                  "file_exists": {
+                    "summary": "File collision",
+                    "value": { "error": "wallet file already exists: restored.dat" }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to create wallet",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "failed to create wallet: invalid mnemonic: checksum mismatch" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/wallet/balance": {
       "get": {
         "operationId": "getBalance",
         "tags": ["Wallet"],
         "summary": "Wallet balance",
-        "description": "Returns spendable, pending, and total balance in atomic units (1 BNT = 100,000,000 atomic units). Spendable excludes immature coinbase outputs. Requires unlocked wallet.",
+        "description": "Returns spendable, pending, and total confirmed balance in atomic units (1 BNT = 100,000,000 atomic units). Spendable excludes immature coinbase outputs. Also includes an optional UX-only `pending_unconfirmed` amount (typically change from your most recent send) plus an estimated unlock ETA in seconds, assuming ~5 minute blocks. Requires unlocked wallet.",
         "responses": {
           "200": {
             "description": "Balance breakdown",
@@ -436,6 +741,8 @@
                 "example": {
                   "spendable": 1250000000,
                   "pending": 72325093035,
+                  "pending_unconfirmed": 0,
+                  "pending_unconfirmed_eta": 0,
                   "total": 73575093035,
                   "outputs_total": 14,
                   "outputs_unspent": 9,
@@ -552,7 +859,16 @@
         "operationId": "sendFunds",
         "tags": ["Wallet"],
         "summary": "Send funds",
-        "description": "Builds a privacy-preserving transaction using RingCT (Pedersen commitments, Bulletproofs range proofs, CLSAG ring signatures with ring size 11), submits to mempool, and broadcasts via Dandelion++. Fee is calculated as max(min_fee, fee_per_byte * tx_size). Requires unlocked full wallet (not view-only).",
+        "description": "Builds a privacy-preserving transaction using RingCT (Pedersen commitments, Bulletproofs range proofs, CLSAG ring signatures with fixed ring size 16), submits to mempool, and broadcasts via Dandelion++. Fee is calculated as max(min_fee, fee_per_byte * tx_size). Requires unlocked full wallet (not view-only).",
+        "parameters": [
+          {
+            "name": "Idempotency-Key",
+            "in": "header",
+            "required": false,
+            "schema": { "type": "string", "maxLength": 128 },
+            "description": "Optional idempotency key for retry-safe client behavior. Duplicate requests with the same key and identical JSON payload replay the original response for a bounded window (~10 minutes). Reusing a key with a different payload fails with 409."
+          }
+        ],
         "requestBody": {
           "required": true,
           "content": {
@@ -628,6 +944,97 @@
               "application/json": {
                 "schema": { "$ref": "#/components/schemas/Error" },
                 "example": { "error": "failed to build transaction: not enough ring members available" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/NoWallet" }
+        }
+      }
+    },
+    "/api/wallet/sign": {
+      "post": {
+        "operationId": "signMessage",
+        "tags": ["Wallet"],
+        "summary": "Sign a message",
+        "description": "Signs an arbitrary message with the wallet's spend private key (ed25519). Useful for proving address ownership to external services ('login with Blocknet'). Response includes `Cache-Control: no-store`. Requires unlocked full wallet (not view-only).",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["message"],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "maxLength": 1024,
+                    "description": "The message to sign (max 1024 bytes)"
+                  }
+                }
+              },
+              "example": {
+                "message": "blocknet-auth:1:blocknet.id:a1b2c3d4e5f6:1708531200"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Message signed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignResponse"
+                },
+                "example": {
+                  "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
+                  "signature": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+                  "message": "blocknet-auth:1:blocknet.id:a1b2c3d4e5f6:1708531200"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "empty_message": {
+                    "summary": "Missing message",
+                    "value": { "error": "message is required" }
+                  },
+                  "too_long": {
+                    "summary": "Message too long",
+                    "value": { "error": "message must be <= 1024 bytes" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": {
+            "description": "Wallet locked or view-only",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "locked": {
+                    "value": { "error": "wallet is locked" }
+                  },
+                  "view_only": {
+                    "value": { "error": "view-only wallet cannot sign" }
+                  }
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Signing failed",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "internal error" }
               }
             }
           },
@@ -804,121 +1211,6 @@
         }
       }
     },
-    "/api/wallet/import": {
-      "post": {
-        "operationId": "importWallet",
-        "tags": ["Wallet"],
-        "summary": "Import wallet from seed",
-        "description": "Creates a new wallet from a BIP39 12-word recovery seed, encrypts it with the given password, and saves it to disk. The wallet is loaded into the running daemon and the entire blockchain is scanned for outputs belonging to this seed. Can only be called when no wallet is currently loaded (returns 409 otherwise). If `filename` is provided, only the basename is used and the file is placed in the same directory as the configured `--wallet` path; if omitted, the default wallet path is used. Will not overwrite an existing file.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["mnemonic", "password"],
-                "properties": {
-                  "mnemonic": {
-                    "type": "string",
-                    "description": "BIP39 12-word recovery phrase"
-                  },
-                  "password": {
-                    "type": "string",
-                    "minLength": 3,
-                    "description": "Encryption password for the wallet file (min 3 characters)"
-                  },
-                  "filename": {
-                    "type": "string",
-                    "description": "Optional wallet filename (basename only, no path separators). Defaults to the configured --wallet path."
-                  }
-                }
-              },
-              "example": {
-                "mnemonic": "abandon ability able about above absent absorb abstract absurd abuse access accident",
-                "password": "my-wallet-passphrase",
-                "filename": "restored.dat"
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Wallet imported and loaded",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "imported": { "type": "boolean" },
-                    "address": {
-                      "type": "string",
-                      "description": "Wallet stealth address (base58-encoded)"
-                    },
-                    "filename": {
-                      "type": "string",
-                      "description": "Wallet filename that was written"
-                    }
-                  }
-                },
-                "example": {
-                  "imported": true,
-                  "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
-                  "filename": "restored.dat"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "examples": {
-                  "bad_mnemonic": {
-                    "summary": "Invalid mnemonic",
-                    "value": { "error": "invalid mnemonic phrase" }
-                  },
-                  "short_password": {
-                    "summary": "Password too short",
-                    "value": { "error": "password must be at least 3 characters" }
-                  },
-                  "bad_filename": {
-                    "summary": "Invalid filename",
-                    "value": { "error": "invalid filename" }
-                  }
-                }
-              }
-            }
-          },
-          "401": { "$ref": "#/components/responses/Unauthorized" },
-          "409": {
-            "description": "Wallet already loaded or file exists",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "examples": {
-                  "already_loaded": {
-                    "value": { "error": "wallet already loaded" }
-                  },
-                  "file_exists": {
-                    "value": { "error": "wallet file already exists: restored.dat" }
-                  }
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Failed to create wallet from seed",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "failed to create wallet: invalid mnemonic: checksum mismatch" }
-              }
-            }
-          }
-        }
-      }
-    },
     "/api/wallet/sync": {
       "post": {
         "operationId": "syncWallet",
@@ -943,86 +1235,6 @@
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "403": { "$ref": "#/components/responses/WalletLocked" },
           "503": { "$ref": "#/components/responses/NoWallet" }
-        }
-      }
-    },
-    "/api/purge": {
-      "post": {
-        "operationId": "purgeBlockchainData",
-        "tags": ["Admin"],
-        "summary": "Purge blockchain data",
-        "description": "Deletes all blockchain data from disk. Requires password verification and explicit confirmation. Stops the daemon, removes the data directory, then shuts down the API server. A restart is required after this operation. This is irreversible.",
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "required": ["password", "confirm"],
-                "properties": {
-                  "password": {
-                    "type": "string",
-                    "description": "Wallet password for verification"
-                  },
-                  "confirm": {
-                    "type": "boolean",
-                    "description": "Must be true to confirm the destructive operation"
-                  }
-                }
-              },
-              "example": {
-                "password": "my-wallet-passphrase",
-                "confirm": true
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Data purged, restart required",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "type": "object",
-                  "properties": {
-                    "success": { "type": "boolean" },
-                    "message": { "type": "string" }
-                  }
-                },
-                "example": {
-                  "success": true,
-                  "message": "blockchain data purged successfully, restart required"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Confirmation required",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "confirmation required (set confirm: true)" }
-              }
-            }
-          },
-          "401": {
-            "description": "Incorrect password",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "incorrect password" }
-              }
-            }
-          },
-          "500": {
-            "description": "Purge failed",
-            "content": {
-              "application/json": {
-                "schema": { "$ref": "#/components/schemas/Error" },
-                "example": { "error": "failed to purge blockchain data: permission denied" }
-              }
-            }
-          }
         }
       }
     },
@@ -1190,6 +1402,200 @@
         }
       }
     },
+    "/api/mining/blocktemplate": {
+      "get": {
+        "operationId": "getBlockTemplate",
+        "tags": ["Mining"],
+        "summary": "Get block template for pool mining",
+        "description": "Returns a complete block template ready for proof-of-work solving. Includes a pre-built coinbase transaction (paying to the loaded wallet by default, or to the optional `address` override), selected mempool transactions, and the computed merkle root. The `target` field (hex) is the PoW target that the Argon2id hash must be less than. The `header_base` field (hex) is the 92-byte serialized header without the nonce, used as input to the PoW hash function. Pool software should call this to get fresh work, distribute to miners, and submit solved blocks via `POST /api/mining/submitblock`. Requires a loaded wallet (for coinbase keys) but does not require it to be unlocked.",
+        "parameters": [
+          {
+            "name": "address",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Optional reward address override. If provided, the coinbase output pays to this stealth address instead of the loaded wallet address.",
+            "example": "3wZc3y1Qw4eYpZtGJxkqkV6xG9c2oXHqfJjQ6b3sR5hYhJ8tZz1qvJ1mY1a9o7hV4pYwqH7xG5d5d8cJ8p4"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Block template",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BlockTemplate"
+                },
+                "example": {
+                  "block": {
+                    "header": {
+                      "version": 1,
+                      "height": 14208,
+                      "prev_hash": "0000c3a5b7e2d1f489a1bc37e5d204f8c612aa9b33e7f04d12b8a9e6c7f50321",
+                      "merkle_root": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                      "timestamp": 1738800240,
+                      "difficulty": 100000,
+                      "nonce": 0
+                    },
+                    "transactions": []
+                  },
+                  "target": "000000000000f4240000000000000000000000000000000000000000000000000",
+                  "header_base": "0100000080370000...",
+                  "reward_address_used": "3wZc3y1Qw4eYpZtGJxkqkV6xG9c2oXHqfJjQ6b3sR5hYhJ8tZz1qvJ1mY1a9o7hV4pYwqH7xG5d5d8cJ8p4"
+                }
+              }
+            }
+          },
+          "400": { "$ref": "#/components/responses/BadRequest" },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/NoWallet" }
+        }
+      }
+    },
+    "/api/mining/submitblock": {
+      "post": {
+        "operationId": "submitBlock",
+        "tags": ["Mining"],
+        "summary": "Submit a solved block",
+        "description": "Accepts a solved block (from pool mining or external miner) and adds it to the chain. The block must pass full validation: correct height, prev_hash linking to current tip, valid difficulty, valid Argon2id proof-of-work, valid merkle root, and valid transactions. On success the block is broadcast to all peers and subscribers are notified.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Block"
+              },
+              "description": "A complete block object with a valid nonce. Typically obtained from `GET /api/mining/blocktemplate` with the nonce field filled in after PoW solving."
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Block accepted and broadcast",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "accepted": { "type": "boolean" },
+                    "hash": { "type": "string", "description": "Block hash (64 hex chars)" },
+                    "height": { "type": "integer", "description": "Block height" }
+                  }
+                },
+                "example": {
+                  "accepted": true,
+                  "hash": "0000d4b5a8e7c3f2910b6e5d4c3a2f1e0d9c8b7a6f5e4d3c2b1a09f8e7d6c5b4",
+                  "height": 14208
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid or rejected block",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "examples": {
+                  "invalid_pow": {
+                    "summary": "Failed PoW validation",
+                    "value": { "error": "invalid block: invalid proof of work" }
+                  },
+                  "bad_height": {
+                    "summary": "Wrong height",
+                    "value": { "error": "invalid block: invalid height: expected 14208, got 14209" }
+                  },
+                  "duplicate": {
+                    "summary": "Already known",
+                    "value": { "error": "block not accepted (duplicate or stale)" }
+                  }
+                }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/api/purge": {
+      "post": {
+        "operationId": "purgeData",
+        "tags": ["Admin"],
+        "summary": "Purge blockchain data",
+        "description": "Deletes all blockchain data from disk. Requires password verification and explicit confirmation. Stops the daemon, removes the data directory, then shuts down the API server. A restart is required after this operation. This is irreversible.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["password", "confirm"],
+                "properties": {
+                  "password": {
+                    "type": "string",
+                    "description": "Wallet password for verification"
+                  },
+                  "confirm": {
+                    "type": "boolean",
+                    "description": "Must be true to confirm the destructive operation"
+                  }
+                }
+              },
+              "example": {
+                "password": "my-wallet-passphrase",
+                "confirm": true
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Data purged, daemon shutting down",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "message": { "type": "string" }
+                  }
+                },
+                "example": {
+                  "success": true,
+                  "message": "blockchain data purged successfully, restart required"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing confirmation",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "confirmation required (set confirm: true)" }
+              }
+            }
+          },
+          "401": {
+            "description": "Incorrect password or missing Bearer token",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "incorrect password" }
+              }
+            }
+          },
+          "500": {
+            "description": "Failed to purge data",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "failed to purge blockchain data: permission denied" }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/events": {
       "get": {
         "operationId": "getEvents",
@@ -1293,7 +1699,7 @@
             "description": "Transaction summaries (first tx is coinbase for height > 0)"
           },
           "confirmations": { "type": "integer", "description": "Confirmations since this block (chain_height - block_height + 1)" },
-          "reward": { "type": "integer", "description": "Block reward in atomic units (smooth exponential decay to 0.2 BNT tail)" }
+          "reward": { "type": "integer", "description": "Block reward in atomic units (smooth exponential decay to 2.0 BNT tail)" }
         },
         "example": {
           "height": 14207,
@@ -1341,12 +1747,85 @@
           "fee": 15000
         }
       },
+      "Bytes8": {
+        "type": "array",
+        "description": "8-byte value encoded as a JSON array of integers [0..255]. This matches Go's default JSON encoding for `[8]byte`.",
+        "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "minItems": 8,
+        "maxItems": 8
+      },
+      "Bytes32": {
+        "type": "array",
+        "description": "32-byte value encoded as a JSON array of integers [0..255]. This matches Go's default JSON encoding for `[32]byte`.",
+        "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "minItems": 32,
+        "maxItems": 32
+      },
+      "Bytes128": {
+        "type": "array",
+        "description": "128-byte value encoded as a JSON array of integers [0..255]. This matches Go's default JSON encoding for `[128]byte` (used for `encrypted_memo`).",
+        "items": { "type": "integer", "minimum": 0, "maximum": 255 },
+        "minItems": 128,
+        "maxItems": 128
+      },
+      "TxInput": {
+        "type": "object",
+        "properties": {
+          "key_image": { "$ref": "#/components/schemas/Bytes32" },
+          "ring_members": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Bytes32" },
+            "description": "Ring member one-time public keys (real + decoys)"
+          },
+          "ring_commitments": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/Bytes32" },
+            "description": "Pedersen commitments for each ring member"
+          },
+          "pseudo_output": { "$ref": "#/components/schemas/Bytes32" },
+          "ring_signature": {
+            "type": "string",
+            "format": "byte",
+            "description": "Base64-encoded ring signature bytes"
+          }
+        }
+      },
+      "TxOutput": {
+        "type": "object",
+        "properties": {
+          "commitment": { "$ref": "#/components/schemas/Bytes32" },
+          "public_key": { "$ref": "#/components/schemas/Bytes32" },
+          "range_proof": {
+            "type": "string",
+            "format": "byte",
+            "description": "Base64-encoded Bulletproof range proof bytes (omitted in some contexts)"
+          },
+          "encrypted_amount": { "$ref": "#/components/schemas/Bytes8" },
+          "encrypted_memo": { "$ref": "#/components/schemas/Bytes128" }
+        }
+      },
+      "Transaction": {
+        "type": "object",
+        "properties": {
+          "version": { "type": "integer", "minimum": 0, "maximum": 255 },
+          "inputs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TxInput" }
+          },
+          "outputs": {
+            "type": "array",
+            "items": { "$ref": "#/components/schemas/TxOutput" }
+          },
+          "fee": { "type": "integer", "description": "Fee in atomic units" },
+          "tx_public_key": { "$ref": "#/components/schemas/Bytes32" }
+        }
+      },
       "TxLookupResult": {
         "type": "object",
         "properties": {
           "tx": {
-            "type": "object",
-            "description": "Full serialized transaction object"
+            "$ref": "#/components/schemas/Transaction",
+            "description": "Full transaction object. NOTE: byte arrays are encoded as JSON arrays of integers (Go default encoding)."
           },
           "block_height": {
             "type": "integer",
@@ -1363,9 +1842,32 @@
         },
         "example": {
           "tx": {
-            "inputs": [{ "key_image": "d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2c3d4", "ring_size": 11 }],
-            "outputs": [{ "commitment": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2", "range_proof_size": 674 }],
-            "fee": 15000
+            "version": 1,
+            "inputs": [
+              {
+                "key_image": [206,194,102,91,117,127,68,44,128,196,45,250,102,215,110,191,198,108,77,236,91,173,42,44,240,161,206,21,137,3,217,104],
+                "ring_members": [
+                  [226,131,206,64,181,243,28,67,77,209,63,49,60,73,151,89,90,209,74,106,163,255,119,131,60,185,95,37,147,5,24,172],
+                  [110,193,204,172,204,197,212,189,47,92,19,190,204,227,117,159,115,159,54,160,111,127,196,151,224,41,224,215,131,35,150,164]
+                ],
+                "ring_commitments": [
+                  [244,65,131,220,148,209,81,144,194,225,99,194,172,101,176,2,181,151,98,87,133,213,118,209,176,204,1,57,103,0,158,85],
+                  [227,105,135,213,239,147,102,10,53,157,38,16,29,213,153,189,151,99,51,202,204,88,135,235,168,65,66,228,199,214,91,184]
+                ],
+                "pseudo_output": [185,41,236,101,236,26,183,66,110,82,226,90,90,18,56,11,87,242,214,41,217,44,73,158,2,195,168,69,207,102,28,108],
+                "ring_signature": "gGqM7cNe9fNWJnrrBzqo/CSrAowGo9OFVEUYyxIYr3WVUeAd1XVgO/hXi426JGVYtSk6QEZMLBDCVbV2Uq4br99gnVs4S/4GdsAxeOMpUlXjv4GgF8sKmVFDBZKXlD/8"
+              }
+            ],
+            "outputs": [
+              {
+                "commitment": [57,12,140,125,114,71,52,44,216,16,15,47,111,119,13,101,214,112,229,142,3,81,216,174,142,79,110,172,52,47,194,49],
+                "public_key": [183,176,135,22,235,63,193,40,150,185,98,35,23,116,148,40,119,51,194,142,232,186,83,189,181,107,136,36,87,125,83,236],
+                "encrypted_amount": [81,216,32,197,195,239,128,5],
+                "encrypted_memo": [58,136,174,57,150,222,80,232,1,134,91,54,152,101,78,191,82,0,165,250,9,57,185,157,122,29,123,40,43,248,35,64,65,243,84,135,216,108,102,159,204,191,224,231,61,126,115,32,173,10,117,112,3,36,30,117,34,16,169,36,121,142,248,109,67,242,124,242,208,97,48,49,220,181,216,210,239,27,50,31,206,173,55,127,98,97,229,71,216,93,142,236,127,38,226,50,25,7,47,121,85,208,248,246,109,205,30,84,194,1,199,135,232,146,216,249,79,97,151,111,29,31,160,29,25,244,80,29]
+              }
+            ],
+            "fee": 15000,
+            "tx_public_key": [194,138,112,166,28,117,16,161,205,137,33,108,161,108,255,202,234,73,135,71,126,134,219,204,185,112,70,252,46,24,56,78]
           },
           "block_height": 14205,
           "confirmations": 3,
@@ -1388,6 +1890,22 @@
           "max_fee": 25000,
           "avg_fee": 14600.0
         }
+      },
+      "MempoolTransactions": {
+        "type": "array",
+        "description": "Array of unconfirmed transactions currently in the mempool.",
+        "items": {
+          "$ref": "#/components/schemas/Transaction"
+        },
+        "example": [
+          {
+            "version": 1,
+            "inputs": [],
+            "outputs": [],
+            "fee": 12000,
+            "tx_public_key": [194,138,112,166,28,117,16,161,205,137,33,108,161,108,255,202,234,73,135,71,126,134,219,204,185,112,70,252,46,24,56,78]
+          }
+        ]
       },
       "BanEntry": {
         "type": "object",
@@ -1415,6 +1933,8 @@
         "properties": {
           "spendable": { "type": "integer", "description": "Mature, spendable balance in atomic units" },
           "pending": { "type": "integer", "description": "Immature coinbase outputs awaiting maturity (atomic units)" },
+          "pending_unconfirmed": { "type": "integer", "description": "Unconfirmed expected credits not yet scanned from a block (typically change from your most recent send). UX-only; not part of confirmed balance totals (atomic units)." },
+          "pending_unconfirmed_eta": { "type": "integer", "description": "Estimated seconds until `pending_unconfirmed` becomes spendable, assuming ~5 minute blocks and requiring next block + 10 confirmations. 0 when no pending_unconfirmed." },
           "total": { "type": "integer", "description": "Total unspent balance: spendable + pending (atomic units)" },
           "outputs_total": { "type": "integer", "description": "Total output count (including spent)" },
           "outputs_unspent": { "type": "integer", "description": "Currently unspent output count" },
@@ -1423,6 +1943,8 @@
         "example": {
           "spendable": 1250000000,
           "pending": 72325093035,
+          "pending_unconfirmed": 0,
+          "pending_unconfirmed_eta": 0,
           "total": 73575093035,
           "outputs_total": 14,
           "outputs_unspent": 9,
@@ -1438,7 +1960,13 @@
           "block_height": { "type": "integer", "description": "Block height where this output was confirmed" },
           "is_coinbase": { "type": "boolean", "description": "True if this is a mining reward output" },
           "spent": { "type": "boolean", "description": "True if already used as an input" },
-          "spent_height": { "type": "integer", "description": "Block height where spent (omitted if unspent, 0 means unspent)" }
+          "spent_height": { "type": "integer", "description": "Block height where spent (omitted if unspent, 0 means unspent)" },
+          "memo_hex": {
+            "type": "string",
+            "pattern": "^(?:[A-Fa-f0-9]{2})*$",
+            "maxLength": 248,
+            "description": "Hex-encoded decrypted memo payload (present only when the output carried a non-empty memo). Max 248 hex chars (124 bytes)."
+          }
         },
         "example": {
           "txid": "c7f2e1d3a4b596870123456789abcdef0123456789abcdef0123456789abcdef",
@@ -1447,6 +1975,54 @@
           "block_height": 14200,
           "is_coinbase": true,
           "spent": false
+        }
+      },
+      "SignResponse": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Wallet stealth address (base58-encoded)"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{128}$",
+            "description": "Hex-encoded 64-byte ed25519 signature (128 hex chars)"
+          },
+          "message": {
+            "type": "string",
+            "description": "Echo of the signed message"
+          }
+        },
+        "example": {
+          "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
+          "signature": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+          "message": "blocknet-auth:1:blocknet.id:a1b2c3d4e5f6:1708531200"
+        }
+      },
+      "VerifyRequest": {
+        "type": "object",
+        "required": ["address", "message", "signature"],
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Blocknet stealth address (base58-encoded)"
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 1024,
+            "description": "The message that was signed (max 1024 bytes)"
+          },
+          "signature": {
+            "type": "string",
+            "pattern": "^[a-f0-9]{128}$",
+            "description": "Hex-encoded 64-byte ed25519 signature (128 hex chars)"
+          }
+        },
+        "example": {
+          "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
+          "message": "blocknet-auth:1:blocknet.id:a1b2c3d4e5f6:1708531200",
+          "signature": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2"
         }
       },
       "SendRequest": {
@@ -1461,11 +2037,40 @@
             "type": "integer",
             "minimum": 1,
             "description": "Amount in atomic units (1 BNT = 100,000,000). Must not exceed spendable balance."
+          },
+          "memo_text": {
+            "type": "string",
+            "maxLength": 124,
+            "description": "Optional UTF-8 memo text. Mutually exclusive with memo_hex. Server enforces max 124 BYTES after UTF-8 encoding; maxLength here is best-effort (character count)."
+          },
+          "memo_hex": {
+            "type": "string",
+            "pattern": "^(?:[A-Fa-f0-9]{2})*$",
+            "maxLength": 248,
+            "description": "Optional memo payload in hex. Mutually exclusive with memo_text. Max 248 hex chars (124 bytes). Pattern enforces even-length hex."
           }
         },
+        "oneOf": [
+          {
+            "required": ["address", "amount"],
+            "description": "No memo provided",
+            "not": { "anyOf": [{ "required": ["memo_text"] }, { "required": ["memo_hex"] }] }
+          },
+          {
+            "required": ["address", "amount", "memo_text"],
+            "description": "Memo provided as UTF-8 text",
+            "not": { "required": ["memo_hex"] }
+          },
+          {
+            "required": ["address", "amount", "memo_hex"],
+            "description": "Memo provided as hex bytes",
+            "not": { "required": ["memo_text"] }
+          }
+        ],
         "example": {
           "address": "9PNoFCqUa7K8e5JfV2Hs3TBt7kMzRGkPxJ4xVmn5cFbLd1Qy8W6uXo3Z9pNvRwA2hY7sK4mBjE6gC8dF",
-          "amount": 500000000
+          "amount": 500000000,
+          "memo_text": "invoice #8421"
         }
       },
       "SendResponse": {
@@ -1473,12 +2078,40 @@
         "properties": {
           "txid": { "type": "string", "description": "Transaction hash (64 hex chars)" },
           "fee": { "type": "integer", "description": "Fee paid in atomic units" },
-          "change": { "type": "integer", "description": "Change returned to wallet in atomic units" }
+          "change": { "type": "integer", "description": "Change returned to wallet in atomic units" },
+          "memo_hex": {
+            "type": "string",
+            "pattern": "^(?:[A-Fa-f0-9]{2})*$",
+            "maxLength": 248,
+            "description": "Hex-encoded memo payload (present only if one was provided in the request). Max 248 hex chars (124 bytes)."
+          }
         },
         "example": {
           "txid": "b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4",
           "fee": 15000,
-          "change": 734850000
+          "change": 734850000,
+          "memo_hex": "696e766f696365202338343231"
+        }
+      },
+      "BlockTemplate": {
+        "type": "object",
+        "properties": {
+          "block": {
+            "$ref": "#/components/schemas/Block",
+            "description": "Complete block with nonce=0. Submit back with a valid nonce via POST /api/mining/submitblock."
+          },
+          "target": {
+            "type": "string",
+            "description": "Hex-encoded 32-byte PoW target. The Argon2id hash of (header_base + nonce) must be less than this value."
+          },
+          "header_base": {
+            "type": "string",
+            "description": "Hex-encoded 92-byte serialized header without the nonce. This is the input to the Argon2id PoW hash function; append the 8-byte little-endian nonce to complete the hash input."
+          },
+          "reward_address_used": {
+            "type": "string",
+            "description": "The stealth address used for the coinbase output in this template. Mirrors the `address` query parameter if provided; otherwise it is the loaded wallet address."
+          }
         }
       },
       "MiningStatus": {
@@ -1530,7 +2163,7 @@
         }
       },
       "WalletLocked": {
-        "description": "Wallet is locked ; call `POST /api/wallet/unlock` first",
+        "description": "Wallet is locked — call `POST /api/wallet/unlock` first",
         "content": {
           "application/json": {
             "schema": { "$ref": "#/components/schemas/Error" },
@@ -1564,7 +2197,7 @@
     },
     {
       "name": "Wallet",
-      "description": "Balance, address, history, and sending. In `--daemon` mode the node starts without a wallet ; call `POST /api/wallet/load` first. All other wallet endpoints require a loaded, unlocked wallet (except lock/unlock themselves)."
+      "description": "Balance, address, history, and sending. In `--daemon` mode the node starts without a wallet — call `POST /api/wallet/load` first. All other wallet endpoints require a loaded, unlocked wallet (except lock/unlock themselves)."
     },
     {
       "name": "Mining",

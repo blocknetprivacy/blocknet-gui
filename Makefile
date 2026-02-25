@@ -1,7 +1,5 @@
 .PHONY: all dev release clean
 
-APP_DATA = ~/Library/Application\ Support/com.blocknet.wallet
-
 all: clean dev
 
 dev:
@@ -15,8 +13,8 @@ release: ui
 
 clean:
 	cd src-tauri && cargo clean
-	rm -rf $(APP_DATA)
 	rm -rf ~/Library/WebKit/blocknet-wallet
 	rm -rf ~/Library/WebKit/com.blocknet.wallet
 	rm -rf ~/Library/Caches/blocknet-wallet
 	rm -rf ~/Library/Caches/com.blocknet.wallet
+
