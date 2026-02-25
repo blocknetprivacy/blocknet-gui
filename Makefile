@@ -9,7 +9,8 @@ ui:
 	mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 
 release: ui
-	npm run build
+	bash scripts/update-core-binaries.sh
+	CI=false npm run build
 
 clean:
 	cd src-tauri && cargo clean
