@@ -1,11 +1,13 @@
 {
   "name": "blocknet-wallet",
-  "version": "0.5.1",
+  "version": "0.5.3",
   "description": "Blocknet GUI Wallet",
   "author": "Blocknet Privacy",
   "license": "BSD-3-Clause",
   "repository": "https://github.com/blocknetprivacy/blocknet-tauri",
   "scripts": {
+    "sync:version": "node scripts/sync-daemon-version.js",
+    "sync:version:check": "node scripts/sync-daemon-version.js --check",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:tauri\"",
     "dev:frontend": "python3 -m http.server 1420",
     "dev:tauri": "sleep 2 && tauri dev",

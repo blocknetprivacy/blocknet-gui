@@ -15,29 +15,42 @@
   <!-- Password / Onboarding Screen (hidden initially) -->
   <div id="password-screen" style="display: none;">
     <div class="password-container">
-      <h1 id="password-title">Welcome to blocknet</h1>
-      <p id="password-subtitle">Enter your wallet password</p>
-
-      <!-- First-run choice (hidden by default, shown when no wallet exists) -->
-      <div id="onboard-choice" style="display: none;">
-        <button class="onboard-btn" id="onboard-create">
-          <span class="onboard-btn-label">Create New Wallet</span>
-          <span class="onboard-btn-hint">Generate a fresh wallet and recovery seed</span>
-        </button>
-        <button class="onboard-btn" id="onboard-import">
-          <span class="onboard-btn-label">Import from Seed</span>
-          <span class="onboard-btn-hint">Restore an existing wallet with a 12-word phrase</span>
-        </button>
+      <div class="password-hero">
+        <img src="src-tauri/icons/squircle.png" alt="Blocknet" id="password-logo">
+        <h1 id="password-title">Welcome to Blocknet</h1>
+        <p id="password-subtitle">Enter your wallet password</p>
       </div>
 
-      <form id="password-form">
-        <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
-        <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
-        <button type="submit" id="password-submit">Continue</button>
-      </form>
-      
-      <div id="password-status" class="status-message"></div>
-      <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
+      <div class="password-main">
+        <!-- First-run choice (hidden by default, shown when no wallet exists) -->
+        <div id="onboard-choice" style="display: none;">
+          <div class="onboard-grid">
+            <div class="onboard-actions">
+              <button class="onboard-btn" id="onboard-create">
+                <span class="onboard-btn-label">Create New Wallet</span>
+                <span class="onboard-btn-hint">Generate a fresh wallet and recovery seed</span>
+              </button>
+              <button class="onboard-btn" id="onboard-import">
+                <span class="onboard-btn-label">Import from Seed</span>
+                <span class="onboard-btn-hint">Restore an existing wallet with a 12-word phrase</span>
+              </button>
+            </div>
+            <div class="onboard-recent">
+              <h3 class="onboard-recent-title">Recent Wallets</h3>
+              <div id="onboard-wallet-list" class="onboard-wallet-list"></div>
+            </div>
+          </div>
+        </div>
+
+        <form id="password-form">
+          <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
+          <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
+          <button type="submit" id="password-submit">Continue</button>
+        </form>
+
+        <div id="password-status" class="status-message"></div>
+        <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
+      </div>
     </div>
   </div>
 

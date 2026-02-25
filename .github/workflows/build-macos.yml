@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   workflow_call:
 
-env:
-  VERSION: "0.5.1"
-
 jobs:
   build-macos-arm64:
     runs-on: macos-14
@@ -23,6 +20,14 @@ jobs:
       - name: Prepare frontend
         run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 
+      - name: Validate version sync from daemon
+        run: |
+          chmod +x binaries/blocknet-aarch64-apple-darwin
+          BLOCKNET_BIN="binaries/blocknet-aarch64-apple-darwin" npm run --silent sync:version:check
+
+      - name: Export version from VERSION file
+        run: echo "DAEMON_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
       - name: Build Tauri app
         run: npx tauri build --config '{"bundle":{"targets":["app"],"resources":["binaries/blocknet-aarch64-apple-darwin"]}}'
 
@@ -36,10 +41,10 @@ jobs:
         run: |
           mkdir -p dist
           APP_PATH="src-tauri/target/release/bundle/macos/blocknet.app"
-          DMG_NAME="blocknet-arm64-darwin-blocknet_${VERSION}_aarch64.dmg"
+          DMG_NAME="blocknet-arm64-darwin-blocknet_${DAEMON_VERSION}_aarch64.dmg"
           hdiutil create -volname "Blocknet" -srcfolder "$APP_PATH" -ov -format UDZO "dist/${DMG_NAME}"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: blocknet-macos-arm64-${{ env.VERSION }}
+          name: blocknet-macos-arm64
           path: dist/*

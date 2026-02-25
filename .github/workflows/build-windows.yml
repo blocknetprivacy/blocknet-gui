@@ -4,9 +4,6 @@ on:
   workflow_dispatch:
   workflow_call:
 
-env:
-  VERSION: "0.5.1"
-
 jobs:
   build-windows-amd64:
     runs-on: windows-latest
@@ -24,6 +21,15 @@ jobs:
         shell: bash
         run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 
+      - name: Validate version sync from daemon
+        shell: bash
+        run: |
+          BLOCKNET_BIN="binaries/blocknet-amd64-windows.exe" npm run --silent sync:version:check
+
+      - name: Export version from VERSION file
+        shell: bash
+        run: echo "DAEMON_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
+
       - name: Build Tauri app
         shell: bash
         run: npx tauri build --config '{"bundle":{"targets":["nsis"],"resources":["binaries/blocknet-amd64-windows.exe"]}}'
@@ -32,11 +38,9 @@ jobs:
         shell: bash
         run: |
           mkdir -p dist
-          cp src-tauri/target/release/bundle/nsis/*.exe dist/
-          cd dist
-          for f in *; do mv "$f" "blocknet-amd64-windows-${f}"; done
+          cp src-tauri/target/release/bundle/nsis/*.exe "dist/blocknet-amd64-windows-blocknet_${DAEMON_VERSION}_amd64.exe"
 
       - uses: actions/upload-artifact@v4
         with:
-          name: blocknet-windows-amd64-${{ env.VERSION }}
+          name: blocknet-windows-amd64
           path: dist/*

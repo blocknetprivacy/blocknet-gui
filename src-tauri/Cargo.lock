@@ -129,7 +129,7 @@ dependencies = [
 
 [[package]]
 name = "blocknet-wallet"
-version = "0.5.1"
+version = "0.5.3"
 dependencies = [
  "dirs-next",
  "reqwest 0.12.28",

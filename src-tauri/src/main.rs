@@ -557,7 +557,14 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
 }
 
 #[tauri::command]
-async fn api_call(app: AppHandle, api_state: State<'_, ApiPortState>, method: String, path: String, body: Option<String>) -> Result<String, String> {
+async fn api_call(
+    app: AppHandle,
+    api_state: State<'_, ApiPortState>,
+    method: String,
+    path: String,
+    body: Option<String>,
+    headers: Option<std::collections::HashMap<String, String>>,
+) -> Result<String, String> {
     let data_dir = get_data_dir(&app)?;
     let token = std::fs::read_to_string(data_dir.join("api.cookie"))
         .map(|s| s.trim().to_string())
@@ -577,6 +584,18 @@ async fn api_call(app: AppHandle, api_state: State<'_, ApiPortState>, method: St
 
     if let Some(b) = body {
         req = req.header("Content-Type", "application/json").body(b);
+    }
+
+    if let Some(hdrs) = headers {
+        for (k, v) in hdrs {
+            if k.eq_ignore_ascii_case("authorization") {
+                continue;
+            }
+            if k.eq_ignore_ascii_case("content-type") {
+                continue;
+            }
+            req = req.header(k.as_str(), v);
+        }
     }
 
     let res = req.send().await.map_err(|e| format!("Request failed: {}", e))?;
@@ -784,12 +803,11 @@ async fn import_wallet_file(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn get_wallet_version() -> Result<String, String> {
-    Ok(env!("CARGO_PKG_VERSION").to_string())
+async fn get_wallet_version(app: AppHandle) -> Result<String, String> {
+    daemon_version_string(&app)
 }
 
-#[tauri::command]
-async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
+fn daemon_version_string(app: &AppHandle) -> Result<String, String> {
     let binary_path = get_binary_path(&app)?;
 
     let attempts: [&[&str]; 2] = [
@@ -813,6 +831,11 @@ async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
     }
 
     Err("Unable to read daemon version".to_string())
+}
+
+#[tauri::command]
+async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
+    daemon_version_string(&app)
 }
 
 #[tauri::command]

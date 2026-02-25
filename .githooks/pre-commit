@@ -1,0 +1,5 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+npm run --silent sync:version
+git add VERSION package.json src-tauri/Cargo.toml src-tauri/tauri.conf.json

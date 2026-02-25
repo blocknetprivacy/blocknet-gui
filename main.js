@@ -20,6 +20,8 @@ let miningDifficultyLoading = false;
 let qrDismissTimer = null;
 let sendArmed = false;
 let sendArmTimer = null;
+let pendingSendIdempotency = null;
+const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let activeWalletName = 'wallet.dat';
@@ -146,6 +148,7 @@ async function api(path, opts = {}) {
     method: opts.method || 'GET',
     path: path,
     body: opts.body ? JSON.stringify(opts.body) : null,
+    headers: opts.headers || null,
   });
   return JSON.parse(result);
 }
@@ -242,7 +245,7 @@ async function loadVersions() {
 
   try {
     var walletVersion = await invoke('get_wallet_version');
-    if (walletEl) walletEl.textContent = walletVersion ? ('v' + String(walletVersion).trim()) : '--';
+    if (walletEl) walletEl.textContent = walletVersion ? String(walletVersion).trim() : '--';
   } catch (_) {}
 
   try {
@@ -1081,6 +1084,29 @@ async function handleSend(e) {
   btn.classList.remove('armed');
 
   const amount = Math.round(amountBNT * 100000000);
+  const sendPayload = { address, amount };
+  const payloadKey = JSON.stringify(sendPayload);
+  const now = Date.now();
+  let idempotencyKey = null;
+  if (
+    pendingSendIdempotency &&
+    pendingSendIdempotency.payloadKey === payloadKey &&
+    (now - pendingSendIdempotency.createdAt) < SEND_IDEMPOTENCY_WINDOW_MS
+  ) {
+    idempotencyKey = pendingSendIdempotency.key;
+  } else {
+    idempotencyKey = (
+      (window.crypto && typeof window.crypto.randomUUID === 'function')
+        ? window.crypto.randomUUID()
+        : ('send-' + now + '-' + Math.random().toString(16).slice(2))
+    );
+    pendingSendIdempotency = {
+      payloadKey: payloadKey,
+      key: idempotencyKey,
+      createdAt: now,
+    };
+  }
+
   btn.disabled = true;
   btn.textContent = 'Sending...';
   showSendStatus('Building transaction...', 'info');
@@ -1088,13 +1114,22 @@ async function handleSend(e) {
   try {
     const result = await api('/api/wallet/send', {
       method: 'POST',
-      body: { address, amount },
+      body: sendPayload,
+      headers: {
+        'Idempotency-Key': idempotencyKey,
+      },
     });
     showSendStatus('Sent! TX: ' + result.txid.substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
+    pendingSendIdempotency = null;
     document.getElementById('send-address').value = '';
     document.getElementById('send-amount').value = '';
   } catch (e) {
-    showSendStatus(normalizeError(e), 'error');
+    const msg = normalizeError(e);
+    showSendStatus(msg, 'error');
+    // Keep idempotency key only for transport-uncertain failures.
+    if (!msg.toLowerCase().includes('request failed:')) {
+      pendingSendIdempotency = null;
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = 'Send';
@@ -1365,8 +1400,12 @@ async function handlePasswordScreenImportSubmit() {
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
 
     var importedName = result.filename || filename || 'wallet.dat';
-    // The daemon already loaded this wallet via import, just set it active
-    // and go straight to the app
+    // Persist the imported wallet as active so next launch prompts for this wallet.
+    try {
+      await invoke('switch_wallet', { name: importedName });
+    } catch (_) {}
+
+    // The daemon already loaded this wallet via import; continue into app.
     sessionPassword = password;
     showApp();
   } catch (e) {
@@ -1634,6 +1673,7 @@ function showPasswordScreen(newWallet) {
     subtitle.textContent = '';
     form.style.display = 'none';
     choice.style.display = 'flex';
+    loadOnboardWalletList();
     if (backLink) backLink.style.display = 'none';
   } else {
     subtitle.textContent = 'Enter your wallet password';
@@ -1682,7 +1722,7 @@ function showOnboardImport() {
   var existing = document.getElementById('password-screen-import');
   if (existing) { existing.remove(); }
 
-  var container = document.querySelector('.password-container');
+  var container = document.querySelector('.password-main');
   var div = document.createElement('div');
   div.id = 'password-screen-import';
   div.className = 'password-import-inline';
@@ -1712,6 +1752,7 @@ function showOnboardBack() {
   var subtitle = document.getElementById('password-subtitle');
   var backLink = document.getElementById('password-back-link');
   choice.style.display = 'flex';
+  loadOnboardWalletList();
   subtitle.textContent = '';
   if (backLink) backLink.style.display = 'none';
   hideStatus();
@@ -1733,7 +1774,7 @@ function showUnlockScreen() {
   const seedStatus = document.getElementById('seed-status');
   const settingsStatus = document.getElementById('settings-status');
 
-  if (passwordTitle) passwordTitle.textContent = 'Welcome to blocknet';
+  if (passwordTitle) passwordTitle.textContent = 'Welcome to Blocknet';
   if (subtitle) subtitle.textContent = 'Enter your wallet password';
   if (password1) password1.value = '';
   if (password2) {
@@ -1796,6 +1837,67 @@ function showStatus(message, type) {
 
 function hideStatus() {
   document.getElementById('password-status').style.display = 'none';
+}
+
+async function loadOnboardWalletList() {
+  var listEl = document.getElementById('onboard-wallet-list');
+  if (!listEl) return;
+
+  try {
+    var wallets = await invoke('list_wallets');
+    var active = '';
+    try { active = await invoke('get_active_wallet'); } catch (_) {}
+
+    if (!wallets || wallets.length === 0) {
+      listEl.innerHTML = '<div class="onboard-wallet-empty">No wallet files found yet.</div>';
+      return;
+    }
+
+    var ordered = wallets.slice().sort(function (a, b) {
+      if (a === active) return -1;
+      if (b === active) return 1;
+      return a.localeCompare(b);
+    });
+
+    listEl.innerHTML = ordered.map(function (name) {
+      var display = name.replace(/\.dat$/i, '');
+      var activeClass = name === active ? ' active' : '';
+      return '<button type="button" class="onboard-wallet-row' + activeClass + '" data-wallet="' + escapeHtml(name) + '">' +
+        '<span class="onboard-wallet-bullet">&#8226;</span>' +
+        '<span>' + escapeHtml(display) + '.dat</span>' +
+      '</button>';
+    }).join('');
+
+    listEl.querySelectorAll('.onboard-wallet-row').forEach(function (btn) {
+      btn.addEventListener('click', async function () {
+        var selected = btn.getAttribute('data-wallet');
+        if (!selected) return;
+        try {
+          await invoke('switch_wallet', { name: selected });
+          setActiveWalletName(selected);
+          isNewWallet = false;
+          var choice = document.getElementById('onboard-choice');
+          var form = document.getElementById('password-form');
+          var subtitle = document.getElementById('password-subtitle');
+          var password2 = document.getElementById('password2');
+          var backLink = document.getElementById('password-back-link');
+          var psImport = document.getElementById('password-screen-import');
+          if (psImport) psImport.remove();
+          if (choice) choice.style.display = 'none';
+          if (form) form.style.display = 'flex';
+          if (subtitle) subtitle.textContent = 'Enter your wallet password';
+          if (password2) password2.style.display = 'none';
+          if (backLink) backLink.style.display = 'none';
+          showStatus('Selected ' + selected.replace(/\.dat$/i, '') + '. Enter password to unlock.', 'info');
+          document.getElementById('password1').focus();
+        } catch (e) {
+          showStatus(normalizeError(e), 'error');
+        }
+      });
+    });
+  } catch (_) {
+    listEl.innerHTML = '<div class="onboard-wallet-empty">Unable to load wallet list.</div>';
+  }
 }
 
 // --- Password form ---
