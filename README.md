@@ -15,6 +15,8 @@
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-aaff00?style=flat-square&labelColor=000">
 </p>
 
+<img width="1313" height="686" alt="image" src="https://github.com/user-attachments/assets/3334cc0a-917b-4875-a170-5e59a12f09f2" />
+
 ---
 
 ## Download
