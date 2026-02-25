@@ -24,6 +24,34 @@ let pendingSendIdempotency = null;
 const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
+let dashForceRefresh = false;
+
+function getPendingSends() {
+  try { return JSON.parse(localStorage.getItem(walletKey('pendingSends')) || '[]'); } catch (_) { return []; }
+}
+function savePendingSends(list) {
+  localStorage.setItem(walletKey('pendingSends'), JSON.stringify(list));
+}
+function addPendingSend(txid, amount, memo) {
+  var list = getPendingSends();
+  if (list.some(function (p) { return p.txid === txid; })) return;
+  list.push({ txid: txid, amount: amount, block_height: 0, spent: true, is_coinbase: false, memo_hex: memo || undefined });
+  savePendingSends(list);
+}
+function prunePendingSends(confirmedOutputs) {
+  var list = getPendingSends();
+  if (!list.length) return;
+  var confirmedTxids = {};
+  confirmedOutputs.forEach(function (o) { confirmedTxids[o.txid] = true; });
+  var pruned = list.filter(function (p) { return !confirmedTxids[p.txid]; });
+  if (pruned.length !== list.length) savePendingSends(pruned);
+  return pruned;
+}
+function mergeWithPending(outputs) {
+  var pending = prunePendingSends(outputs);
+  if (!pending || !pending.length) return outputs;
+  return pending.concat(outputs);
+}
 let activeWalletName = 'wallet.dat';
 
 function walletKey(base) {
@@ -207,7 +235,11 @@ function formatBytes(bytes) {
 
 // --- Navigation ---
 
+var viewStack = [];
+
 function navigate(view) {
+  if (currentView && currentView !== view) viewStack.push(currentView);
+  if (viewStack.length > 20) viewStack.splice(0, viewStack.length - 20);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
   document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
 
@@ -218,6 +250,17 @@ function navigate(view) {
 
   currentView = view;
   loadView(view);
+}
+
+function navigateBack() {
+  var prev = viewStack.pop() || 'dashboard';
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-link').forEach(n => n.classList.remove('active'));
+  var viewEl = document.getElementById('view-' + prev);
+  var navEl = document.querySelector('[data-view="' + prev + '"]');
+  if (viewEl) viewEl.classList.add('active');
+  if (navEl) navEl.classList.add('active');
+  currentView = prev;
 }
 
 async function loadView(view) {
@@ -286,11 +329,11 @@ async function loadDashboard() {
     // balance may fail during sync, that's ok
   }
 
-  // Only re-fetch history when chain height changes (avoid hammering API every poll tick)
   try {
     var statusHeight = parseInt(document.getElementById('dash-height').textContent.replace(/,/g, '')) || 0;
-    if (statusHeight !== dashLastHeight) {
+    if (statusHeight !== dashLastHeight || dashForceRefresh) {
       dashLastHeight = statusHeight;
+      dashForceRefresh = false;
       var data = await api('/api/wallet/history');
       var container = document.getElementById('dash-recent-tx');
       var hasOutputsArray = data && Array.isArray(data.outputs);
@@ -301,6 +344,7 @@ async function loadDashboard() {
       } else {
         try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
       }
+      if (outputs) outputs = mergeWithPending(outputs);
       if (!outputs || outputs.length === 0) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
         dashLastTxCount = 0;
@@ -314,19 +358,28 @@ async function loadDashboard() {
           dashLastTxCount = inboundCount;
         }
 
-        var sorted = outputs.slice().sort(function (a, b) { return b.block_height - a.block_height; });
+        var sorted = outputs.slice().sort(function (a, b) {
+          if (!a.block_height && b.block_height) return -1;
+          if (a.block_height && !b.block_height) return 1;
+          return b.block_height - a.block_height;
+        });
         var limit = window.innerHeight < 720 ? 3 : 5;
         var recent = sorted.slice(0, limit);
         container.innerHTML = recent.map(function (o) {
           var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
-          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '">' +
-            '<span class="recent-tx-amount ' + (o.spent ? '' : 'g') + '">' +
+          var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
+          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" data-txid="' + o.txid + '">' +
+            '<span class="recent-tx-amount ' + (o.spent ? 'r' : 'g') + '">' +
               (o.spent ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
-            '<span class="recent-tx-type ' + (o.spent ? 'd' : 'g') + '">' + typeLabel + '</span>' +
-            '<span class="recent-tx-block d">Block ' + o.block_height + '</span>' +
+            '<span class="recent-tx-type ' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
+            (memoText ? '<span class="recent-tx-memo d">"' + escapeHtml(memoText) + '"</span>' : '') +
+            '<span class="recent-tx-block d">' + (o.block_height ? 'Block ' + o.block_height : 'Pending') + '</span>' +
           '</div>';
         }).join('');
+        container.querySelectorAll('.recent-tx-row[data-txid]').forEach(function (row) {
+          row.addEventListener('click', function () { showTxDetail(row.dataset.txid); });
+        });
         if (fromCache) {
           container.insertAdjacentHTML('beforeend', '<div class="tx-cache-note d">Cached ; resyncing blockchain</div>');
         }
@@ -341,7 +394,10 @@ async function loadDashboard() {
 
 async function loadReceive() {
   const data = await api('/api/wallet/address');
-  document.getElementById('receive-address').textContent = data.address;
+  var addrEl = document.getElementById('receive-address');
+  addrEl.textContent = data.address;
+  addrEl.dataset.copy = data.address;
+  wireCopyable();
 
   if (typeof qrcode === 'function') {
     var svgHtml = renderQRSvg(data.address);
@@ -403,6 +459,8 @@ async function loadHistory() {
     try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
   }
 
+  if (outputs) outputs = mergeWithPending(outputs);
+
   if (!outputs || outputs.length === 0) {
     renderHistoryBalanceSparkline([]);
     container.innerHTML = '<div class="empty">No transactions yet</div>';
@@ -412,19 +470,26 @@ async function loadHistory() {
   renderHistoryBalanceSparkline(outputs);
 
   // Show newest first
-  const sorted = outputs.slice().sort((a, b) => b.block_height - a.block_height);
+  const sorted = outputs.slice().sort(function (a, b) {
+    if (!a.block_height && b.block_height) return -1;
+    if (a.block_height && !b.block_height) return 1;
+    return b.block_height - a.block_height;
+  });
 
   container.innerHTML = sorted.map(o => {
     const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
     return '<div class="history-row' + (o.spent ? ' spent' : '') + '" data-txid="' + o.txid + '">' +
-      '<div class="history-amount ' + (o.spent ? '' : 'g') + '">' +
+      '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
         (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
       '</div>' +
       '<div class="history-meta">' +
-        '<span class="d">Block ' + o.block_height + '</span>' +
-        '<span class="' + (o.spent ? 'd' : 'g') + '">' + typeLabel + '</span>' +
+        (o.block_height
+          ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>'
+          : '<span class="d">Pending</span>') +
+        '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
       '</div>' +
-      '<div class="history-tx d">' + o.txid.substring(0, 24) + '...</div>' +
+      memoHtml(o) +
+      '<div class="history-tx d">' + copyable(o.txid, o.txid.substring(0, 24) + '...') + '</div>' +
     '</div>';
   }).join('');
 
@@ -432,10 +497,12 @@ async function loadHistory() {
     container.insertAdjacentHTML('afterbegin', '<div class="tx-cache-note d">Showing cached history ; resyncing blockchain</div>');
   }
 
+  wireCopyable(container);
   container.querySelectorAll('.history-row[data-txid]').forEach(row => {
-    row.addEventListener('click', () => {
-      window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/tx/' + row.dataset.txid);
-    });
+    row.addEventListener('click', function () { showTxDetail(row.dataset.txid); });
+  });
+  container.querySelectorAll('[data-block]').forEach(function (el) {
+    el.addEventListener('click', function (e) { e.stopPropagation(); showBlockDetail(el.dataset.block); });
   });
 }
 
@@ -866,7 +933,7 @@ function renderAddressBook() {
     return '<div class="address-book-row" data-idx="' + i + '">' +
       '<div class="ab-info">' +
         '<span class="ab-name">' + escapeHtml(entry.name) + '</span>' +
-        '<span class="ab-addr d">' + entry.address.substring(0, 24) + '...</span>' +
+        '<span class="ab-addr d">' + (isHandlePrefix(entry.address.charAt(0)) ? escapeHtml(entry.address) : entry.address.substring(0, 24) + '...') + '</span>' +
       '</div>' +
       '<div class="ab-actions">' +
         '<button class="ab-use-btn" data-idx="' + i + '">Use</button>' +
@@ -882,6 +949,7 @@ function renderAddressBook() {
       if (entry) {
         document.getElementById('send-address').value = entry.address;
         hideAddressSuggestions();
+        debouncedResolve();
       }
     });
   });
@@ -1006,8 +1074,9 @@ function showAddressSuggestions() {
     return;
   }
 
+  var searchQuery = (query.length > 1 && isHandlePrefix(query.charAt(0))) ? query.slice(1) : query;
   var matches = book.filter(function (e) {
-    return e.name.toLowerCase().indexOf(query) >= 0 || e.address.toLowerCase().indexOf(query) >= 0;
+    return e.name.toLowerCase().indexOf(searchQuery) >= 0 || e.address.toLowerCase().indexOf(searchQuery) >= 0;
   });
 
   if (matches.length === 0) {
@@ -1020,7 +1089,7 @@ function showAddressSuggestions() {
   container.innerHTML = matches.map(function (e) {
     return '<div class="address-suggestion" data-address="' + e.address + '">' +
       '<span class="as-name">' + escapeHtml(e.name) + '</span>' +
-      '<span class="as-addr d">' + e.address.substring(0, 20) + '...</span>' +
+      '<span class="as-addr d">' + (isHandlePrefix(e.address.charAt(0)) ? escapeHtml(e.address) : e.address.substring(0, 20) + '...') + '</span>' +
     '</div>';
   }).join('');
 
@@ -1029,6 +1098,7 @@ function showAddressSuggestions() {
       ev.preventDefault();
       input.value = el.dataset.address;
       hideAddressSuggestions();
+      debouncedResolve();
     });
   });
 }
@@ -1045,22 +1115,199 @@ function escapeHtml(str) {
   return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 }
 
+function copyable(text, display) {
+  return '<span class="sv-copyable" data-copy="' + escapeHtml(text) + '">' + (display || escapeHtml(text)) + '</span>';
+}
+
+function wireCopyable(container) {
+  (container || document).querySelectorAll('.sv-copyable[data-copy]').forEach(function (el) {
+    if (el.dataset.copyWired) return;
+    el.dataset.copyWired = '1';
+    el.addEventListener('click', function (e) {
+      e.stopPropagation();
+      navigator.clipboard.writeText(el.dataset.copy);
+      el.classList.add('copied');
+      setTimeout(function () { el.classList.remove('copied'); }, 1500);
+    });
+  });
+}
+
+function hexToUtf8(hex) {
+  if (!hex) return '';
+  try {
+    var bytes = new Uint8Array(hex.match(/.{1,2}/g).map(function (b) { return parseInt(b, 16); }));
+    return new TextDecoder().decode(bytes);
+  } catch (_) { return ''; }
+}
+
+function memoHtml(o) {
+  if (!o.memo_hex) return '';
+  var text = hexToUtf8(o.memo_hex);
+  if (!text) return '';
+  return '<div class="history-memo">' + escapeHtml(text) + '</div>';
+}
+
 // --- Send ---
+
+let resolvedHandle = null;
+let blocknetIdPubKey = null;
+
+async function getBlocknetIdPubKey() {
+  if (blocknetIdPubKey) return blocknetIdPubKey;
+  var raw = await invoke('fetch_url', { url: 'https://blocknet.id/.well-known/blocknet-id.json' });
+  var data = JSON.parse(raw);
+  if (!data.signing_pubkey) return null;
+  blocknetIdPubKey = data.signing_pubkey;
+  return blocknetIdPubKey;
+}
+
+function b64ToBytes(b64) {
+  return Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
+}
+
+async function verifyResolveSig(data) {
+  try {
+    var pubKeyB64 = await getBlocknetIdPubKey();
+    if (!pubKeyB64 || !data.payload || !data.sig) return false;
+    var msg = new TextEncoder().encode(data.payload);
+    var sig = b64ToBytes(data.sig);
+    var pubBytes = b64ToBytes(pubKeyB64);
+    if (sig.length !== 64 || pubBytes.length !== 32) return false;
+    var key = await crypto.subtle.importKey('raw', pubBytes, { name: 'Ed25519' }, false, ['verify']);
+    return await crypto.subtle.verify('Ed25519', key, sig, msg);
+  } catch (_) {
+    return false;
+  }
+}
+
+async function resolveHandle(handle) {
+  var raw = await invoke('fetch_url', { url: 'https://blocknet.id/api/v1/resolve/' + encodeURIComponent(handle) });
+  var data = JSON.parse(raw);
+  if (!data.address) throw new Error('No address for handle');
+  data.verified = await verifyResolveSig(data);
+  return data;
+}
+
+function isHandlePrefix(ch) { return ch === '$' || ch === '@'; }
+
+function abbrAddr(addr) {
+  if (!addr || addr.length < 12) return addr;
+  return addr.substring(0, 4) + '...' + addr.substring(addr.length - 4);
+}
+
+function showResolved(prefix, handle, address, verified, updatedAt) {
+  var el = document.getElementById('send-resolved');
+  var parts = '';
+  if (verified) {
+    parts += ' <span class="resolve-ok">✓ verified</span>';
+  } else {
+    parts += ' <span class="resolve-fail">✗ unverified</span>';
+  }
+  if (updatedAt) {
+    var ageSec = Math.floor(Date.now() / 1000) - updatedAt;
+    if (ageSec < 86400) {
+      parts += ' <span class="resolve-new-24h">⚠ changed ' + humanAge(ageSec) + ' ago</span>';
+    } else if (ageSec < 604800) {
+      parts += ' <span class="resolve-new-7d">changed ' + humanAge(ageSec) + ' ago</span>';
+    }
+  }
+  el.innerHTML = '<span class="g">' + prefix + escapeHtml(handle) + '</span> → ' +
+    copyable(address, escapeHtml(abbrAddr(address))) + parts;
+  el.style.display = 'block';
+  wireCopyable(el);
+}
+
+function humanAge(sec) {
+  if (sec < 60) return sec + 's';
+  if (sec < 3600) return Math.floor(sec / 60) + 'm';
+  if (sec < 86400) return Math.floor(sec / 3600) + 'h';
+  return Math.floor(sec / 86400) + 'd';
+}
+
+function hideResolved() {
+  resolvedHandle = null;
+  var el = document.getElementById('send-resolved');
+  if (el) { el.style.display = 'none'; el.innerHTML = ''; }
+}
+
+var resolveDebounceTimer = null;
+
+function debouncedResolve() {
+  if (resolveDebounceTimer) clearTimeout(resolveDebounceTimer);
+  var val = document.getElementById('send-address').value.trim();
+  if (!val || !isHandlePrefix(val.charAt(0)) || val.length < 2) {
+    hideResolved();
+    return;
+  }
+  resolveDebounceTimer = setTimeout(function () {
+    var current = document.getElementById('send-address').value.trim();
+    if (current !== val) return;
+    var prefix = val.charAt(0);
+    var handle = val.slice(1);
+    if (resolvedHandle && resolvedHandle.handle === handle) return;
+    var el = document.getElementById('send-resolved');
+    el.textContent = 'Resolving ' + prefix + handle + '...';
+    el.style.display = 'block';
+    resolveHandle(handle).then(function (data) {
+      if (document.getElementById('send-address').value.trim() !== val) return;
+      resolvedHandle = { handle: handle, address: data.address, verified: data.verified, updatedAt: data.updated_at };
+      showResolved(prefix, handle, data.address, data.verified, data.updated_at);
+    }).catch(function () {
+      if (document.getElementById('send-address').value.trim() !== val) return;
+      hideResolved();
+    });
+  }, 2000);
+}
 
 async function handleSend(e) {
   e.preventDefault();
-  const address = document.getElementById('send-address').value.trim();
+  const rawAddress = document.getElementById('send-address').value.trim();
   const amountStr = document.getElementById('send-amount').value;
+  const memo = (document.getElementById('send-memo').value || '').trim();
   const btn = document.getElementById('send-submit');
 
-  if (!address) {
-    showSendStatus('Enter a recipient address', 'error');
+  if (!rawAddress) {
+    showSendStatus('Enter a recipient address or $handle', 'error');
     return;
   }
   const amountBNT = parseFloat(amountStr);
   if (!amountBNT || amountBNT <= 0) {
     showSendStatus('Enter a valid amount', 'error');
     return;
+  }
+
+  var address = rawAddress;
+  var displayRecipient = rawAddress.substring(0, 16) + '...';
+  var prefix = rawAddress.charAt(0);
+
+  if (isHandlePrefix(prefix)) {
+    var handle = rawAddress.slice(1);
+    if (!handle) {
+      showSendStatus('Enter a handle after ' + prefix, 'error');
+      return;
+    }
+    if (!resolvedHandle || resolvedHandle.handle !== handle) {
+      btn.disabled = true;
+      btn.textContent = 'Resolving...';
+      showSendStatus('Resolving ' + prefix + handle + '...', 'info');
+      try {
+        var resolved = await resolveHandle(handle);
+        resolvedHandle = { handle: handle, address: resolved.address, verified: resolved.verified, updatedAt: resolved.updated_at };
+        showResolved(prefix, handle, resolved.address, resolved.verified, resolved.updated_at);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = 'Send';
+        hideResolved();
+        showSendStatus('Could not resolve ' + prefix + handle + ': ' + normalizeError(err), 'error');
+        return;
+      } finally {
+        btn.disabled = false;
+      }
+    }
+    address = resolvedHandle.address;
+    displayRecipient = prefix + handle;
+  } else {
+    hideResolved();
   }
 
   if (!sendArmed) {
@@ -1072,10 +1319,14 @@ async function handleSend(e) {
       btn.textContent = 'Send';
       btn.classList.remove('armed');
       document.getElementById('send-status').style.display = 'none';
+      hideResolved();
     }, 10000);
     btn.textContent = 'Confirm Send';
     btn.classList.add('armed');
-    showSendStatus('Send ' + amountBNT + ' BNT to ' + address.substring(0, 16) + '...? Press again within 10s to confirm.', 'info');
+    var confirmMsg = 'Send ' + amountBNT + ' BNT to ' + displayRecipient + '?';
+    if (memo) confirmMsg += '  Memo: "' + memo + '"';
+    confirmMsg += '  Press again within 10s to confirm.';
+    showSendStatus(confirmMsg, 'info');
     return;
   }
 
@@ -1085,6 +1336,7 @@ async function handleSend(e) {
 
   const amount = Math.round(amountBNT * 100000000);
   const sendPayload = { address, amount };
+  if (memo) sendPayload.memo_text = memo;
   const payloadKey = JSON.stringify(sendPayload);
   const now = Date.now();
   let idempotencyKey = null;
@@ -1120,13 +1372,27 @@ async function handleSend(e) {
       },
     });
     showSendStatus('Sent! TX: ' + result.txid.substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
+    addPendingSend(result.txid, amount + result.fee, result.memo_hex);
+    if (resolvedHandle && resolvedHandle.handle) {
+      var book = getAddressBook();
+      var handle = resolvedHandle.handle;
+      var handleAddr = '$' + handle;
+      var idx = book.findIndex(function (e) { return e.name.toLowerCase() === handle.toLowerCase(); });
+      if (idx < 0) {
+        book.push({ name: handle, address: handleAddr });
+        saveAddressBook(book);
+        renderAddressBook();
+      }
+    }
     pendingSendIdempotency = null;
     document.getElementById('send-address').value = '';
     document.getElementById('send-amount').value = '';
+    document.getElementById('send-memo').value = '';
+    hideResolved();
+    dashForceRefresh = true;
   } catch (e) {
     const msg = normalizeError(e);
     showSendStatus(msg, 'error');
-    // Keep idempotency key only for transport-uncertain failures.
     if (!msg.toLowerCase().includes('request failed:')) {
       pendingSendIdempotency = null;
     }
@@ -2102,14 +2368,196 @@ async function init() {
   }
 }
 
+// --- TX Detail ---
+
+async function showTxDetail(txid) {
+  navigate('tx-detail');
+  var container = document.getElementById('tx-detail-content');
+  container.innerHTML = '<div class="d">Loading...</div>';
+  try {
+    var data = await api('/api/tx/' + txid);
+    var tx = data.tx;
+    var status = data.in_mempool
+      ? '<span class="g">In mempool</span>'
+      : '<span class="d">' + data.confirmations + ' confirmation' + (data.confirmations !== 1 ? 's' : '') + '</span>';
+    var blockLink = data.block_height
+      ? '<a class="detail-link" data-block="' + data.block_height + '">Block ' + data.block_height + '</a>'
+      : 'Pending';
+
+    container.innerHTML =
+      '<div class="detail-grid">' +
+        '<div class="detail-label">TX Hash</div>' +
+        '<div class="detail-value mono">' + copyable(txid) + '</div>' +
+        '<div class="detail-label">Status</div>' +
+        '<div class="detail-value">' + status + '</div>' +
+        '<div class="detail-label">Block</div>' +
+        '<div class="detail-value">' + blockLink + '</div>' +
+        '<div class="detail-label">Fee</div>' +
+        '<div class="detail-value">' + formatBNT(tx.fee) + ' BNT</div>' +
+        '<div class="detail-label">Inputs</div>' +
+        '<div class="detail-value">' + (tx.inputs ? tx.inputs.length : 0) + '</div>' +
+        '<div class="detail-label">Outputs</div>' +
+        '<div class="detail-value">' + (tx.outputs ? tx.outputs.length : 0) + '</div>' +
+      '</div>' +
+      '<div class="detail-actions">' +
+        '<button class="btn-secondary" id="tx-open-explorer">Open in Explorer</button>' +
+      '</div>';
+
+    document.getElementById('tx-open-explorer').addEventListener('click', function () {
+      window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/tx/' + txid);
+    });
+    wireCopyable(container);
+
+    container.querySelectorAll('[data-block]').forEach(function (el) {
+      el.addEventListener('click', function () { showBlockDetail(el.dataset.block); });
+    });
+  } catch (e) {
+    container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
+  }
+}
+
+// --- Block Detail ---
+
+async function showBlockDetail(id) {
+  navigate('block-detail');
+  var container = document.getElementById('block-detail-content');
+  container.innerHTML = '<div class="d">Loading...</div>';
+  try {
+    var block = await api('/api/block/' + id);
+    var time = new Date(block.timestamp * 1000);
+    var timeStr = time.toLocaleString();
+
+    var txRows = '';
+    if (block.transactions && block.transactions.length) {
+      txRows = block.transactions.map(function (t) {
+        var label = t.is_coinbase ? '<span class="g">coinbase</span>' : (t.fee ? formatBNT(t.fee) + ' BNT fee' : '');
+        return '<div class="block-tx-row">' +
+          '<a class="detail-link mono" data-txid="' + escapeHtml(t.hash) + '">' + t.hash.substring(0, 24) + '...</a>' +
+          '<span class="d">' + t.inputs + ' in / ' + t.outputs + ' out</span>' +
+          '<span class="d">' + label + '</span>' +
+        '</div>';
+      }).join('');
+    }
+
+    container.innerHTML =
+      '<div class="detail-grid">' +
+        '<div class="detail-label">Height</div>' +
+        '<div class="detail-value">' + block.height + '</div>' +
+        '<div class="detail-label">Hash</div>' +
+        '<div class="detail-value mono">' + copyable(block.hash) + '</div>' +
+        '<div class="detail-label">Previous</div>' +
+        '<div class="detail-value">' + (block.height > 0
+          ? '<a class="detail-link mono" data-block="' + (block.height - 1) + '">' + escapeHtml(block.prev_hash) + '</a>'
+          : '<span class="mono d">Genesis</span>') + '</div>' +
+        '<div class="detail-label">Time</div>' +
+        '<div class="detail-value">' + escapeHtml(timeStr) + '</div>' +
+        '<div class="detail-label">Confirmations</div>' +
+        '<div class="detail-value">' + block.confirmations + '</div>' +
+        '<div class="detail-label">Reward</div>' +
+        '<div class="detail-value g">' + formatBNT(block.reward) + ' BNT</div>' +
+        '<div class="detail-label">Difficulty</div>' +
+        '<div class="detail-value">' + block.difficulty.toLocaleString() + '</div>' +
+        '<div class="detail-label">Nonce</div>' +
+        '<div class="detail-value">' + block.nonce.toLocaleString() + '</div>' +
+        '<div class="detail-label">Merkle Root</div>' +
+        '<div class="detail-value mono">' + copyable(block.merkle_root) + '</div>' +
+      '</div>' +
+      '<h2>Transactions (' + block.tx_count + ')</h2>' +
+      '<div class="block-tx-list">' + txRows + '</div>';
+
+    wireCopyable(container);
+    container.querySelectorAll('[data-txid]').forEach(function (el) {
+      el.addEventListener('click', function () { showTxDetail(el.dataset.txid); });
+    });
+    container.querySelectorAll('[data-block]').forEach(function (el) {
+      el.addEventListener('click', function () { showBlockDetail(el.dataset.block); });
+    });
+  } catch (e) {
+    container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
+  }
+}
+
+// --- Sign / Verify ---
+
+function initSignVerifyTabs() {
+  document.querySelectorAll('.sv-tab').forEach(function (tab) {
+    tab.addEventListener('click', function () {
+      document.querySelectorAll('.sv-tab').forEach(function (t) { t.classList.remove('active'); });
+      tab.classList.add('active');
+      var target = tab.dataset.tab;
+      document.getElementById('sv-sign').style.display = target === 'sign' ? '' : 'none';
+      document.getElementById('sv-verify').style.display = target === 'verify' ? '' : 'none';
+      document.getElementById('sign-result').style.display = 'none';
+      document.getElementById('verify-result').style.display = 'none';
+    });
+  });
+}
+
+async function handleSign() {
+  var btn = document.getElementById('sign-btn');
+  var message = document.getElementById('sign-message').value;
+  var resultEl = document.getElementById('sign-result');
+  if (!message) {
+    resultEl.innerHTML = '<span class="r">Enter a message to sign</span>';
+    resultEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  resultEl.innerHTML = '<span class="d">Signing...</span>';
+  resultEl.style.display = 'block';
+  try {
+    var data = await api('/api/wallet/sign', { method: 'POST', body: { message: message } });
+    resultEl.innerHTML =
+      '<div class="detail-grid">' +
+        '<div class="detail-label">Address</div>' +
+        '<div class="detail-value mono">' + copyable(data.address) + '</div>' +
+        '<div class="detail-label">Signature</div>' +
+        '<div class="detail-value mono">' + copyable(data.signature) + '</div>' +
+      '</div>';
+    wireCopyable(resultEl);
+  } catch (e) {
+    resultEl.innerHTML = '<span class="r">' + escapeHtml(normalizeError(e)) + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleVerify() {
+  var btn = document.getElementById('verify-btn');
+  var address = document.getElementById('verify-address').value.trim();
+  var message = document.getElementById('verify-message').value;
+  var signature = document.getElementById('verify-signature').value.trim();
+  var resultEl = document.getElementById('verify-result');
+  if (!address || !message || !signature) {
+    resultEl.innerHTML = '<span class="r">All fields are required</span>';
+    resultEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  resultEl.innerHTML = '<span class="d">Verifying...</span>';
+  resultEl.style.display = 'block';
+  try {
+    var data = await api('/api/verify', {
+      method: 'POST',
+      body: { address: address, message: message, signature: signature }
+    });
+    if (data.valid) {
+      resultEl.innerHTML = '<span class="resolve-ok">✓ Signature is valid</span>';
+    } else {
+      resultEl.innerHTML = '<span class="r">✗ Signature is invalid</span>';
+    }
+  } catch (e) {
+    resultEl.innerHTML = '<span class="r">' + escapeHtml(normalizeError(e)) + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
+}
+
 // --- Wire up events ---
 
 document.getElementById('password-form').addEventListener('submit', handlePasswordSubmit);
 document.getElementById('send-form').addEventListener('submit', handleSend);
-document.getElementById('copy-address').addEventListener('click', () => {
-  const addr = document.getElementById('receive-address').textContent;
-  navigator.clipboard.writeText(addr);
-});
+wireCopyable();
 document.getElementById('qr-container').addEventListener('click', showQROverlay);
 document.getElementById('qr-overlay').addEventListener('click', dismissQROverlay);
 document.getElementById('mining-toggle').addEventListener('click', toggleMining);
@@ -2117,7 +2565,7 @@ document.getElementById('threads-inc').addEventListener('click', function () { c
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
-document.getElementById('send-address').addEventListener('input', showAddressSuggestions);
+document.getElementById('send-address').addEventListener('input', function () { showAddressSuggestions(); debouncedResolve(); });
 document.getElementById('send-address').addEventListener('focus', showAddressSuggestions);
 document.getElementById('send-address').addEventListener('blur', function () {
   setTimeout(hideAddressSuggestions, 150);
@@ -2125,6 +2573,11 @@ document.getElementById('send-address').addEventListener('blur', function () {
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
+document.getElementById('tx-detail-back').addEventListener('click', navigateBack);
+document.getElementById('block-detail-back').addEventListener('click', navigateBack);
+document.getElementById('sign-btn').addEventListener('click', handleSign);
+document.getElementById('verify-btn').addEventListener('click', handleVerify);
+initSignVerifyTabs();
 
 // Sound controls
 (function () {
@@ -2173,7 +2626,7 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 
 // --- Keyboard Shortcuts ---
 
-var navKeys = ['dashboard', 'send', 'receive', 'history', 'mining', 'network', 'settings'];
+var navKeys = ['dashboard', 'send', 'receive', 'history', 'mining', 'network', 'signverify', 'settings'];
 
 document.addEventListener('keydown', function (e) {
   // Ignore when typing in inputs/textareas

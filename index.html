@@ -87,6 +87,10 @@
           <img src="icons/network.svg" class="nav-icon" alt="">
           <span class="nav-text">Network</span>
         </button>
+        <button class="nav-link" data-view="signverify">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          <span class="nav-text">Sign / Verify</span>
+        </button>
         <button class="nav-link" data-view="settings">
           <img src="icons/settings.svg" class="nav-icon" alt="">
           <span class="nav-text">Settings</span>
@@ -137,13 +141,18 @@
           <h1>Send</h1>
           <form id="send-form">
             <div class="form-group">
-              <label>Recipient Address</label>
-              <input type="text" id="send-address" placeholder="Stealth address">
+              <label>Recipient</label>
+              <input type="text" id="send-address" placeholder="Address, $handle, or @handle" autocorrect="off" autocapitalize="off" spellcheck="false">
               <div id="address-book-suggestions" class="address-suggestions"></div>
+              <div id="send-resolved" class="send-resolved" style="display: none;"></div>
             </div>
             <div class="form-group">
               <label>Amount (BNT)</label>
               <input type="number" id="send-amount" step="0.00000001" min="0" placeholder="0.00">
+            </div>
+            <div class="form-group">
+              <label>Memo <span class="d">(optional, max 124 bytes)</span></label>
+              <input type="text" id="send-memo" placeholder="" maxlength="124" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="send-actions">
               <button type="submit" class="btn-primary" id="send-submit">Send</button>
@@ -165,9 +174,8 @@
           <h1>Receive</h1>
           <div class="qr-container" id="qr-container"></div>
           <div class="form-group">
-            <label>Your Stealth Address</label>
-            <div class="address-display" id="receive-address">Loading...</div>
-            <button class="btn-primary" id="copy-address" style="margin-top: 12px;">Copy Address</button>
+            <label>Your Stealth Address <span class="d">(click to copy)</span></label>
+            <div class="address-display sv-copyable" id="receive-address">Loading...</div>
           </div>
         </div>
       </div>
@@ -398,6 +406,60 @@
           </div>
         </div>
       </div>
+
+      <!-- Sign / Verify -->
+      <div id="view-signverify" class="view">
+        <div class="container">
+          <h1>Sign / Verify</h1>
+          <div class="signverify-tabs">
+            <button class="sv-tab active" data-tab="sign">Sign</button>
+            <button class="sv-tab" data-tab="verify">Verify</button>
+          </div>
+          <div id="sv-sign" class="sv-panel">
+            <div class="form-group">
+              <label>Message</label>
+              <textarea id="sign-message" rows="3" maxlength="1024" placeholder="Message to sign (max 1024 bytes)" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+            </div>
+            <button class="btn-primary" id="sign-btn">Sign Message</button>
+            <div id="sign-result" class="sv-result" style="display: none;"></div>
+          </div>
+          <div id="sv-verify" class="sv-panel" style="display: none;">
+            <div class="form-group">
+              <label>Address</label>
+              <input type="text" id="verify-address" placeholder="Signer's stealth address" autocorrect="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <div class="form-group">
+              <label>Message</label>
+              <textarea id="verify-message" rows="3" placeholder="Original message" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Signature</label>
+              <input type="text" id="verify-signature" placeholder="Hex-encoded signature (128 chars)" autocorrect="off" autocapitalize="off" spellcheck="false">
+            </div>
+            <button class="btn-primary" id="verify-btn">Verify Signature</button>
+            <div id="verify-result" class="sv-result" style="display: none;"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TX Detail (non-sidebar) -->
+      <div id="view-tx-detail" class="view">
+        <div class="container">
+          <button class="detail-back" id="tx-detail-back">← Back</button>
+          <h1>Transaction</h1>
+          <div id="tx-detail-content"></div>
+        </div>
+      </div>
+
+      <!-- Block Detail (non-sidebar) -->
+      <div id="view-block-detail" class="view">
+        <div class="container">
+          <button class="detail-back" id="block-detail-back">← Back</button>
+          <h1>Block</h1>
+          <div id="block-detail-content"></div>
+        </div>
+      </div>
+
     </div>
   </div>
 

@@ -609,6 +609,20 @@ async fn api_call(
 }
 
 #[tauri::command]
+async fn fetch_url(url: String) -> Result<String, String> {
+    if !url.starts_with("https://") {
+        return Err("only https URLs allowed".into());
+    }
+    let res = reqwest::get(&url)
+        .await
+        .map_err(|e| format!("fetch failed: {}", e))?;
+    if !res.status().is_success() {
+        return Err(format!("HTTP {}", res.status()));
+    }
+    res.text().await.map_err(|e| format!("read failed: {}", e))
+}
+
+#[tauri::command]
 async fn stop_daemon(state: State<'_, DaemonState>) -> Result<(), String> {
     stop_daemon_inner(&state);
     Ok(())
@@ -951,6 +965,7 @@ async fn main() {
             set_tray_unlocked,
             start_api_events,
             stop_api_events,
+            fetch_url,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
