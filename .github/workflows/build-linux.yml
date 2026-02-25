@@ -32,8 +32,8 @@ jobs:
       - name: Validate version sync from daemon
         shell: bash
         run: |
-          chmod +x binaries/blocknet-amd64-linux
-          BLOCKNET_BIN="binaries/blocknet-amd64-linux" npm run --silent sync:version:check
+          chmod +x src-tauri/binaries/blocknet-amd64-linux
+          BLOCKNET_BIN="src-tauri/binaries/blocknet-amd64-linux" npm run --silent sync:version:check
 
       - name: Export version from VERSION file
         shell: bash

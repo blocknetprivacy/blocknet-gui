@@ -24,7 +24,7 @@ jobs:
       - name: Validate version sync from daemon
         shell: bash
         run: |
-          BLOCKNET_BIN="binaries/blocknet-amd64-windows.exe" npm run --silent sync:version:check
+          BLOCKNET_BIN="src-tauri/binaries/blocknet-amd64-windows.exe" npm run --silent sync:version:check
 
       - name: Export version from VERSION file
         shell: bash

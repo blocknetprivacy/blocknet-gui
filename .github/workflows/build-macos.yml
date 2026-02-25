@@ -22,8 +22,8 @@ jobs:
 
       - name: Validate version sync from daemon
         run: |
-          chmod +x binaries/blocknet-aarch64-apple-darwin
-          BLOCKNET_BIN="binaries/blocknet-aarch64-apple-darwin" npm run --silent sync:version:check
+          chmod +x src-tauri/binaries/blocknet-aarch64-apple-darwin
+          BLOCKNET_BIN="src-tauri/binaries/blocknet-aarch64-apple-darwin" npm run --silent sync:version:check
 
       - name: Export version from VERSION file
         run: echo "DAEMON_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
