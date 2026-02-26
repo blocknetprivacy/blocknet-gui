@@ -924,6 +924,21 @@ h2 {
   user-select: all;
 }
 
+.payment-request-section {
+  margin-top: 40px;
+  padding-top: 24px;
+  border-top: 1px solid #222;
+}
+
+.payment-request-section h2 {
+  font-size: 16px;
+  margin-bottom: 12px;
+}
+
+.payment-request-section .btn-primary {
+  width: 100%;
+}
+
 .btn-secondary {
   background: transparent;
   color: #af0;

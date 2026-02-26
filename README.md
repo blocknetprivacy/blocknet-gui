@@ -94,6 +94,32 @@ chmod +x blocknet-amd64-linux-blocknet_0.3.1_amd64.AppImage
 
 ---
 
+## Payment Links (`blocknet://`)
+
+The wallet registers itself as a handler for `blocknet://` URIs. Clicking a `blocknet://` link in a browser or anywhere on the system opens the wallet and pre-fills the Send form.
+
+**Format:**
+
+```
+blocknet://ADDRESS?amount=AMOUNT&memo=MEMO
+```
+
+All query parameters are optional. A bare `blocknet://ADDRESS` works too.
+
+**Try it:** <a href="blocknet://$rock?amount=100&memo=i%20love%20blocknet">blocknet://$rock?amount=100&memo=i love blocknet</a>
+
+**Generating links:**
+
+| Use case | URI |
+|---|---|
+| Address only | `blocknet://BaJFy1VnFSKEo5wMn2CAhKhqariEnMDsFg` |
+| With amount | `blocknet://BaJFy1VnFSKEo5wMn2CAhKhqariEnMDsFg?amount=50` |
+| With memo | `blocknet://$rock?amount=100&memo=i%20love%20blocknet` |
+
+Services can generate these links for invoices, donation buttons, or payment requests. The user always reviews and manually confirms before anything is sent.
+
+---
+
 ## Privacy
 
 This wallet makes **zero** network requests to external services. There are no analytics, no CDNs, no Google Fonts, no remote scripts.
@@ -110,7 +136,6 @@ Requires [Node.js](https://nodejs.org) 20+, [Rust](https://rustup.rs), and platf
 
 ```bash
 npm install
-mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 npx tauri build --config '{"bundle":{"targets":["app"],"resources":["binaries/blocknet-aarch64-apple-darwin"]}}'
 ```
 
@@ -119,7 +144,6 @@ npx tauri build --config '{"bundle":{"targets":["app"],"resources":["binaries/bl
 ```bash
 sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev patchelf
 npm install
-mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 npx tauri build --config '{"bundle":{"targets":["deb","appimage"],"resources":["binaries/blocknet-amd64-linux"]}}'
 ```
 
@@ -129,7 +153,6 @@ Requires [Build Tools for Visual Studio](https://visualstudio.microsoft.com/visu
 
 ```bash
 npm install
-mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp blocknet.png blocknet.svg ui/
 npx tauri build --config '{"bundle":{"targets":["nsis"],"resources":["binaries/blocknet-amd64-windows.exe"]}}'
 ```
 

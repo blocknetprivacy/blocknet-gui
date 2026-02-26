@@ -22,6 +22,7 @@ let sendArmed = false;
 let sendArmTimer = null;
 let pendingSendIdempotency = null;
 const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
+let pendingDeepLink = null;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let dashForceRefresh = false;
@@ -392,15 +393,59 @@ async function loadDashboard() {
 
 // --- Receive ---
 
+var receiveAddress = '';
+
 async function loadReceive() {
   const data = await api('/api/wallet/address');
+  receiveAddress = data.address;
   var addrEl = document.getElementById('receive-address');
   addrEl.textContent = data.address;
   addrEl.dataset.copy = data.address;
   wireCopyable();
 
+  document.getElementById('request-amount').value = '';
+  document.getElementById('request-memo').value = '';
+  document.getElementById('request-link-group').style.display = 'none';
+
   if (typeof qrcode === 'function') {
     var svgHtml = renderQRSvg(data.address);
+    document.getElementById('qr-container').innerHTML = svgHtml;
+    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
+  }
+}
+
+function generatePaymentLink() {
+  if (!receiveAddress) return;
+  var amount = (document.getElementById('request-amount').value || '').trim();
+  var memo = (document.getElementById('request-memo').value || '').trim();
+
+  var uri = 'blocknet://' + receiveAddress;
+  var params = [];
+  if (amount && parseFloat(amount) > 0) params.push('amount=' + encodeURIComponent(amount));
+  if (memo) params.push('memo=' + encodeURIComponent(memo));
+  if (params.length) uri += '?' + params.join('&');
+
+  var group = document.getElementById('request-link-group');
+  var linkEl = document.getElementById('request-link');
+  linkEl.textContent = uri;
+  linkEl.dataset.copy = uri;
+  delete linkEl.dataset.copyWired;
+  group.style.display = '';
+  wireCopyable();
+
+  if (typeof qrcode === 'function') {
+    var svgHtml = renderQRSvg(uri);
+    document.getElementById('qr-container').innerHTML = svgHtml;
+    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
+  }
+}
+
+function clearPaymentLink() {
+  var group = document.getElementById('request-link-group');
+  if (group) group.style.display = 'none';
+  if (!receiveAddress) return;
+  if (typeof qrcode === 'function') {
+    var svgHtml = renderQRSvg(receiveAddress);
     document.getElementById('qr-container').innerHTML = svgHtml;
     document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
   }
@@ -2092,6 +2137,7 @@ async function showAppFromSplash() {
   navigate('dashboard');
   startPolling();
   invoke('set_tray_unlocked', { unlocked: true }).catch(function() {});
+  applyPendingDeepLink();
 }
 
 function showStatus(message, type) {
@@ -2553,6 +2599,66 @@ async function handleVerify() {
   }
 }
 
+// --- Deep link handling ---
+
+function handleDeepLinkUrls(urls) {
+  if (!urls || !urls.length) return;
+  var raw = urls[0];
+  if (!raw.startsWith('blocknet://')) return;
+
+  var stripped = raw.replace('blocknet://', '');
+  var qIdx = stripped.indexOf('?');
+  var address = qIdx >= 0 ? stripped.substring(0, qIdx) : stripped;
+  var params = {};
+  if (qIdx >= 0) {
+    stripped.substring(qIdx + 1).split('&').forEach(function (pair) {
+      var eq = pair.indexOf('=');
+      if (eq > 0) params[decodeURIComponent(pair.substring(0, eq))] = decodeURIComponent(pair.substring(eq + 1));
+    });
+  }
+
+  try {
+    var win = window.__TAURI__.window.getCurrentWindow();
+    win.show();
+    win.setFocus();
+  } catch (_) {}
+
+  var app = document.getElementById('app');
+  if (!app || app.style.display === 'none') {
+    pendingDeepLink = { address: address, amount: params.amount || '', memo: params.memo || '' };
+    return;
+  }
+  prefillSend(address, params.amount || '', params.memo || '');
+}
+
+function prefillSend(address, amount, memo) {
+  navigate('send');
+  if (address) document.getElementById('send-address').value = address;
+  if (amount) document.getElementById('send-amount').value = amount;
+  if (memo) document.getElementById('send-memo').value = memo;
+  showSendStatus('Pre-filled from blocknet:// link. Review and confirm.', 'info');
+}
+
+function applyPendingDeepLink() {
+  if (!pendingDeepLink) return;
+  var dl = pendingDeepLink;
+  pendingDeepLink = null;
+  prefillSend(dl.address, dl.amount, dl.memo);
+}
+
+(async function initDeepLink() {
+  if (!window.__TAURI__ || !window.__TAURI__.event) return;
+  try {
+    await window.__TAURI__.event.listen('deep-link://new-url', function (event) {
+      if (event.payload) handleDeepLinkUrls(event.payload);
+    });
+  } catch (_) {}
+  try {
+    var urls = await window.__TAURI__.core.invoke('plugin:deep-link|get_current');
+    if (urls && urls.length) handleDeepLinkUrls(urls);
+  } catch (_) {}
+})();
+
 // --- Wire up events ---
 
 document.getElementById('password-form').addEventListener('submit', handlePasswordSubmit);
@@ -2560,6 +2666,9 @@ document.getElementById('send-form').addEventListener('submit', handleSend);
 wireCopyable();
 document.getElementById('qr-container').addEventListener('click', showQROverlay);
 document.getElementById('qr-overlay').addEventListener('click', dismissQROverlay);
+document.getElementById('request-generate-btn').addEventListener('click', generatePaymentLink);
+document.getElementById('request-amount').addEventListener('input', clearPaymentLink);
+document.getElementById('request-memo').addEventListener('input', clearPaymentLink);
 document.getElementById('mining-toggle').addEventListener('click', toggleMining);
 document.getElementById('threads-inc').addEventListener('click', function () { changeThreads(1); });
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });

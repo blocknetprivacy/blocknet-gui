@@ -12,10 +12,7 @@ all: clean release
 dev:
 	npm run dev
 
-ui:
-	mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp "src-tauri/icons/blocknet_bg_black.png" ui/icons/ && cp blocknet.png blocknet.svg ui/
-
-release: ui
+release:
 	bash scripts/update-core-binaries.sh
 	mkdir -p ~/.cache/tauri && cp scripts/linuxdeploy-plugin-gtk.sh ~/.cache/tauri/linuxdeploy-plugin-gtk.sh
 	NO_STRIP=1 CI=false npx tauri build --config '$(TAURI_BUILD_CONFIG)'

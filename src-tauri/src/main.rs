@@ -3,7 +3,7 @@
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Manager, State, WindowEvent};
+use tauri::{AppHandle, Listener, Manager, State, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::Emitter;
@@ -162,38 +162,6 @@ fn get_wallet_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
 // Compat shim used by commands that need (data_dir, wallet_path)
 fn get_paths(app: &AppHandle) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
     Ok((get_data_dir(app)?, get_wallet_path(app)?))
-}
-
-fn kill_port_8332() {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let _ = std::process::Command::new("sh")
-            .arg("-c")
-            .arg("pids=$(lsof -ti tcp:8332 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi")
-            .status();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :8332') do taskkill /PID %a /F"])
-            .status();
-    }
-}
-
-fn kill_blocknet_daemon_processes() {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let _ = std::process::Command::new("sh")
-            .arg("-c")
-            .arg("pkill -9 -f 'blocknet-aarch64-apple-darwin|blocknet-amd64-linux|blocknet-amd64-windows.exe' >/dev/null 2>&1 || true")
-            .status();
-    }
-    #[cfg(target_os = "windows")]
-    {
-        let _ = std::process::Command::new("cmd")
-            .args(["/C", "taskkill /IM blocknet-amd64-windows.exe /F >NUL 2>&1"])
-            .status();
-    }
 }
 
 fn kill_listeners_in_gui_port_range() {
@@ -458,8 +426,6 @@ async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
-    // Proactively kill old daemon processes and listeners in GUI-managed range.
-    kill_blocknet_daemon_processes();
     kill_listeners_in_gui_port_range();
     std::thread::sleep(std::time::Duration::from_millis(250));
 
@@ -632,7 +598,7 @@ async fn stop_daemon(state: State<'_, DaemonState>) -> Result<(), String> {
 #[tauri::command]
 async fn reset_blockchain_data(app: AppHandle, state: State<'_, DaemonState>) -> Result<(), String> {
     stop_daemon_inner(&state);
-    kill_port_8332();
+    kill_listeners_in_gui_port_range();
     std::thread::sleep(std::time::Duration::from_millis(500));
 
     let data_dir = get_data_dir(&app)?;
@@ -720,7 +686,7 @@ async fn switch_wallet(app: AppHandle, state: State<'_, DaemonState>, name: Stri
     }
     // Stop current daemon
     stop_daemon_inner(&state);
-    kill_port_8332();
+    kill_listeners_in_gui_port_range();
     std::thread::sleep(std::time::Duration::from_millis(500));
     // Update active wallet
     set_active_wallet_name(&app, &name)?;
@@ -872,7 +838,20 @@ fn set_tray_unlocked(unlocked: bool, tray_state: State<'_, TrayState>) -> Result
 
 #[tokio::main]
 async fn main() {
-    tauri::Builder::default()
+    let mut builder = tauri::Builder::default();
+
+    #[cfg(desktop)]
+    {
+        builder = builder.plugin(tauri_plugin_single_instance::init(|app, argv, _cwd| {
+            println!("single-instance: new invocation with {argv:?}");
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }));
+    }
+
+    builder
         .manage(DaemonState { child: Mutex::new(None) })
         .manage(TrayState { icon: Mutex::new(None) })
         .manage(EventsState { worker: Mutex::new(None) })
@@ -881,6 +860,7 @@ async fn main() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
@@ -935,6 +915,20 @@ async fn main() {
             if let Ok(mut tray_guard) = app.state::<TrayState>().icon.lock() {
                 *tray_guard = Some(_tray);
             }
+
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                use tauri_plugin_deep_link::DeepLinkExt;
+                app.deep_link().register_all()?;
+            }
+
+            let handle = app.handle().clone();
+            app.listen("deep-link://new-url", move |_event| {
+                if let Some(w) = handle.get_webview_window("main") {
+                    let _ = w.show();
+                    let _ = w.set_focus();
+                }
+            });
 
             Ok(())
         })
