@@ -210,15 +210,16 @@ fn kill_listeners_in_gui_port_range() {
     }
     #[cfg(target_os = "windows")]
     {
-        for p in GUI_API_PORT_MIN..=GUI_API_PORT_MAX {
-            let cmd = format!(
-                "for /f \"tokens=5\" %a in ('netstat -ano ^| findstr :{}') do taskkill /PID %a /F",
-                p
-            );
-            let _ = std::process::Command::new("cmd")
-                .args(["/C", &cmd])
-                .status();
-        }
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let ps_cmd = format!(
+            "{}..{} | ForEach-Object {{ Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess }} | Sort-Object -Unique | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}",
+            GUI_API_PORT_MIN, GUI_API_PORT_MAX
+        );
+        let _ = std::process::Command::new("powershell")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+            .status();
     }
 }
 
