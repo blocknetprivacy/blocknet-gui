@@ -43,6 +43,7 @@ modules:
       - -DENABLE_BINDINGS_MONO=NO
       - -DENABLE_BINDINGS_VALA=NO
       - -DENABLE_GTKDOC=NO
+      - -DCMAKE_INSTALL_LIBDIR=lib
     modules:
       - name: libdbusmenu
         buildsystem: autotools
@@ -92,6 +93,8 @@ modules:
 
       - name: libayatana-indicator
         buildsystem: cmake-ninja
+        config-opts:
+          - -DCMAKE_INSTALL_LIBDIR=lib
         cleanup:
           - /include
           - /lib/pkgconfig
