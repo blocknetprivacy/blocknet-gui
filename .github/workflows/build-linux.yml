@@ -21,32 +21,56 @@ jobs:
             libwebkit2gtk-4.1-dev \
             libayatana-appindicator3-dev \
             librsvg2-dev \
-            patchelf
+            patchelf \
+            flatpak \
+            flatpak-builder
+
+      - name: Set up Flatpak runtime
+        run: |
+          sudo flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          sudo flatpak install --noninteractive flathub org.gnome.Platform//48 org.gnome.Sdk//48
 
       - name: Install npm dependencies
         run: npm ci
 
       - name: Prepare frontend
-        run: mkdir -p ui && cp index.html main.js qr.js styles.css ui/ && cp -r icons ui/ && cp "src-tauri/icons/blocknet_bg_black.png" ui/icons/ && cp blocknet.png blocknet.svg ui/
+        run: |
+          mkdir -p ui
+          cp index.html main.js qr.js styles.css ui/
+          cp -r icons ui/
+          cp "src-tauri/icons/blocknet_bg_black.png" ui/icons/
+          cp blocknet.png blocknet.svg ui/
 
-      - name: Validate version sync from daemon
-        shell: bash
+      - name: Validate version sync
         run: |
           chmod +x src-tauri/binaries/blocknet-amd64-linux
           BLOCKNET_BIN="src-tauri/binaries/blocknet-amd64-linux" npm run --silent sync:version:check
 
-      - name: Export version from VERSION file
-        shell: bash
+      - name: Export version
         run: echo "DAEMON_VERSION=$(cat VERSION)" >> "$GITHUB_ENV"
 
-      - name: Build Tauri app
-        run: npx tauri build --config '{"bundle":{"targets":["deb","appimage"],"resources":["binaries/blocknet-amd64-linux"]}}'
+      - name: Patch Tauri linuxdeploy GTK plugin
+        run: |
+          mkdir -p ~/.cache/tauri
+          cp scripts/linuxdeploy-plugin-gtk.sh ~/.cache/tauri/linuxdeploy-plugin-gtk.sh
 
-      - name: Package
+      - name: Build Tauri app (deb, rpm, appimage)
+        env:
+          NO_STRIP: "1"
+        run: |
+          npx tauri build --config '{"bundle":{"targets":["deb","rpm","appimage"],"resources":["binaries/blocknet-amd64-linux"]}}'
+
+      - name: Build Flatpak
+        run: bash scripts/build-flatpak.sh
+
+      - name: Collect artifacts
         run: |
           mkdir -p dist
-          cp src-tauri/target/release/bundle/deb/*.deb "dist/blocknet-amd64-linux-blocknet_${DAEMON_VERSION}_amd64.deb"
-          cp src-tauri/target/release/bundle/appimage/*.AppImage "dist/blocknet-amd64-linux-blocknet_${DAEMON_VERSION}_amd64.AppImage"
+          V="${DAEMON_VERSION}"
+          cp "src-tauri/target/release/bundle/deb/blocknet_${V}_amd64.deb"                     "dist/blocknet-amd64-linux-blocknet_${V}_amd64.deb"
+          cp "src-tauri/target/release/bundle/rpm/blocknet-${V}-1.x86_64.rpm"                  "dist/blocknet-amd64-linux-blocknet_${V}_x86_64.rpm"
+          cp "src-tauri/target/release/bundle/appimage/blocknet_${V}_amd64.AppImage"            "dist/blocknet-amd64-linux-blocknet_${V}_amd64.AppImage"
+          cp "src-tauri/target/release/bundle/flatpak/blocknet_${V}_amd64.flatpak"              "dist/blocknet-amd64-linux-blocknet_${V}_amd64.flatpak"
 
       - uses: actions/upload-artifact@v4
         with:

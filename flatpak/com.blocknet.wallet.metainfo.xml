@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>com.blocknet.wallet</id>
+  <name>Blocknet</name>
+  <summary>Blocknet GUI Wallet</summary>
+  <metadata_license>MIT</metadata_license>
+  <project_license>BSD-3-Clause</project_license>
+  <developer id="com.blocknet">
+    <name>Blocknet Privacy</name>
+  </developer>
+  <description>
+    <p>GUI Wallet for the Blocknet blockchain.</p>
+  </description>
+  <launchable type="desktop-id">com.blocknet.wallet.desktop</launchable>
+  <categories>
+    <category>Finance</category>
+  </categories>
+  <content_rating type="oars-1.1"/>
+  <releases>
+    <release version="0.5.3" date="2026-02-26"/>
+  </releases>
+</component>

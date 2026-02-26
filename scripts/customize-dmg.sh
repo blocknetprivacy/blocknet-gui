@@ -1,6 +1,11 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+if [[ "$(uname)" != "Darwin" ]]; then
+    echo "DMG customization is macOS-only, skipping."
+    exit 0
+fi
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 INSTRUCTIONS_SRC="$ROOT_DIR/scripts/dmg-install-instructions.txt"
 
