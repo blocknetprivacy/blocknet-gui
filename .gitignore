@@ -41,6 +41,13 @@ dist/
 build/
 out/
 ui/
+builds/*
+!builds/.gitkeep
+
+# Flatpak build artifacts
+flatpak/stage/
+flatpak/build-dir/
+flatpak/repo/
 
 # Logs
 *.log

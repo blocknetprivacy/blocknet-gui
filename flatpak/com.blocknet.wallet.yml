@@ -1,0 +1,140 @@
+app-id: com.blocknet.wallet
+runtime: org.gnome.Platform
+runtime-version: '48'
+sdk: org.gnome.Sdk
+command: blocknet-wallet
+
+finish-args:
+  - --share=network
+  - --share=ipc
+  - --socket=x11
+  - --device=dri
+  - --filesystem=home
+  - --talk-name=org.kde.StatusNotifierWatcher
+  - --talk-name=com.canonical.AppMenu.Registrar
+  - --env=GDK_BACKEND=x11
+  - --env=WEBKIT_DISABLE_DMABUF_RENDERER=1
+
+modules:
+  # ------------------------------------------------------------------ #
+  # intltool (build-time dep for libdbusmenu)
+  # ------------------------------------------------------------------ #
+  - name: intltool
+    cleanup:
+      - '*'
+    sources:
+      - type: archive
+        url: https://launchpad.net/intltool/trunk/0.51.0/+download/intltool-0.51.0.tar.gz
+        mirror-urls:
+          - https://gstreamer.freedesktop.org/src/mirror/intltool-0.51.0.tar.gz
+        sha256: 67c74d94196b153b774ab9f89b2fa6c6ba79352407037c8c14d5aeb334e959cd
+      - type: patch
+        path: intltool-perl5.26-regex-fixes.patch
+
+  # ------------------------------------------------------------------ #
+  # libayatana-appindicator (includes libdbusmenu, ayatana-ido, libayatana-indicator)
+  # ------------------------------------------------------------------ #
+  - name: libayatana-appindicator
+    buildsystem: cmake-ninja
+    cleanup:
+      - /include
+      - /lib/pkgconfig
+    config-opts:
+      - -DENABLE_BINDINGS_MONO=NO
+      - -DENABLE_BINDINGS_VALA=NO
+      - -DENABLE_GTKDOC=NO
+    modules:
+      - name: libdbusmenu
+        buildsystem: autotools
+        build-options:
+          cflags: -Wno-error
+        cleanup:
+          - '*.la'
+          - /include
+          - /lib/pkgconfig
+          - /libexec
+          - /share/doc
+          - /share/gtk-doc
+        config-opts:
+          - --with-gtk=3
+          - --disable-dumper
+          - --disable-static
+          - --disable-tests
+          - --disable-gtk-doc
+          - --enable-introspection=no
+          - --disable-vala
+        sources:
+          - type: archive
+            url: https://launchpad.net/libdbusmenu/16.04/16.04.0/+download/libdbusmenu-16.04.0.tar.gz
+            mirror-urls:
+              - https://ftp.fr.openbsd.org/pub/OpenBSD/distfiles/libdbusmenu-16.04.0.tar.gz
+            sha256: b9cc4a2acd74509435892823607d966d424bd9ad5d0b00938f27240a1bfa878a
+          - type: patch
+            paths:
+              - 0001-Fix-HAVE_VALGRIND-AM_CONDITIONAL.patch
+
+      - name: ayatana-ido
+        buildsystem: cmake-ninja
+        cleanup:
+          - /include
+          - /lib/pkgconfig
+        config-opts:
+          - -DENABLE_INTROSPECTION=OFF
+        sources:
+          - type: git
+            url: https://github.com/AyatanaIndicators/ayatana-ido.git
+            tag: '0.10.4'
+            commit: f968079b09e2310fefc3fc307359025f1c74b3eb
+          - type: patch
+            paths:
+              - 0001-Make-introspection-configurable.patch
+
+      - name: libayatana-indicator
+        buildsystem: cmake-ninja
+        cleanup:
+          - /include
+          - /lib/pkgconfig
+          - /libexec
+          - /share
+        sources:
+          - type: git
+            url: https://github.com/AyatanaIndicators/libayatana-indicator.git
+            tag: '0.9.4'
+            commit: 611bb384b73fa6311777ba4c41381a06f5b99dad
+
+    sources:
+      - type: git
+        url: https://github.com/AyatanaIndicators/libayatana-appindicator.git
+        tag: '0.5.94'
+        commit: 31e8bb083b307e1cc96af4874a94707727bd1e79
+
+  # ------------------------------------------------------------------ #
+  # blocknet-wallet
+  # ------------------------------------------------------------------ #
+  - name: blocknet-wallet
+    buildsystem: simple
+    build-commands:
+      - install -Dm755 blocknet-wallet /app/bin/blocknet-wallet
+      - mkdir -p /app/bin/binaries
+      - install -Dm755 blocknet-amd64-linux /app/bin/binaries/blocknet-amd64-linux
+      - install -Dm644 com.blocknet.wallet.desktop /app/share/applications/com.blocknet.wallet.desktop
+      - install -Dm644 128x128.png /app/share/icons/hicolor/128x128/apps/com.blocknet.wallet.png
+      - install -Dm644 128x128@2x.png /app/share/icons/hicolor/256x256/apps/com.blocknet.wallet.png
+      - install -Dm644 com.blocknet.wallet.metainfo.xml /app/share/metainfo/com.blocknet.wallet.metainfo.xml
+    sources:
+      - type: file
+        path: stage/blocknet-wallet
+        dest-filename: blocknet-wallet
+      - type: file
+        path: stage/blocknet-amd64-linux
+        dest-filename: blocknet-amd64-linux
+      - type: file
+        path: com.blocknet.wallet.desktop
+      - type: file
+        path: stage/128x128.png
+        dest-filename: 128x128.png
+      - type: file
+        path: stage/128x128@2x.png
+        dest-filename: 128x128@2x.png
+      - type: file
+        path: com.blocknet.wallet.metainfo.xml

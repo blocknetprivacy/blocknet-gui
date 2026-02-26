@@ -1,0 +1,8 @@
+[Desktop Entry]
+Name=Blocknet
+Comment=Blocknet GUI Wallet
+Exec=blocknet-wallet
+Icon=com.blocknet.wallet
+Type=Application
+Categories=Finance;
+StartupNotify=true
