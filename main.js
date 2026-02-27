@@ -1505,8 +1505,14 @@ async function showPeerDetail(peerId) {
       geo = await geolocateIp(publicIp);
     }
     var hasPoint = !!(geo && typeof geo.lat === 'number' && typeof geo.lon === 'number');
-    var mapLeft = hasPoint ? (((geo.lon + 180) / 360) * 100).toFixed(2) : '50.00';
-    var mapTop = hasPoint ? (((90 - geo.lat) / 180) * 100).toFixed(2) : '50.00';
+    function buildPeerGeoMapUrl(lat, lon) {
+      var latFixed = Number(lat).toFixed(4);
+      var lonFixed = Number(lon).toFixed(4);
+      var center = encodeURIComponent(latFixed + ',' + lonFixed);
+      var marker = encodeURIComponent(latFixed + ',' + lonFixed + ',lightgreen1');
+      return 'https://staticmap.openstreetmap.de/staticmap.php?center=' + center + '&zoom=3&size=1200x340&maptype=mapnik&markers=' + marker;
+    }
+    var geoMapUrl = hasPoint ? buildPeerGeoMapUrl(geo.lat, geo.lon) : '';
     var geoTitle = [geo && geo.city, geo && geo.region, geo && geo.country].filter(Boolean).join(', ');
     function isDisplayable(v) {
       if (v === null || v === undefined) return false;
@@ -1538,14 +1544,7 @@ async function showPeerDetail(peerId) {
       ? '<h2>Geo</h2>' +
         '<div class="peer-panel peer-geo-panel">' +
           '<div class="peer-geo-map">' +
-            '<svg viewBox="0 0 800 320" aria-hidden="true">' +
-              '<g fill="none" stroke="rgba(170,255,0,0.13)" stroke-width="1">' +
-                '<path d="M54 147l36-22 45-3 22 12 34-9 42 8 28-18 26 14 49 0 31 11 35-9 23 20 42 0 34 10 34 30 27-11" />' +
-                '<path d="M75 198l28 11 37 0 41 12 48-7 33 9 44-14 34 11 48-10 27 14 52-4 39 10 24-8" />' +
-                '<path d="M336 92l19 8 26-8 24 14 18-6 20 9 16-7 24 3 18 12 15-7 14 8" />' +
-              '</g>' +
-            '</svg>' +
-            '<div class="peer-geo-dot" style="left:' + mapLeft + '%;top:' + mapTop + '%;"></div>' +
+            '<img class="peer-geo-raster" src="' + escapeHtml(geoMapUrl) + '" alt="Peer location map" loading="lazy" referrerpolicy="no-referrer" />' +
             (isDisplayable(geoTitle) ? '<div class="peer-geo-label mono">' + escapeHtml(geoTitle) + '</div>' : '') +
           '</div>' +
           '<div class="detail-grid">' + geoRows + '</div>' +
