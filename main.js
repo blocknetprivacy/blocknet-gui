@@ -1505,14 +1505,8 @@ async function showPeerDetail(peerId) {
       geo = await geolocateIp(publicIp);
     }
     var hasPoint = !!(geo && typeof geo.lat === 'number' && typeof geo.lon === 'number');
-    function buildPeerGeoMapUrl(lat, lon) {
-      var latFixed = Number(lat).toFixed(4);
-      var lonFixed = Number(lon).toFixed(4);
-      var center = encodeURIComponent(latFixed + ',' + lonFixed);
-      var marker = encodeURIComponent(latFixed + ',' + lonFixed + ',lightgreen1');
-      return 'https://staticmap.openstreetmap.de/staticmap.php?center=' + center + '&zoom=3&size=1200x340&maptype=mapnik&markers=' + marker;
-    }
-    var geoMapUrl = hasPoint ? buildPeerGeoMapUrl(geo.lat, geo.lon) : '';
+    var mapLeft = hasPoint ? (((geo.lon + 180) / 360) * 100).toFixed(2) : '50.00';
+    var mapTop = hasPoint ? (((90 - geo.lat) / 180) * 100).toFixed(2) : '50.00';
     var geoTitle = [geo && geo.city, geo && geo.region, geo && geo.country].filter(Boolean).join(', ');
     function isDisplayable(v) {
       if (v === null || v === undefined) return false;
@@ -1544,7 +1538,8 @@ async function showPeerDetail(peerId) {
       ? '<h2>Geo</h2>' +
         '<div class="peer-panel peer-geo-panel">' +
           '<div class="peer-geo-map">' +
-            '<img class="peer-geo-raster" src="' + escapeHtml(geoMapUrl) + '" alt="Peer location map" loading="lazy" referrerpolicy="no-referrer" />' +
+            '<img class="peer-geo-raster" src="icons/world.svg" alt="Peer location map" loading="lazy" />' +
+            '<div class="peer-geo-dot" style="left:' + mapLeft + '%;top:' + mapTop + '%;"></div>' +
             (isDisplayable(geoTitle) ? '<div class="peer-geo-label mono">' + escapeHtml(geoTitle) + '</div>' : '') +
           '</div>' +
           '<div class="detail-grid">' + geoRows + '</div>' +

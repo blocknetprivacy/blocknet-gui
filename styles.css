@@ -1612,10 +1612,8 @@ textarea:focus {
 
 .peer-geo-raster {
   width: 100%;
-  height: 100%;
+  height: auto;
   min-height: 170px;
-  object-fit: cover;
-  object-position: center;
   display: block;
 }
 
