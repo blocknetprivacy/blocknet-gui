@@ -3,7 +3,16 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$ROOT_DIR/src-tauri/binaries"
-API_URL="https://api.github.com/repos/blocknetprivacy/blocknet/releases/latest"
+API_BASE="https://api.github.com/repos/blocknetprivacy/blocknet/releases"
+PINNED_VERSION="${BLOCKNET_CORE_VERSION:-}"
+if [[ -z "$PINNED_VERSION" && -f "$ROOT_DIR/VERSION" ]]; then
+  PINNED_VERSION="$(tr -d '\r\n[:space:]' < "$ROOT_DIR/VERSION")"
+fi
+if [[ -n "$PINNED_VERSION" ]]; then
+  API_URL="$API_BASE/tags/v${PINNED_VERSION}"
+else
+  API_URL="$API_BASE/latest"
+fi
 
 TMP_DIR="$(mktemp -d)"
 cleanup() {
@@ -13,7 +22,7 @@ trap cleanup EXIT
 
 mkdir -p "$BIN_DIR"
 
-echo "Fetching latest Blocknet core release metadata..."
+echo "Fetching Blocknet core release metadata..."
 RELEASE_JSON="$TMP_DIR/release.json"
 curl -fsSL "$API_URL" -o "$RELEASE_JSON"
 
@@ -36,7 +45,11 @@ if [[ -z "$TAG_NAME" ]]; then
 fi
 
 VERSION="${TAG_NAME#v}"
-echo "Latest core release: $TAG_NAME"
+if [[ -n "$PINNED_VERSION" ]]; then
+  echo "Pinned core release: $TAG_NAME"
+else
+  echo "Latest core release: $TAG_NAME"
+fi
 
 MAC_ASSET="blocknet-arm64-darwin-${VERSION}.zip"
 LINUX_ASSET="blocknet-amd64-linux-${VERSION}.zip"

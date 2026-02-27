@@ -26,6 +26,8 @@ let pendingDeepLink = null;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let dashForceRefresh = false;
+let peerDetailActiveId = '';
+let peerDetailLiveTimer = null;
 
 function getPendingSends() {
   try { return JSON.parse(localStorage.getItem(walletKey('pendingSends')) || '[]'); } catch (_) { return []; }
@@ -304,6 +306,34 @@ async function loadVersions() {
 
 async function loadDashboard() {
   try {
+    var walletTitle = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
+    var walletNameEl = document.getElementById('dash-wallet-name');
+    if (walletNameEl) walletNameEl.textContent = walletTitle;
+
+    var shortname = '';
+    try {
+      var receivePrefsRaw = localStorage.getItem(walletKey('receivePrefs')) || '{}';
+      var receivePrefs = JSON.parse(receivePrefsRaw);
+      if (receivePrefs && receivePrefs.handle) shortname = '$' + String(receivePrefs.handle);
+    } catch (_) {}
+
+    var shortEl = document.getElementById('dash-shortname');
+    if (shortEl) {
+      if (shortname) {
+        shortEl.textContent = shortname;
+        shortEl.dataset.copy = shortname;
+        delete shortEl.dataset.copyWired;
+        shortEl.style.display = '';
+        wireCopyable(shortEl.parentNode || shortEl);
+      } else {
+        shortEl.style.display = 'none';
+        shortEl.textContent = '';
+        delete shortEl.dataset.copy;
+      }
+    }
+  } catch (_) {}
+
+  try {
     const status = await api('/api/status');
     const heightLabel = status.chain_height.toLocaleString();
     document.getElementById('dash-height').textContent = heightLabel;
@@ -394,47 +424,178 @@ async function loadDashboard() {
 // --- Receive ---
 
 var receiveAddress = '';
+var receivePreferredHandle = null;
+var receiveHandleResolveTimer = null;
+var requestLinkMode = 'blocknet';
+
+function getReceivePrefs() {
+  try {
+    return JSON.parse(localStorage.getItem(walletKey('receivePrefs')) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveReceivePrefs(prefs) {
+  localStorage.setItem(walletKey('receivePrefs'), JSON.stringify(prefs || {}));
+}
+
+function normalizeHandleInput(raw) {
+  var v = String(raw || '').trim();
+  if (!v) return '';
+  if (isHandlePrefix(v.charAt(0))) v = v.slice(1).trim();
+  return v;
+}
+
+function getReceiveHandleUriTarget() {
+  return receivePreferredHandle ? ('$' + receivePreferredHandle) : receiveAddress;
+}
+
+function setRequestLinkMode(mode) {
+  requestLinkMode = mode === 'bntpay' ? 'bntpay' : 'blocknet';
+  var blockBtn = document.getElementById('request-link-mode-blocknet');
+  var webBtn = document.getElementById('request-link-mode-bntpay');
+  if (blockBtn) blockBtn.classList.toggle('active', requestLinkMode === 'blocknet');
+  if (webBtn) webBtn.classList.toggle('active', requestLinkMode === 'bntpay');
+
+  var group = document.getElementById('request-link-group');
+  if (group && group.style.display !== 'none') {
+    generatePaymentLink();
+  }
+}
+
+function setReceiveShortnameStatus(html, cls) {
+  var el = document.getElementById('receive-shortname-status');
+  if (!el) return;
+  if (!html) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.className = 'send-resolved' + (cls ? ' ' + cls : '');
+  el.innerHTML = html;
+  el.style.display = 'block';
+}
+
+function renderReceiveAddressAndQr() {
+  var target = getReceiveHandleUriTarget();
+  var addrEl = document.getElementById('receive-address');
+  if (addrEl) {
+    if (receivePreferredHandle) {
+      addrEl.innerHTML = '<span class="g">$' + escapeHtml(receivePreferredHandle) + '</span> <span class="d">(resolves to this wallet)</span>';
+      addrEl.dataset.copy = '$' + receivePreferredHandle;
+    } else {
+      addrEl.textContent = receiveAddress || 'Loading...';
+      addrEl.dataset.copy = receiveAddress || '';
+    }
+    delete addrEl.dataset.copyWired;
+    wireCopyable();
+  }
+  if (target && typeof qrcode === 'function') {
+    var svgHtml = renderQRSvg(target);
+    document.getElementById('qr-container').innerHTML = svgHtml;
+    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
+  }
+}
+
+async function verifyReceiveShortname(handle, persist) {
+  if (!handle) {
+    setReceiveShortnameStatus('', '');
+    return false;
+  }
+  setReceiveShortnameStatus('<span class="d">Resolving $' + escapeHtml(handle) + '...</span>');
+  try {
+    var data = await resolveHandle(handle);
+    var sameAddress = String(data.address || '') === String(receiveAddress || '');
+    if (!data.verified) {
+      setReceiveShortnameStatus('<span class="resolve-fail">✗ Not verified</span> <span class="d">$' + escapeHtml(handle) + '</span>');
+      return false;
+    }
+    if (!sameAddress) {
+      setReceiveShortnameStatus(
+        '<span class="resolve-fail">✗ Resolves elsewhere</span> ' +
+        '<span class="d">$' + escapeHtml(handle) + ' → ' + escapeHtml(abbrAddr(String(data.address || ''))) + '</span>'
+      );
+      return false;
+    }
+    setReceiveShortnameStatus('<span class="resolve-ok">✓ $' + escapeHtml(handle) + ' verified for this wallet</span>');
+    if (persist) {
+      receivePreferredHandle = handle;
+      saveReceivePrefs({ handle: handle });
+      renderReceiveAddressAndQr();
+      clearPaymentLink();
+    }
+    return true;
+  } catch (e) {
+    setReceiveShortnameStatus('<span class="resolve-fail">✗ Could not resolve</span> <span class="d">' + escapeHtml(normalizeError(e)) + '</span>');
+    return false;
+  }
+}
+
+function debouncedVerifyReceiveShortname() {
+  if (receiveHandleResolveTimer) clearTimeout(receiveHandleResolveTimer);
+  var input = document.getElementById('receive-shortname');
+  if (!input) return;
+  var handle = normalizeHandleInput(input.value);
+  if (!handle) {
+    setReceiveShortnameStatus('', '');
+    return;
+  }
+  receiveHandleResolveTimer = setTimeout(function () {
+    var current = normalizeHandleInput((document.getElementById('receive-shortname').value || ''));
+    if (current !== handle) return;
+    verifyReceiveShortname(handle, false);
+  }, 1800);
+}
 
 async function loadReceive() {
   const data = await api('/api/wallet/address');
   receiveAddress = data.address;
-  var addrEl = document.getElementById('receive-address');
-  addrEl.textContent = data.address;
-  addrEl.dataset.copy = data.address;
-  wireCopyable();
+  receivePreferredHandle = null;
+
+  var prefs = getReceivePrefs();
+  var input = document.getElementById('receive-shortname');
+  if (input) input.value = prefs && prefs.handle ? ('$' + prefs.handle) : '';
+  setReceiveShortnameStatus('', '');
+  if (prefs && prefs.handle) {
+    await verifyReceiveShortname(String(prefs.handle), true);
+  } else {
+    renderReceiveAddressAndQr();
+  }
 
   document.getElementById('request-amount').value = '';
   document.getElementById('request-memo').value = '';
   document.getElementById('request-link-group').style.display = 'none';
-
-  if (typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(data.address);
-    document.getElementById('qr-container').innerHTML = svgHtml;
-    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
-  }
+  setRequestLinkMode(requestLinkMode || 'blocknet');
 }
 
 function generatePaymentLink() {
   if (!receiveAddress) return;
   var amount = (document.getElementById('request-amount').value || '').trim();
   var memo = (document.getElementById('request-memo').value || '').trim();
+  var target = getReceiveHandleUriTarget();
 
-  var uri = 'blocknet://' + receiveAddress;
+  var uri = 'blocknet://' + target;
   var params = [];
   if (amount && parseFloat(amount) > 0) params.push('amount=' + encodeURIComponent(amount));
   if (memo) params.push('memo=' + encodeURIComponent(memo));
   if (params.length) uri += '?' + params.join('&');
 
+  var webUri = 'https://bntpay.com/' + target;
+  if (params.length) webUri += '?' + params.join('&');
+  var shownUri = requestLinkMode === 'bntpay' ? webUri : uri;
+
   var group = document.getElementById('request-link-group');
   var linkEl = document.getElementById('request-link');
-  linkEl.textContent = uri;
-  linkEl.dataset.copy = uri;
+  linkEl.textContent = shownUri;
+  linkEl.dataset.copy = shownUri;
   delete linkEl.dataset.copyWired;
   group.style.display = '';
+
   wireCopyable();
 
   if (typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(uri);
+    var svgHtml = renderQRSvg(shownUri);
     document.getElementById('qr-container').innerHTML = svgHtml;
     document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
   }
@@ -443,12 +604,34 @@ function generatePaymentLink() {
 function clearPaymentLink() {
   var group = document.getElementById('request-link-group');
   if (group) group.style.display = 'none';
-  if (!receiveAddress) return;
+  var target = getReceiveHandleUriTarget();
+  if (!target) return;
   if (typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(receiveAddress);
+    var svgHtml = renderQRSvg(target);
     document.getElementById('qr-container').innerHTML = svgHtml;
     document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
   }
+}
+
+async function saveReceiveShortname() {
+  var input = document.getElementById('receive-shortname');
+  if (!input) return;
+  var handle = normalizeHandleInput(input.value);
+  if (!handle) {
+    setReceiveShortnameStatus('<span class="d">Enter a shortname first</span>');
+    return;
+  }
+  await verifyReceiveShortname(handle, true);
+}
+
+function clearReceiveShortname() {
+  receivePreferredHandle = null;
+  saveReceivePrefs({});
+  var input = document.getElementById('receive-shortname');
+  if (input) input.value = '';
+  setReceiveShortnameStatus('', '');
+  renderReceiveAddressAndQr();
+  clearPaymentLink();
 }
 
 function renderQRSvg(text) {
@@ -922,6 +1105,198 @@ function changeThreads(delta) {
 
 // --- Network ---
 
+function normalizePeerEntries(raw) {
+  if (!Array.isArray(raw)) return [];
+  return raw.map(function (entry) {
+    if (typeof entry === 'string') {
+      return { peer_id: entry, addrs: [] };
+    }
+    if (entry && typeof entry === 'object') {
+      return {
+        peer_id: String(entry.peer_id || ''),
+        addrs: Array.isArray(entry.addrs) ? entry.addrs.map(function (a) { return String(a); }) : [],
+        reason: entry.reason,
+        ban_count: entry.ban_count,
+        permanent: entry.permanent,
+        expires_at: entry.expires_at,
+      };
+    }
+    return { peer_id: '', addrs: [] };
+  }).filter(function (p) { return !!p.peer_id; });
+}
+
+function classifyAddrScope(addr) {
+  var s = String(addr || '').toLowerCase();
+  if (!s) return 'unknown';
+  if (s.indexOf('/p2p-circuit') >= 0) return 'relay';
+  if (s.indexOf('/onion') >= 0 || s.indexOf('/tor') >= 0) return 'tor';
+  if (s.indexOf('/garlic') >= 0 || s.indexOf('/i2p') >= 0) return 'i2p';
+  if (s.indexOf('/dns') >= 0) return 'dns';
+  if (s.indexOf('/ip4/127.') >= 0 || s.indexOf('/ip6/::1') >= 0) return 'loopback';
+  if (s.indexOf('/ip4/10.') >= 0 || s.indexOf('/ip4/192.168.') >= 0 || /\/ip4\/172\.(1[6-9]|2\d|3[0-1])\./.test(s)) return 'private';
+  if (s.indexOf('/ip4/') >= 0 || s.indexOf('/ip6/') >= 0) return 'public';
+  return 'unknown';
+}
+
+function summarizePeerAddressHints(addrs) {
+  var types = {};
+  (Array.isArray(addrs) ? addrs : []).forEach(function (a) { types[classifyAddrScope(a)] = true; });
+  if (types.tor) return 'tor';
+  if (types.i2p) return 'i2p';
+  if (types.relay) return 'relay';
+  if (types.public) return 'public ip';
+  if (types.private) return 'private ip';
+  if (types.dns) return 'dns';
+  if (types.loopback) return 'loopback';
+  return 'unknown';
+}
+
+function inferMultiaddrTraits(addrs) {
+  var list = Array.isArray(addrs) ? addrs : [];
+  var ipFamilies = {};
+  var hostForms = {};
+  var transports = {};
+  var overlays = {};
+  var scopes = {};
+  var tcpPorts = {};
+  var udpPorts = {};
+  var publicCount = 0;
+  var privateLikeCount = 0;
+
+  list.forEach(function (addr) {
+    var s = String(addr || '');
+    var parts = s.split('/').filter(Boolean);
+    var scope = classifyAddrScope(s);
+    scopes[scope] = true;
+    if (scope === 'public') publicCount += 1;
+    if (scope === 'private' || scope === 'loopback') privateLikeCount += 1;
+
+    for (var i = 0; i < parts.length; i++) {
+      var p = parts[i].toLowerCase();
+      var next = parts[i + 1] || '';
+      if (p === 'ip4') { ipFamilies.ipv4 = true; hostForms.ip4 = true; }
+      if (p === 'ip6') { ipFamilies.ipv6 = true; hostForms.ip6 = true; }
+      if (p === 'dns') hostForms.dns = true;
+      if (p === 'dns4') hostForms.dns4 = true;
+      if (p === 'dns6') hostForms.dns6 = true;
+      if (p === 'dnsaddr') hostForms.dnsaddr = true;
+      if (p === 'tcp') { transports.tcp = true; if (next) tcpPorts[next] = true; }
+      if (p === 'udp') { transports.udp = true; if (next) udpPorts[next] = true; }
+      if (p === 'quic' || p === 'quic-v1') transports.quic = true;
+      if (p === 'ws') transports.ws = true;
+      if (p === 'wss') transports.wss = true;
+      if (p === 'webtransport') transports.webtransport = true;
+      if (p === 'webrtc') transports.webrtc = true;
+      if (p === 'p2p-circuit') overlays.relay = true;
+      if (p === 'onion' || p === 'onion3' || p === 'tor') overlays.tor = true;
+      if (p === 'garlic64' || p === 'i2p') overlays.i2p = true;
+    }
+  });
+
+  function keys(obj) { return Object.keys(obj); }
+  function csv(arr, fallback) { return arr.length ? arr.join(', ') : fallback; }
+
+  return {
+    ipFamily: csv(keys(ipFamilies), 'none'),
+    hostForms: csv(keys(hostForms), 'unknown'),
+    transports: csv(keys(transports), 'unknown'),
+    overlays: csv(keys(overlays), 'none'),
+    scopeMix: csv(keys(scopes), 'unknown'),
+    tcpPorts: csv(keys(tcpPorts), 'none'),
+    udpPorts: csv(keys(udpPorts), 'none'),
+    publicCount: publicCount,
+    privateLikeCount: privateLikeCount,
+    total: list.length,
+  };
+}
+
+function extractIpFromMultiaddr(addr) {
+  var s = String(addr || '');
+  var m4 = s.match(/\/ip4\/([^/]+)/);
+  if (m4 && m4[1]) return m4[1];
+  var m6 = s.match(/\/ip6\/([^/]+)/);
+  if (m6 && m6[1]) return m6[1];
+  return '';
+}
+
+function isPublicIp(ip) {
+  var s = String(ip || '').trim().toLowerCase();
+  if (!s) return false;
+  if (s.indexOf(':') >= 0) {
+    if (s === '::1') return false;
+    if (s.indexOf('fc') === 0 || s.indexOf('fd') === 0) return false;
+    if (s.indexOf('fe8') === 0 || s.indexOf('fe9') === 0 || s.indexOf('fea') === 0 || s.indexOf('feb') === 0) return false;
+    return true;
+  }
+  var parts = s.split('.').map(function (p) { return parseInt(p, 10); });
+  if (parts.length !== 4 || parts.some(function (n) { return isNaN(n) || n < 0 || n > 255; })) return false;
+  if (parts[0] === 10) return false;
+  if (parts[0] === 127) return false;
+  if (parts[0] === 192 && parts[1] === 168) return false;
+  if (parts[0] === 172 && parts[1] >= 16 && parts[1] <= 31) return false;
+  if (parts[0] === 169 && parts[1] === 254) return false;
+  return true;
+}
+
+function getGeoCache() {
+  try {
+    return JSON.parse(localStorage.getItem(walletKey('peerGeoCache')) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function saveGeoCache(cache) {
+  localStorage.setItem(walletKey('peerGeoCache'), JSON.stringify(cache));
+}
+
+async function geolocateIp(ip) {
+  var cache = getGeoCache();
+  var key = String(ip || '').trim();
+  if (!key) return null;
+  if (cache[key]) return cache[key];
+
+  try {
+    var raw = '';
+    try {
+      // Prefer Rust-side fetch proxy to avoid webview CORS/connect restrictions.
+      raw = await invoke('fetch_url', { url: 'https://ipwho.is/' + encodeURIComponent(key) });
+    } catch (_) {
+      // Fallback to browser fetch in case invoke path is unavailable.
+      var ctrl = new AbortController();
+      var timer = setTimeout(function () { ctrl.abort(); }, 5000);
+      var res = await fetch('https://ipwho.is/' + encodeURIComponent(key), { signal: ctrl.signal });
+      clearTimeout(timer);
+      if (!res.ok) return null;
+      raw = await res.text();
+    }
+    var data = JSON.parse(raw);
+    if (!data || data.success === false) return null;
+    var geo = {
+      ip: key,
+      country: data.country || '',
+      country_code: data.country_code || '',
+      continent: data.continent || '',
+      region: data.region || '',
+      city: data.city || '',
+      timezone: data.timezone && data.timezone.id ? String(data.timezone.id) : '',
+      lat: typeof data.latitude === 'number' ? data.latitude : null,
+      lon: typeof data.longitude === 'number' ? data.longitude : null,
+      asn: data.connection && data.connection.asn ? String(data.connection.asn) : '',
+      org: data.connection && data.connection.org ? String(data.connection.org) : '',
+      isp: data.connection && data.connection.isp ? String(data.connection.isp) : '',
+      domain: data.connection && data.connection.domain ? String(data.connection.domain) : '',
+      net_type: data.connection && data.connection.type ? String(data.connection.type) : '',
+      fetched_at: Date.now(),
+    };
+    cache[key] = geo;
+    saveGeoCache(cache);
+    return geo;
+  } catch (_) {
+    return null;
+  }
+}
+
 async function loadNetwork() {
   const [peers, banned] = await Promise.all([
     api('/api/peers'),
@@ -930,25 +1305,369 @@ async function loadNetwork() {
 
   document.getElementById('network-peer-count').textContent = peers.count;
   const peerList = document.getElementById('network-peers');
-  if (peers.peers && peers.peers.length > 0) {
-    peerList.innerHTML = peers.peers.map(p =>
-      '<div class="peer-row">' + p + '</div>'
-    ).join('');
+  var connectedRecords = normalizePeerEntries(peers.peers);
+  if (connectedRecords.length > 0) {
+    peerList.innerHTML = connectedRecords.map(function (p) {
+      var firstAddr = p.addrs && p.addrs.length ? p.addrs[0] : '';
+      return '<div class="peer-row peer-row-link" data-peer-id="' + escapeHtml(p.peer_id) + '">' +
+        '<div class="mono">' + escapeHtml(p.peer_id) + '</div>' +
+        (firstAddr ? '<div class="d mono">' + escapeHtml(firstAddr) + '</div>' : '') +
+      '</div>';
+    }).join('');
+    peerList.querySelectorAll('.peer-row-link[data-peer-id]').forEach(function (row) {
+      row.addEventListener('click', function () { showPeerDetail(row.dataset.peerId); });
+    });
   } else {
     peerList.innerHTML = '<div class="empty">No peers connected</div>';
   }
 
   document.getElementById('network-banned-count').textContent = banned.count;
   const bannedList = document.getElementById('network-banned');
-  if (banned.banned && banned.banned.length > 0) {
-    bannedList.innerHTML = banned.banned.map(b =>
-      '<div class="peer-row banned">' +
-        '<span>' + b.peer_id.substring(0, 24) + '...</span>' +
-        '<span class="d">' + b.reason + '</span>' +
-      '</div>'
-    ).join('');
+  var bannedRecords = normalizePeerEntries(banned.banned);
+  if (bannedRecords.length > 0) {
+    bannedList.innerHTML = bannedRecords.map(function (b) {
+      var firstAddr = b.addrs && b.addrs.length ? b.addrs[0] : '';
+      return '<div class="peer-row banned">' +
+        '<span class="detail-link mono" data-peer-id="' + escapeHtml(b.peer_id) + '">' + escapeHtml(b.peer_id.substring(0, 24)) + '...</span>' +
+        '<span class="d">' + escapeHtml((b.reason || 'banned') + (firstAddr ? ' ; ' + firstAddr : '')) + '</span>' +
+      '</div>';
+    }).join('');
+    bannedList.querySelectorAll('[data-peer-id]').forEach(function (el) {
+      el.addEventListener('click', function () { showPeerDetail(el.dataset.peerId); });
+    });
   } else {
     bannedList.innerHTML = '<div class="empty">No banned peers</div>';
+  }
+}
+
+// --- Peer Detail ---
+
+function getPeerObservationCache() {
+  try {
+    return JSON.parse(localStorage.getItem(walletKey('peerObservationCache')) || '{}');
+  } catch (_) {
+    return {};
+  }
+}
+
+function savePeerObservationCache(cache) {
+  localStorage.setItem(walletKey('peerObservationCache'), JSON.stringify(cache));
+}
+
+function formatAge(ms) {
+  if (!ms) return '—';
+  var diff = Math.max(0, Date.now() - ms);
+  var s = Math.floor(diff / 1000);
+  if (s < 60) return s + 's ago';
+  var m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  var h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  var d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function formatRemaining(ms) {
+  if (ms <= 0) return 'expired';
+  var s = Math.floor(ms / 1000);
+  var d = Math.floor(s / 86400);
+  s -= d * 86400;
+  var h = Math.floor(s / 3600);
+  s -= h * 3600;
+  var m = Math.floor(s / 60);
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  return Math.max(1, m) + 'm';
+}
+
+function classifyBanReason(reason) {
+  var r = String(reason || '').toLowerCase();
+  if (!r) return 'none';
+  if (r.indexOf('invalid block') >= 0 || r.indexOf('bad block') >= 0) return 'invalid-block behavior';
+  if (r.indexOf('invalid tx') >= 0 || r.indexOf('transaction') >= 0 || r.indexOf('double spend') >= 0) return 'invalid-transaction behavior';
+  if (r.indexOf('excessive') >= 0 || r.indexOf('rate') >= 0 || r.indexOf('spam') >= 0 || r.indexOf('flood') >= 0) return 'rate/spam behavior';
+  return 'policy/other';
+}
+
+function banSeverity(count) {
+  var n = parseInt(count || 0, 10);
+  if (n <= 0) return 'none';
+  if (n >= 5) return 'high';
+  if (n >= 3) return 'medium';
+  return 'low';
+}
+
+function summarizePeerState(connected, bannedNow) {
+  if (connected && bannedNow) return 'connected + banned (transitional)';
+  if (connected) return 'connected';
+  if (bannedNow) return 'blocked';
+  return 'offline';
+}
+
+function refreshPeerAgeLabels(container) {
+  if (!container) return;
+  container.querySelectorAll('.peer-age[data-ts]').forEach(function (el) {
+    var ts = parseInt(el.getAttribute('data-ts') || '0', 10);
+    if (!ts) return;
+    if (el.getAttribute('data-type') === 'remaining') {
+      el.textContent = formatRemaining(ts - Date.now());
+    } else {
+      el.textContent = formatAge(ts);
+    }
+  });
+}
+
+function ensurePeerDetailLiveTimer() {
+  if (peerDetailLiveTimer) return;
+  peerDetailLiveTimer = setInterval(function () {
+    if (currentView !== 'peer-detail') return;
+    var container = document.getElementById('peer-detail-content');
+    refreshPeerAgeLabels(container);
+  }, 1000);
+}
+
+function updatePeerObservation(peerId, connectedNow, bannedNow) {
+  var cache = getPeerObservationCache();
+  var now = Date.now();
+  var item = cache[peerId] || {
+    first_seen_ms: now,
+    reconnect_count: 0,
+    state_change_count: 0,
+    times_connected_seen: 0,
+    times_banned_seen: 0,
+    last_state: '',
+  };
+  var prevState = item.last_state || '';
+  var nextState = summarizePeerState(connectedNow, bannedNow);
+
+  if (prevState && prevState !== nextState) {
+    item.state_change_count = (item.state_change_count || 0) + 1;
+    if (connectedNow && prevState !== 'connected' && prevState !== 'connected + banned (transitional)') {
+      item.reconnect_count = (item.reconnect_count || 0) + 1;
+    }
+    if (!connectedNow && (prevState === 'connected' || prevState === 'connected + banned (transitional)')) {
+      item.last_disconnected_ms = now;
+    }
+  }
+
+  if (connectedNow) {
+    if (!item.connected_since_ms || prevState !== 'connected') item.connected_since_ms = now;
+    item.last_seen_connected_ms = now;
+    item.times_connected_seen = (item.times_connected_seen || 0) + 1;
+  } else {
+    item.connected_since_ms = null;
+  }
+
+  if (bannedNow) {
+    item.last_seen_banned_ms = now;
+    item.times_banned_seen = (item.times_banned_seen || 0) + 1;
+  }
+
+  item.last_seen_ms = now;
+  item.last_state = nextState;
+  cache[peerId] = item;
+  savePeerObservationCache(cache);
+  return item;
+}
+
+async function showPeerDetail(peerId) {
+  peerDetailActiveId = peerId;
+  ensurePeerDetailLiveTimer();
+  navigate('peer-detail');
+  var container = document.getElementById('peer-detail-content');
+  if (!container) return;
+  container.innerHTML = '<div class="d">Loading...</div>';
+
+  try {
+    var results = await Promise.all([
+      api('/api/peers'),
+      api('/api/peers/banned'),
+    ]);
+    var peers = results[0];
+    var banned = results[1];
+
+    var connectedRecords = normalizePeerEntries(peers.peers);
+    var bannedRecords = normalizePeerEntries(banned.banned);
+    var connectedPeers = connectedRecords.map(function (p) { return p.peer_id; });
+    var bannedPeers = bannedRecords;
+    var connectedEntry = connectedRecords.find(function (p) { return p.peer_id === peerId; }) || null;
+    var connected = !!connectedEntry;
+    var banEntry = bannedRecords.find(function (b) { return b.peer_id === peerId; }) || null;
+    var addrList = connectedEntry && connectedEntry.addrs && connectedEntry.addrs.length
+      ? connectedEntry.addrs
+      : (banEntry && banEntry.addrs ? banEntry.addrs : []);
+    var ipCandidates = addrList.map(extractIpFromMultiaddr).filter(Boolean);
+    var publicIp = ipCandidates.find(isPublicIp) || '';
+    var addressHint = summarizePeerAddressHints(addrList);
+    var traits = inferMultiaddrTraits(addrList);
+    var geo = null;
+    if (publicIp && addressHint !== 'tor' && addressHint !== 'i2p' && addressHint !== 'relay') {
+      geo = await geolocateIp(publicIp);
+    }
+    var hasPoint = !!(geo && typeof geo.lat === 'number' && typeof geo.lon === 'number');
+    var mapLeft = hasPoint ? (((geo.lon + 180) / 360) * 100).toFixed(2) : '50.00';
+    var mapTop = hasPoint ? (((90 - geo.lat) / 180) * 100).toFixed(2) : '50.00';
+    var geoTitle = [geo && geo.city, geo && geo.region, geo && geo.country].filter(Boolean).join(', ');
+    function isDisplayable(v) {
+      if (v === null || v === undefined) return false;
+      var s = String(v).trim().toLowerCase();
+      if (!s) return false;
+      if (s === 'unknown' || s === 'none' || s === '—') return false;
+      return true;
+    }
+    function detailRow(label, value, mono) {
+      return '<div class="detail-label">' + label + '</div><div class="detail-value' + (mono ? ' mono' : '') + '">' + escapeHtml(String(value)) + '</div>';
+    }
+    var geoRows = '';
+    if (geo && hasPoint) {
+      var countryRegion = [geo.country, geo.region].filter(Boolean).join(' / ');
+      if (isDisplayable(publicIp)) geoRows += detailRow('IP source', publicIp, true);
+      if (isDisplayable(addressHint)) geoRows += detailRow('Address hint', addressHint, false);
+      if (isDisplayable(countryRegion)) geoRows += detailRow('Country / Region', countryRegion, false);
+      if (isDisplayable(geo.country_code)) geoRows += detailRow('Country code', geo.country_code, false);
+      if (isDisplayable(geo.continent)) geoRows += detailRow('Continent', geo.continent, false);
+      if (isDisplayable(geo.city)) geoRows += detailRow('City', geo.city, false);
+      if (isDisplayable(geo.timezone)) geoRows += detailRow('Timezone', geo.timezone, false);
+      var asnOrg = [geo.asn, geo.org].filter(Boolean).join(' ');
+      if (isDisplayable(asnOrg)) geoRows += detailRow('ASN / Org', asnOrg, false);
+      if (isDisplayable(geo.net_type)) geoRows += detailRow('Network type', geo.net_type, false);
+      var ispDomain = [geo.isp, geo.domain].filter(Boolean).join(' / ');
+      if (isDisplayable(ispDomain)) geoRows += detailRow('ISP / Domain', ispDomain, false);
+    }
+    var geoSection = (geo && hasPoint && geoRows)
+      ? '<h2>Geo</h2>' +
+        '<div class="peer-panel peer-geo-panel">' +
+          '<div class="peer-geo-map">' +
+            '<svg viewBox="0 0 800 320" aria-hidden="true">' +
+              '<g fill="none" stroke="rgba(170,255,0,0.13)" stroke-width="1">' +
+                '<path d="M54 147l36-22 45-3 22 12 34-9 42 8 28-18 26 14 49 0 31 11 35-9 23 20 42 0 34 10 34 30 27-11" />' +
+                '<path d="M75 198l28 11 37 0 41 12 48-7 33 9 44-14 34 11 48-10 27 14 52-4 39 10 24-8" />' +
+                '<path d="M336 92l19 8 26-8 24 14 18-6 20 9 16-7 24 3 18 12 15-7 14 8" />' +
+              '</g>' +
+            '</svg>' +
+            '<div class="peer-geo-dot" style="left:' + mapLeft + '%;top:' + mapTop + '%;"></div>' +
+            (isDisplayable(geoTitle) ? '<div class="peer-geo-label mono">' + escapeHtml(geoTitle) + '</div>' : '') +
+          '</div>' +
+          '<div class="detail-grid">' + geoRows + '</div>' +
+        '</div>'
+      : '';
+    var stateSummary = summarizePeerState(connected, !!banEntry);
+    var sharePct = connectedPeers.length > 0 ? (100 / connectedPeers.length) : 0;
+    var reasonCategory = classifyBanReason(banEntry && banEntry.reason);
+    var severity = banSeverity(banEntry && banEntry.ban_count);
+    var expiresAtMs = banEntry && banEntry.expires_at ? Date.parse(banEntry.expires_at) : NaN;
+    var unbanIn = banEntry
+      ? (banEntry.permanent ? 'never (permanent)' : (isNaN(expiresAtMs) ? 'unknown' : formatRemaining(expiresAtMs - Date.now())))
+      : '—';
+    var observation = updatePeerObservation(peerId, connected, !!banEntry);
+    var statusHtml = connected
+      ? '<span class="g">Connected</span>'
+      : '<span class="d">Not currently connected</span>';
+    var banStateHtml = banEntry
+      ? '<span class="r">Banned</span>'
+      : '<span class="d">Not banned</span>';
+
+    var connectedRows = connectedPeers.length
+      ? connectedPeers.map(function (id) {
+          var rowClass = id === peerId ? ' peer-row-link-selected' : '';
+          var rec = connectedRecords.find(function (p) { return p.peer_id === id; }) || { addrs: [] };
+          var firstAddr = rec.addrs && rec.addrs.length ? rec.addrs[0] : '';
+          return '<div class="peer-row peer-row-link' + rowClass + '" data-peer-id-link="' + escapeHtml(id) + '">' +
+            '<div class="mono">' + escapeHtml(id) + '</div>' +
+            (firstAddr ? '<div class="d mono">' + escapeHtml(firstAddr) + '</div>' : '') +
+          '</div>';
+        }).join('')
+      : '<div class="empty">No peers connected</div>';
+    var bannedRows = bannedPeers.length
+      ? bannedPeers.map(function (b) {
+          return '<div class="peer-row banned">' +
+            '<span class="mono">' + escapeHtml(String(b.peer_id || '')) + '</span>' +
+            '<span class="d">' + escapeHtml(String(b.reason || 'banned')) + '</span>' +
+          '</div>';
+        }).join('')
+      : '<div class="empty">No banned peers</div>';
+
+    container.innerHTML =
+      '<div class="peer-detail-head">' +
+        '<div class="peer-detail-status">' + statusHtml + ' <span class="d">•</span> ' + banStateHtml + '</div>' +
+      '</div>' +
+      geoSection +
+      '<div class="detail-grid">' +
+        '<div class="detail-label">Peer ID</div>' +
+        '<div class="detail-value mono">' + copyable(peerId) + '</div>' +
+        '<div class="detail-label">Connected now</div>' +
+        '<div class="detail-value">' + (connected ? 'yes' : 'no') + '</div>' +
+        '<div class="detail-label">Banned now</div>' +
+        '<div class="detail-value">' + (banEntry ? 'yes' : 'no') + '</div>' +
+        '<div class="detail-label">Connected peer count</div>' +
+        '<div class="detail-value">' + connectedPeers.length + '</div>' +
+        '<div class="detail-label">Banned peer count</div>' +
+        '<div class="detail-value">' + bannedPeers.length + '</div>' +
+        (isDisplayable(addressHint) ? '<div class="detail-label">Address hints</div><div class="detail-value">' + escapeHtml(addressHint) + '</div>' : '') +
+        '<div class="detail-label">Known addrs</div>' +
+        '<div class="detail-value">' + (addrList.length ? String(addrList.length) : '0') + '</div>' +
+        (isDisplayable(traits.ipFamily) ? '<div class="detail-label">IP family</div><div class="detail-value">' + escapeHtml(traits.ipFamily) + '</div>' : '') +
+        (isDisplayable(traits.hostForms) ? '<div class="detail-label">Host forms</div><div class="detail-value">' + escapeHtml(traits.hostForms) + '</div>' : '') +
+        (isDisplayable(traits.transports) ? '<div class="detail-label">Transports</div><div class="detail-value">' + escapeHtml(traits.transports) + '</div>' : '') +
+        (isDisplayable(traits.tcpPorts) ? '<div class="detail-label">TCP ports</div><div class="detail-value mono">' + escapeHtml(traits.tcpPorts) + '</div>' : '') +
+        (isDisplayable(traits.udpPorts) ? '<div class="detail-label">UDP ports</div><div class="detail-value mono">' + escapeHtml(traits.udpPorts) + '</div>' : '') +
+        (isDisplayable(traits.overlays) ? '<div class="detail-label">Overlay routes</div><div class="detail-value">' + escapeHtml(traits.overlays) + '</div>' : '') +
+        (isDisplayable(traits.scopeMix) ? '<div class="detail-label">Scope mix</div><div class="detail-value">' + escapeHtml(traits.scopeMix) + '</div>' : '') +
+        (addrList.length ? '<div class="detail-label">Routability snapshot</div><div class="detail-value">' + traits.publicCount + ' public / ' + traits.privateLikeCount + ' private-like of ' + traits.total + ' addrs</div>' : '') +
+        '<div class="detail-label">State summary</div>' +
+        '<div class="detail-value">' + escapeHtml(stateSummary) + '</div>' +
+        '<div class="detail-label">Network share</div>' +
+        '<div class="detail-value">' + (connected ? sharePct.toFixed(1) + '% of this node\'s current peer set' : 'not in this node\'s current peer set') + '</div>' +
+        '<div class="detail-label">Observed first seen</div>' +
+        '<div class="detail-value"><span class="peer-age" data-ts="' + String(observation.first_seen_ms || 0) + '">' + escapeHtml(formatAge(observation.first_seen_ms)) + '</span></div>' +
+        '<div class="detail-label">Observed last connected</div>' +
+        '<div class="detail-value"><span class="peer-age" data-ts="' + String(observation.last_seen_connected_ms || 0) + '">' + escapeHtml(formatAge(observation.last_seen_connected_ms)) + '</span></div>' +
+        '<div class="detail-label">Reconnects (session)</div>' +
+        '<div class="detail-value">' + String(observation.reconnect_count || 0) + '</div>' +
+        '<div class="detail-label">State changes (session)</div>' +
+        '<div class="detail-value">' + String(observation.state_change_count || 0) + '</div>' +
+      '</div>' +
+      (banEntry
+        ? '<h2>Ban Details</h2>' +
+          '<div class="detail-grid">' +
+            '<div class="detail-label">Reason</div>' +
+            '<div class="detail-value">' + escapeHtml(String(banEntry.reason || 'banned')) + '</div>' +
+            (isDisplayable(reasonCategory) ? '<div class="detail-label">Reason category</div><div class="detail-value">' + escapeHtml(reasonCategory) + '</div>' : '') +
+            '<div class="detail-label">Ban count</div>' +
+            '<div class="detail-value">' + String(banEntry.ban_count || 0) + '</div>' +
+            (isDisplayable(severity) ? '<div class="detail-label">Ban severity</div><div class="detail-value">' + escapeHtml(severity) + '</div>' : '') +
+            '<div class="detail-label">Permanent</div>' +
+            '<div class="detail-value">' + (banEntry.permanent ? 'yes' : 'no') + '</div>' +
+            (banEntry.expires_at ? '<div class="detail-label">Expires at</div><div class="detail-value mono">' + escapeHtml(String(banEntry.expires_at)) + '</div>' : '') +
+            (banEntry && !banEntry.permanent && !isNaN(expiresAtMs)
+              ? '<div class="detail-label">Time to unban</div><div class="detail-value"><span class="peer-age" data-type="remaining" data-ts="' + String(expiresAtMs) + '">' + escapeHtml(unbanIn) + '</span></div>'
+              : '') +
+          '</div>'
+        : '') +
+      (addrList.length
+        ? '<h2>Multiaddrs</h2>' +
+          '<div class="peer-panel">' + addrList.map(function (a) {
+            return '<div class="peer-row mono">' + escapeHtml(a) + '</div>';
+          }).join('') + '</div>'
+        : '') +
+      '<h2>Observations</h2>' +
+      '<div class="peer-panel">' +
+        '<div class="peer-observation-row">Peer is currently <span class="' + (connected ? 'g' : 'd') + '">' + escapeHtml(stateSummary) + '</span> in this node\'s current peer set.</div>' +
+        '<div class="peer-observation-row">Seen connected <span class="mono">' + String(observation.times_connected_seen || 0) + '</span> snapshot(s) and banned <span class="mono">' + String(observation.times_banned_seen || 0) + '</span> snapshot(s) this session.</div>' +
+        '<div class="peer-observation-row">Connection state has changed <span class="mono">' + String(observation.state_change_count || 0) + '</span> time(s) in this session view.</div>' +
+      '</div>' +
+      '<h2>Connected Peers Snapshot</h2>' +
+      '<div class="peer-panel">' + connectedRows + '</div>' +
+      '<h2>Banned Peers Snapshot</h2>' +
+      '<div class="peer-panel">' + bannedRows + '</div>';
+
+    container.querySelectorAll('[data-peer-id-link]').forEach(function (el) {
+      el.addEventListener('click', function () { showPeerDetail(el.dataset.peerIdLink); });
+    });
+    refreshPeerAgeLabels(container);
+    wireCopyable(container);
+  } catch (e) {
+    container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
   }
 }
 
@@ -1306,7 +2025,12 @@ function debouncedResolve() {
 
 async function handleSend(e) {
   e.preventDefault();
-  const rawAddress = document.getElementById('send-address').value.trim();
+  var rawAddress = document.getElementById('send-address').value.trim();
+  var parsedLink = parsePaymentRequestUri(rawAddress);
+  if (parsedLink) {
+    applyPaymentRequestToSend(rawAddress, true);
+    rawAddress = parsedLink.address;
+  }
   const amountStr = document.getElementById('send-amount').value;
   const memo = (document.getElementById('send-memo').value || '').trim();
   const btn = document.getElementById('send-submit');
@@ -1947,6 +2671,7 @@ function startPolling() {
     try {
       if (currentView === 'mining') await loadMining();
       if (currentView === 'network') await loadNetwork();
+      if (currentView === 'peer-detail' && peerDetailActiveId) await showPeerDetail(peerDetailActiveId);
     } catch (_) {}
   }, 15000);
 }
@@ -2137,7 +2862,11 @@ async function showAppFromSplash() {
   navigate('dashboard');
   startPolling();
   invoke('set_tray_unlocked', { unlocked: true }).catch(function() {});
-  applyPendingDeepLink();
+  if (pendingDeepLink) {
+    applyPendingDeepLink();
+    return;
+  }
+  await pullCurrentDeepLinkWithRetries(24, 500);
 }
 
 function showStatus(message, type) {
@@ -2601,21 +3330,79 @@ async function handleVerify() {
 
 // --- Deep link handling ---
 
-function handleDeepLinkUrls(urls) {
-  if (!urls || !urls.length) return;
-  var raw = urls[0];
-  if (!raw.startsWith('blocknet://')) return;
+function normalizeDeepLinkUrl(raw) {
+  if (typeof raw === 'string') return raw;
+  if (raw && typeof raw.url === 'string') return raw.url;
+  if (raw && typeof raw.href === 'string') return raw.href;
+  return '';
+}
 
-  var stripped = raw.replace('blocknet://', '');
-  var qIdx = stripped.indexOf('?');
-  var address = qIdx >= 0 ? stripped.substring(0, qIdx) : stripped;
+function parsePaymentRequestUri(raw) {
+  var input = String(raw || '').trim();
+  if (!input) return null;
+  var address = '';
   var params = {};
-  if (qIdx >= 0) {
-    stripped.substring(qIdx + 1).split('&').forEach(function (pair) {
-      var eq = pair.indexOf('=');
-      if (eq > 0) params[decodeURIComponent(pair.substring(0, eq))] = decodeURIComponent(pair.substring(eq + 1));
-    });
+
+  if (/^blocknet:(\/\/)?/i.test(input)) {
+    var stripped = input.replace(/^blocknet:(\/\/)?/i, '');
+    var qIdx = stripped.indexOf('?');
+    address = qIdx >= 0 ? stripped.substring(0, qIdx) : stripped;
+    if (qIdx >= 0) {
+      stripped.substring(qIdx + 1).split('&').forEach(function (pair) {
+        var eq = pair.indexOf('=');
+        if (eq > 0) params[decodeURIComponent(pair.substring(0, eq))] = decodeURIComponent(pair.substring(eq + 1));
+      });
+    }
+  } else {
+    try {
+      var u = new URL(input);
+      var host = (u.hostname || '').toLowerCase();
+      if (host === 'bntpay.com' || host === 'www.bntpay.com') {
+        var seg = (u.pathname || '').replace(/^\/+/, '').split('/')[0] || '';
+        address = decodeURIComponent(seg);
+        u.searchParams.forEach(function (v, k) { params[k] = v; });
+      } else {
+        return null;
+      }
+    } catch (_) {
+      return null;
+    }
   }
+
+  address = String(address || '').trim();
+  if (!address) return null;
+  return {
+    address: address,
+    amount: params.amount || '',
+    memo: params.memo || '',
+  };
+}
+
+function applyPaymentRequestToSend(raw, silent) {
+  var parsed = parsePaymentRequestUri(raw);
+  if (!parsed) return false;
+  var addrEl = document.getElementById('send-address');
+  var amountEl = document.getElementById('send-amount');
+  var memoEl = document.getElementById('send-memo');
+  if (!addrEl || !amountEl || !memoEl) return false;
+
+  addrEl.value = parsed.address;
+  if (parsed.amount) amountEl.value = parsed.amount;
+  if (parsed.memo) memoEl.value = parsed.memo;
+  hideAddressSuggestions();
+  if (isHandlePrefix(parsed.address.charAt(0))) debouncedResolve();
+  else hideResolved();
+  if (!silent) showSendStatus('Pre-filled from payment link. Review and confirm.', 'info');
+  return true;
+}
+
+function handleDeepLinkUrls(urls) {
+  if (!urls) return;
+  var first = Array.isArray(urls) ? urls[0] : urls;
+  var raw = normalizeDeepLinkUrl(first).trim();
+  if (!raw) return;
+  var parsed = parsePaymentRequestUri(raw);
+  if (!parsed) return;
 
   try {
     var win = window.__TAURI__.window.getCurrentWindow();
@@ -2625,10 +3412,10 @@ function handleDeepLinkUrls(urls) {
 
   var app = document.getElementById('app');
   if (!app || app.style.display === 'none') {
-    pendingDeepLink = { address: address, amount: params.amount || '', memo: params.memo || '' };
+    pendingDeepLink = { address: parsed.address, amount: parsed.amount || '', memo: parsed.memo || '' };
     return;
   }
-  prefillSend(address, params.amount || '', params.memo || '');
+  prefillSend(parsed.address, parsed.amount || '', parsed.memo || '');
 }
 
 function prefillSend(address, amount, memo) {
@@ -2637,6 +3424,7 @@ function prefillSend(address, amount, memo) {
   if (amount) document.getElementById('send-amount').value = amount;
   if (memo) document.getElementById('send-memo').value = memo;
   showSendStatus('Pre-filled from blocknet:// link. Review and confirm.', 'info');
+  if (address) debouncedResolve();
 }
 
 function applyPendingDeepLink() {
@@ -2646,6 +3434,23 @@ function applyPendingDeepLink() {
   prefillSend(dl.address, dl.amount, dl.memo);
 }
 
+async function pullCurrentDeepLinkWithRetries(attempts, delayMs) {
+  if (!window.__TAURI__ || !window.__TAURI__.core) return false;
+  for (var i = 0; i < attempts; i++) {
+    try {
+      var urls = await window.__TAURI__.core.invoke('plugin:deep-link|get_current');
+      if (urls && urls.length) {
+        handleDeepLinkUrls(urls);
+        return true;
+      }
+    } catch (_) {}
+    if (i < attempts - 1) {
+      await new Promise(function (resolve) { setTimeout(resolve, delayMs); });
+    }
+  }
+  return false;
+}
+
 (async function initDeepLink() {
   if (!window.__TAURI__ || !window.__TAURI__.event) return;
   try {
@@ -2653,10 +3458,7 @@ function applyPendingDeepLink() {
       if (event.payload) handleDeepLinkUrls(event.payload);
     });
   } catch (_) {}
-  try {
-    var urls = await window.__TAURI__.core.invoke('plugin:deep-link|get_current');
-    if (urls && urls.length) handleDeepLinkUrls(urls);
-  } catch (_) {}
+  await pullCurrentDeepLinkWithRetries(1, 0);
 })();
 
 // --- Wire up events ---
@@ -2669,12 +3471,24 @@ document.getElementById('qr-overlay').addEventListener('click', dismissQROverlay
 document.getElementById('request-generate-btn').addEventListener('click', generatePaymentLink);
 document.getElementById('request-amount').addEventListener('input', clearPaymentLink);
 document.getElementById('request-memo').addEventListener('input', clearPaymentLink);
+document.getElementById('request-link-mode-blocknet').addEventListener('click', function () { setRequestLinkMode('blocknet'); });
+document.getElementById('request-link-mode-bntpay').addEventListener('click', function () { setRequestLinkMode('bntpay'); });
+document.getElementById('receive-shortname').addEventListener('input', debouncedVerifyReceiveShortname);
+document.getElementById('receive-shortname-save').addEventListener('click', saveReceiveShortname);
+document.getElementById('receive-shortname-clear').addEventListener('click', clearReceiveShortname);
 document.getElementById('mining-toggle').addEventListener('click', toggleMining);
 document.getElementById('threads-inc').addEventListener('click', function () { changeThreads(1); });
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
 document.getElementById('send-address').addEventListener('input', function () { showAddressSuggestions(); debouncedResolve(); });
+document.getElementById('send-address').addEventListener('paste', function (ev) {
+  var cd = ev.clipboardData || window.clipboardData;
+  var text = cd && typeof cd.getData === 'function' ? cd.getData('text') : '';
+  if (applyPaymentRequestToSend(text, false)) {
+    ev.preventDefault();
+  }
+});
 document.getElementById('send-address').addEventListener('focus', showAddressSuggestions);
 document.getElementById('send-address').addEventListener('blur', function () {
   setTimeout(hideAddressSuggestions, 150);
@@ -2682,6 +3496,7 @@ document.getElementById('send-address').addEventListener('blur', function () {
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
+document.getElementById('peer-detail-back').addEventListener('click', navigateBack);
 document.getElementById('tx-detail-back').addEventListener('click', navigateBack);
 document.getElementById('block-detail-back').addEventListener('click', navigateBack);
 document.getElementById('sign-btn').addEventListener('click', handleSign);

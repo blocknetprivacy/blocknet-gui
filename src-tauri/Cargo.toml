@@ -1,7 +1,7 @@
 [package]
 name = "blocknet-wallet"
-version = "0.5.3"
-description = "Blocknet GUI Wallet"
+version = "0.6.0"
+description = "Blocknet Wallet"
 authors = ["Blocknet Privacy"]
 license = "BSD-3-Clause"
 repository = "https://github.com/blocknetprivacy/blocknet-tauri"

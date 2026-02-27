@@ -1,3 +1,11 @@
+:root {
+  color-scheme: dark;
+}
+
+html {
+  background: #000;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -22,7 +30,7 @@
 }
 
 body {
-  background: #0a0a0a;
+  background: #000;
   color: #b0b0b0;
   font: 15px/1.6 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   overflow: hidden;
@@ -84,7 +92,7 @@ h2 {
   left: 0;
   width: 100vw;
   height: 100vh;
-  background: #0a0a0a;
+  background: #000000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -143,7 +151,7 @@ h2 {
 }
 
 #password-form input[type="password"] {
-  background: #111;
+  background: #000;
   border: 1px solid #333;
   color: #eee;
   padding: 12px 16px;
@@ -200,7 +208,7 @@ h2 {
 }
 
 .onboard-btn {
-  background: #0a0a0a;
+  background: #000;
   border: none;
   padding: 20px;
   text-align: left;
@@ -216,7 +224,7 @@ h2 {
 }
 
 .onboard-btn:active {
-  background: #151515;
+  background: #111;
 }
 
 .onboard-btn-label {
@@ -232,7 +240,7 @@ h2 {
 
 .onboard-recent {
   text-align: left;
-  border-left: 1px solid #1a1a1a;
+  border-left: 1px solid #111;
   padding-left: 20px;
 }
 
@@ -252,8 +260,8 @@ h2 {
 .onboard-wallet-row {
   width: 100%;
   text-align: left;
-  background: #0f0f0f;
-  border: 1px solid #1f1f1f;
+  background: #000;
+  border: 1px solid #111;
   color: #eee;
   padding: 10px 12px;
   cursor: pointer;
@@ -285,7 +293,7 @@ h2 {
   border: 1px solid #333;
   padding: 12px 16px;
   margin-top: 16px;
-  background: #0d0d0d;
+  background: #000;
   font-size: 13px;
   line-height: 1.4;
   display: none;
@@ -293,19 +301,19 @@ h2 {
 
 .status-message.error {
   border-color: #530;
-  background: #1a140a;
+  background: #000;
   color: #fa0;
 }
 
 .status-message.success {
   border-color: #353;
-  background: #0f1a0f;
+  background: #000;
   color: #af0;
 }
 
 .status-message.info {
   border-color: #333;
-  background: #0d0d0d;
+  background: #000;
   color: #666;
 }
 
@@ -432,7 +440,7 @@ h2 {
 
   .onboard-recent {
     border-left: none;
-    border-top: 1px solid #1a1a1a;
+    border-top: 1px solid #111;
     padding-left: 0;
     padding-top: 14px;
   }
@@ -524,7 +532,7 @@ h2 {
 .form-group select {
   width: 100%;
   padding: 10px;
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #333;
   color: #b0b0b0;
   font: 15px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -587,16 +595,25 @@ h2 {
 
 /* Balance Card */
 .balance-card {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   padding: 24px;
   margin-bottom: 32px;
-  background: #0a0a0a;
+  background: #000;
+  position: relative;
 }
 
 .balance-label {
   color: #666;
   font-size: 13px;
   margin-bottom: 4px;
+}
+
+.balance-shortname {
+  position: absolute;
+  top: 1em;
+  right: 1em;
+  color: #af0;
+  font-size: 15px;
 }
 
 .balance-value {
@@ -683,9 +700,9 @@ h2 {
 }
 
 .stat-card {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   padding: 16px;
-  background: #0a0a0a;
+  background: #000;
 }
 
 .stat-label {
@@ -791,7 +808,7 @@ h2 {
 }
 
 .ab-edit-input {
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #333;
   color: #eee;
   padding: 6px 8px;
@@ -879,11 +896,13 @@ h2 {
   justify-content: center;
   margin: 20px 0 4px;
   cursor: pointer;
+  margin-bottom: 4em
+
 }
 
 .qr-container svg {
-  width: 220px;
-  height: 220px;
+  width: 12rem;
+  height: 12rem;
   border-radius: 10px;
 }
 
@@ -914,7 +933,7 @@ h2 {
 
 /* Address Display */
 .address-display {
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #333;
   padding: 16px;
   color: #af0;
@@ -939,6 +958,42 @@ h2 {
   width: 100%;
 }
 
+.payment-link-toggle {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  margin-bottom: 10px;
+  border: 1px solid #333;
+}
+
+.payment-link-mode {
+  background: #000;
+  color: #888;
+  border: none;
+  border-right: 1px solid #222;
+  padding: 9px 10px;
+  font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+}
+
+.payment-link-mode:last-child {
+  border-right: none;
+}
+
+.payment-link-mode.active {
+  color: #000;
+  background: #af0;
+  font-weight: bold;
+}
+
+.receive-handle-section {
+  margin-top: 12px;
+}
+
+.receive-handle-actions {
+  margin-top: 8px;
+}
+
 .btn-secondary {
   background: transparent;
   color: #af0;
@@ -947,6 +1002,12 @@ h2 {
   font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   cursor: pointer;
   transition: background 0.2s, border-color 0.2s;
+}
+
+#export-csv-btn {
+  background: #af0;
+  color: #000;
+  border: 1px solid #af0;
 }
 
 .btn-secondary:hover {
@@ -1143,7 +1204,7 @@ h2 {
 .sv-tab {
   flex: 1;
   padding: 10px;
-  background: #111;
+  background: #000;
   border: 1px solid #333;
   color: #999;
   font: 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
@@ -1153,9 +1214,9 @@ h2 {
 .sv-tab:first-child { border-radius: 6px 0 0 6px; }
 .sv-tab:last-child { border-radius: 0 6px 6px 0; }
 .sv-tab.active {
-  background: #1a1a1a;
+  background: #af0;
   border-color: #af0;
-  color: #af0;
+  color: #000;
 }
 .sv-result {
   margin-top: 16px;
@@ -1178,7 +1239,7 @@ h2 {
 textarea {
   width: 100%;
   padding: 10px;
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #333;
   border-radius: 6px;
   color: #eee;
@@ -1225,7 +1286,7 @@ textarea:focus {
 }
 
 .mining-panel {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   background: rgba(10, 10, 10, 0.75);
   padding: 32px;
   margin-bottom: 24px;
@@ -1349,7 +1410,7 @@ textarea:focus {
 }
 
 .stepper-btn:hover:not(:disabled) {
-  background: #1a1a1a;
+  background: #111;
 }
 
 .stepper-btn:active:not(:disabled) {
@@ -1362,7 +1423,7 @@ textarea:focus {
 }
 
 .stepper-value {
-  background: #0a0a0a;
+  background: #000;
   color: #eee;
   min-width: 52px;
   height: 40px;
@@ -1399,7 +1460,7 @@ textarea:focus {
 }
 
 .mempool-panel {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   background: rgba(10, 10, 10, 0.75);
   padding: 16px;
   margin-top: 16px;
@@ -1430,7 +1491,7 @@ textarea:focus {
 }
 
 .mempool-next-block {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   background: rgba(8, 8, 8, 0.75);
   padding: 12px;
   display: flex;
@@ -1460,7 +1521,7 @@ textarea:focus {
 }
 
 .mempool-stat-item {
-  border: 1px solid #1a1a1a;
+  border: 1px solid #111;
   background: rgba(8, 8, 8, 0.75);
   padding: 10px 12px;
   display: flex;
@@ -1480,11 +1541,24 @@ textarea:focus {
 
 /* Peer Rows */
 .peer-row {
-  padding: 8px 0;
   border-bottom: 1px solid #111;
   font-size: 13px;
-  color: #b0b0b0;
+  color: #bbb;
   word-break: break-all;
+}
+
+.peer-row-link {
+  cursor: pointer;
+  transition: background 0.12s;
+}
+
+.peer-row-link:hover {
+  background: rgba(170, 255, 0, 0.04);
+}
+
+.peer-row-link-selected {
+  background: rgba(170, 255, 0, 0.06);
+  color: #d8ff84;
 }
 
 .peer-row:last-child {
@@ -1495,6 +1569,91 @@ textarea:focus {
   display: flex;
   justify-content: space-between;
   gap: 12px;
+}
+
+/* Peer Detail */
+.peer-detail-container {
+  max-width: 900px;
+}
+
+.peer-detail-head {
+  margin-bottom: 14px;
+}
+
+.peer-detail-status {
+  font-size: 14px;
+}
+
+.peer-panel {
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  border-left: none;
+  border-right: none;
+  background: transparent;
+  padding: 12px;
+  margin-bottom: 22px;
+}
+
+.peer-geo-panel {
+  padding: 12px;
+}
+
+.peer-geo-map {
+  position: relative;
+  border-top: 1px solid #111;
+  border-bottom: 1px solid #111;
+  border-left: none;
+  border-right: none;
+  background: #000;
+  min-height: 170px;
+  margin-bottom: 12px;
+  overflow: hidden;
+}
+
+.peer-geo-map svg {
+  width: 100%;
+  height: 100%;
+  opacity: 0.85;
+}
+
+.peer-geo-dot {
+  position: absolute;
+  width: 10px;
+  height: 10px;
+  border-radius: 999px;
+  background: #af0;
+  transform: translate(-50%, -50%);
+  box-shadow: 0 0 0 0 rgba(170, 255, 0, 0.55);
+  animation: peer-geo-pulse 2s infinite;
+}
+
+.peer-geo-label {
+  position: absolute;
+  left: 12px;
+  bottom: 10px;
+  transform: none;
+  font-size: 12px;
+  color: #8a8a8a;
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+@keyframes peer-geo-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(170, 255, 0, 0.55); }
+  70% { box-shadow: 0 0 0 10px rgba(170, 255, 0, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(170, 255, 0, 0); }
+}
+
+.peer-observation-row {
+  color: #ccc;
+  font-size: 13px;
+  padding: 6px 0;
+  border-bottom: 1px solid #111;
+}
+
+.peer-observation-row:last-child {
+  border-bottom: none;
 }
 
 /* Empty State */
@@ -1560,7 +1719,6 @@ textarea:focus {
   position: relative;
   width: 18px;
   height: 18px;
-  border-radius: 50%;
   border: none;
   color: #666;
   display: inline-flex;
@@ -1585,7 +1743,7 @@ textarea:focus {
   left: 50%;
   top: calc(100% + 8px);
   transform: translateX(-50%);
-  background: #111;
+  background: #000;
   border: 1px solid #333;
   color: #b0b0b0;
   padding: 6px 8px;
@@ -1826,7 +1984,7 @@ textarea:focus {
 
 .seed-input {
   width: 100%;
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #222;
   color: #eee;
   padding: 12px;
@@ -1847,7 +2005,7 @@ textarea:focus {
 
 .seed-pw-input {
   width: 100%;
-  background: #0d0d0d;
+  background: #000;
   border: 1px solid #222;
   color: #eee;
   padding: 10px 12px;
@@ -1901,9 +2059,9 @@ textarea:focus {
 }
 
 .btn-danger {
-  background: #333;
+  background: #000;
   color: #fa0;
-  border: none;
+  border: 1px solid #420;
   padding: 12px 24px;
   font: 15px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: bold;
@@ -1912,14 +2070,16 @@ textarea:focus {
 }
 
 .btn-danger:hover {
-  background: #442200;
+  background: #420;
+  border: 1px solid #fa0;
+
 }
 
 .seed-display {
   margin-top: 24px;
   padding: 16px;
-  background: #111;
-  border: 1px solid #333;
+  background: #000;
+  border: 1px solid #420;
   word-break: normal;
   overflow-wrap: break-word;
   color: #fa0;
@@ -1958,9 +2118,8 @@ textarea:focus {
 }
 
 .security-blocked-modal {
-  background: #111;
+  background: #000;
   border: 1px solid #333;
-  border-radius: 16px;
   padding: 40px 36px;
   max-width: 480px;
   width: 100%;
@@ -2009,7 +2168,6 @@ textarea:focus {
 .security-blocked-modal code {
   background: #222;
   padding: 2px 6px;
-  border-radius: 4px;
   font-family: monospace;
   font-size: 13px;
   color: #af0;
