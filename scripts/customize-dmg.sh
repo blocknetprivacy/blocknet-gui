@@ -13,6 +13,16 @@ OUT_DMG="${1:-}"
 APP_PATH="${2:-$ROOT_DIR/src-tauri/target/release/bundle/macos/blocknet.app}"
 
 if [[ -z "$OUT_DMG" ]]; then
+  VERSION_FILE="$ROOT_DIR/VERSION"
+  if [[ -f "$VERSION_FILE" ]]; then
+    VERSION="$(tr -d '\r\n[:space:]' < "$VERSION_FILE")"
+    if [[ -n "$VERSION" ]]; then
+      OUT_DMG="$ROOT_DIR/src-tauri/target/release/bundle/dmg/blocknet_${VERSION}_aarch64.dmg"
+    fi
+  fi
+fi
+
+if [[ -z "$OUT_DMG" ]]; then
   OUT_DMG="$(ls -t "$ROOT_DIR"/src-tauri/target/release/bundle/dmg/blocknet_*_aarch64.dmg 2>/dev/null | head -n 1 || true)"
 fi
 
