@@ -6,6 +6,71 @@ html {
   background: #000;
 }
 
+/* ── Custom Titlebar ── */
+
+.titlebar {
+  height: 36px;
+  background: #000;
+  border-bottom: 1px solid #1a1a1a;
+  user-select: none;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: 100000;
+}
+
+*[data-tauri-drag-region] {
+  app-region: drag;
+}
+
+.titlebar-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding-left: 12px;
+  color: #af0;
+  font: bold 13px/1 ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+}
+
+.titlebar-icon {
+  width: 16px;
+  height: 16px;
+}
+
+.titlebar-controls {
+  display: flex;
+  app-region: no-drag;
+}
+
+.titlebar-controls button {
+  appearance: none;
+  border: none;
+  background: transparent;
+  color: #af0;
+  width: 46px;
+  height: 36px;
+  display: inline-flex;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: background 0.15s;
+}
+
+.titlebar-controls button:hover {
+  background: #1a1a1a;
+}
+
+.titlebar-controls button#titlebar-close:hover {
+  background: #af0;
+  color: #000;
+}
+
 * {
   margin: 0;
   padding: 0;
@@ -36,6 +101,7 @@ body {
   overflow: hidden;
   width: 100vw;
   height: 100vh;
+  border: 1px solid #222;
 }
 
 a {
@@ -63,10 +129,10 @@ h2 {
 /* Splash Screen */
 #splash {
   position: fixed;
-  top: 0;
+  top: 36px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh - 36px);
   background: #af0;
   display: flex;
   align-items: center;
@@ -88,10 +154,10 @@ h2 {
 /* Password Screen */
 #password-screen {
   position: fixed;
-  top: 0;
+  top: 36px;
   left: 0;
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh - 36px);
   background: #000000;
   display: flex;
   align-items: center;
@@ -320,7 +386,8 @@ h2 {
 /* Main App */
 #app {
   width: 100vw;
-  height: 100vh;
+  height: calc(100vh - 36px);
+  margin-top: 36px;
   background: #000;
   display: flex;
   overflow: hidden;
@@ -329,7 +396,7 @@ h2 {
 /* Sidebar Navigation */
 #sidebar {
   width: 200px;
-  height: 100vh;
+  height: 100%;
   background: #000;
   display: flex;
   flex-direction: column;

@@ -1,9 +1,9 @@
-#![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
+#![windows_subsystem = "windows"]
 
 use std::sync::Mutex;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use tauri::{AppHandle, Listener, Manager, State, WindowEvent};
+use tauri::{AppHandle, Listener, Manager, RunEvent, State, WindowEvent};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::{MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent};
 use tauri::Emitter;
@@ -167,26 +167,24 @@ fn get_paths(app: &AppHandle) -> Result<(std::path::PathBuf, std::path::PathBuf)
 fn kill_listeners_in_gui_port_range() {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        let cmd = format!(
-            "pids=$(lsof -ti tcp:{}-{} 2>/dev/null); if [ -n \"$pids\" ]; then kill -9 $pids; fi",
-            GUI_API_PORT_MIN, GUI_API_PORT_MAX
-        );
-        let _ = std::process::Command::new("sh")
-            .arg("-c")
-            .arg(cmd)
-            .status();
+        let binary_names = ["blocknet-aarch64-apple-darwin", "blocknet-amd64-linux"];
+        for name in binary_names {
+            let cmd = format!("pkill -9 -f '{}' 2>/dev/null || true", name);
+            let _ = std::process::Command::new("sh")
+                .arg("-c")
+                .arg(cmd)
+                .status();
+        }
     }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let ps_cmd = format!(
-            "{}..{} | ForEach-Object {{ Get-NetTCPConnection -LocalPort $_ -ErrorAction SilentlyContinue | Select-Object -ExpandProperty OwningProcess }} | Sort-Object -Unique | ForEach-Object {{ Stop-Process -Id $_ -Force -ErrorAction SilentlyContinue }}",
-            GUI_API_PORT_MIN, GUI_API_PORT_MAX
-        );
-        let _ = std::process::Command::new("powershell")
+        let _ = std::process::Command::new("taskkill")
             .creation_flags(CREATE_NO_WINDOW)
-            .args(["-NoProfile", "-NonInteractive", "-Command", &ps_cmd])
+            .args(["/f", "/im", "blocknet-amd64-windows.exe"])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .status();
     }
 }
@@ -398,13 +396,18 @@ async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
         .map_err(|e| format!("Failed to create data dir: {}", e))?;
     let binary_path = get_binary_path(&app)?;
 
-    let mut child = std::process::Command::new(&binary_path)
-        .arg("--wallet").arg(wallet_path.to_str().unwrap())
+    let mut cmd = std::process::Command::new(&binary_path);
+    cmd.arg("--wallet").arg(wallet_path.to_str().unwrap())
         .arg("--data").arg(data_dir.to_str().unwrap())
         .stdin(std::process::Stdio::piped())
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped())
-        .spawn()
+        .stderr(std::process::Stdio::piped());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let mut child = cmd.spawn()
         .map_err(|e| {
             if check_security_blocked(&binary_path) {
                 return "SECURITY_BLOCKED".to_string();
@@ -426,8 +429,11 @@ async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
 
 #[tauri::command]
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
+    // Kill any existing daemon before starting a new one
+    stop_daemon_inner(&state);
+
     kill_listeners_in_gui_port_range();
-    std::thread::sleep(std::time::Duration::from_millis(250));
+    std::thread::sleep(std::time::Duration::from_millis(100));
 
     let api_port = pick_gui_api_port()?;
     {
@@ -454,11 +460,16 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
     args.push("--wallet".to_string());
     args.push(wallet_path.to_str().unwrap().to_string());
 
-    let mut child = std::process::Command::new(&binary_path)
-        .args(&args)
+    let mut cmd = std::process::Command::new(&binary_path);
+    cmd.args(&args)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        cmd.creation_flags(0x0800_0000);
+    }
+    let mut child = cmd.spawn()
         .map_err(|e| {
             if check_security_blocked(&binary_path) {
                 return "SECURITY_BLOCKED".to_string();
@@ -466,7 +477,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
             format!("Failed to spawn daemon: {}", e)
         })?;
 
-    std::thread::sleep(std::time::Duration::from_secs(2));
+    std::thread::sleep(std::time::Duration::from_millis(500));
 
     match child.try_wait() {
         Ok(Some(status)) if !status.success() => {
@@ -507,7 +518,7 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
         .unwrap_or_default();
 
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_secs(2))
+        .timeout(std::time::Duration::from_millis(500))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -797,9 +808,14 @@ fn daemon_version_string(app: &AppHandle) -> Result<String, String> {
     ];
 
     for args in attempts {
-        let output = std::process::Command::new(&binary_path)
-            .args(args)
-            .output()
+        let mut cmd = std::process::Command::new(&binary_path);
+        cmd.args(args);
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            cmd.creation_flags(0x0800_0000);
+        }
+        let output = cmd.output()
             .map_err(|e| format!("Failed to run daemon version command: {}", e))?;
 
         let stdout = String::from_utf8_lossy(&output.stdout).trim().to_string();
@@ -859,7 +875,15 @@ async fn main() {
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
-        .plugin(tauri_plugin_window_state::Builder::new().build())
+        .plugin(tauri_plugin_window_state::Builder::new()
+            .with_state_flags(
+                tauri_plugin_window_state::StateFlags::SIZE
+                    | tauri_plugin_window_state::StateFlags::POSITION
+                    | tauri_plugin_window_state::StateFlags::MAXIMIZED
+                    | tauri_plugin_window_state::StateFlags::VISIBLE
+                    | tauri_plugin_window_state::StateFlags::FULLSCREEN
+            )
+            .build())
         .plugin(tauri_plugin_deep_link::init())
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
@@ -887,6 +911,9 @@ async fn main() {
                             }
                         }
                         "quit" => {
+                            // Stop SSE events and daemon before exiting
+                            stop_api_events_inner(&app.state::<EventsState>());
+                            stop_daemon_inner(&app.state::<DaemonState>());
                             app.exit(0);
                         }
                         _ => {}
@@ -933,9 +960,10 @@ async fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { api, .. } = event {
-                api.prevent_close();
-                let _ = window.hide();
+            if let WindowEvent::CloseRequested { .. } = event {
+                let app = window.app_handle();
+                stop_api_events_inner(&app.state::<EventsState>());
+                stop_daemon_inner(&app.state::<DaemonState>());
             }
         })
         .invoke_handler(tauri::generate_handler![
@@ -962,6 +990,12 @@ async fn main() {
             stop_api_events,
             fetch_url,
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running tauri application");
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(|app, event| {
+            if let RunEvent::Exit = event {
+                stop_api_events_inner(&app.state::<EventsState>());
+                stop_daemon_inner(&app.state::<DaemonState>());
+            }
+        });
 }

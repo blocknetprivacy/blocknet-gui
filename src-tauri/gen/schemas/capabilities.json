@@ -1,1 +1,1 @@
-{"default":{"identifier":"default","description":"Default capabilities","local":true,"windows":["main"],"permissions":["shell:allow-open","core:event:default","deep-link:default","core:window:allow-show","core:window:allow-set-focus"]}}
+{"default":{"identifier":"default","description":"Default capabilities","local":true,"windows":["main"],"permissions":["shell:allow-open","core:event:default","deep-link:default","core:window:allow-show","core:window:allow-set-focus","core:window:allow-minimize","core:window:allow-toggle-maximize","core:window:allow-close"]}}

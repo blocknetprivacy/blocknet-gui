@@ -28,6 +28,7 @@ let dashLastTxCount = -1;
 let dashForceRefresh = false;
 let peerDetailActiveId = '';
 let peerDetailLiveTimer = null;
+let navGeneration = 0;
 
 function getPendingSends() {
   try { return JSON.parse(localStorage.getItem(walletKey('pendingSends')) || '[]'); } catch (_) { return []; }
@@ -252,7 +253,8 @@ function navigate(view) {
   if (navEl) navEl.classList.add('active');
 
   currentView = view;
-  loadView(view);
+  navGeneration++;
+  loadView(view, navGeneration);
 }
 
 function navigateBack() {
@@ -264,10 +266,13 @@ function navigateBack() {
   if (viewEl) viewEl.classList.add('active');
   if (navEl) navEl.classList.add('active');
   currentView = prev;
+  navGeneration++;
+  loadView(prev, navGeneration);
 }
 
-async function loadView(view) {
+async function loadView(view, gen) {
   try {
+    if (gen !== navGeneration) return;
     switch (view) {
       case 'dashboard': await loadDashboard(); break;
       case 'send': renderAddressBook(); break;
@@ -275,9 +280,10 @@ async function loadView(view) {
       case 'history': await loadHistory(); break;
       case 'mining': await loadMining(); break;
       case 'network': await loadNetwork(); break;
-      case 'settings': await loadWalletList(); await loadVersions(); break;
+      case 'settings': await loadWalletList(); if (gen !== navGeneration) return; await loadVersions(); break;
     }
   } catch (e) {
+    if (gen !== navGeneration) return;
     console.error('Error loading ' + view + ':', e);
   }
 }
@@ -874,6 +880,9 @@ function renderHistoryBalanceSparkline(outputs) {
 // --- Mining ---
 
 async function loadMining() {
+  // Skip UI refresh while a toggle or thread change is in progress
+  if (miningToggleBusy) return;
+
   const data = await api('/api/mining');
   isMining = data.running;
 
@@ -1051,19 +1060,39 @@ async function loadMiningMempool() {
     '</div>';
 }
 
+let miningToggleBusy = false;
+
 async function toggleMining() {
+  if (miningToggleBusy) return;
+  miningToggleBusy = true;
   const btn = document.getElementById('mining-toggle');
   btn.disabled = true;
-  btn.textContent = isMining ? 'Stopping...' : 'Starting...';
+  document.getElementById('threads-dec').disabled = true;
+  document.getElementById('threads-inc').disabled = true;
+  const wasRunning = isMining;
+  btn.textContent = wasRunning ? 'Stopping...' : 'Starting...';
   try {
-    if (isMining) {
+    if (wasRunning) {
       await api('/api/mining/stop', { method: 'POST' });
     } else {
       await api('/api/mining/start', { method: 'POST' });
     }
+    // Poll until the daemon reflects the expected state (up to 10s)
+    var expected = !wasRunning;
+    for (var attempt = 0; attempt < 20; attempt++) {
+      await new Promise(function (r) { setTimeout(r, 500); });
+      try {
+        var status = await api('/api/mining');
+        if (status.running === expected) {
+          isMining = status.running;
+          break;
+        }
+      } catch (_) {}
+    }
   } catch (e) {
     console.error('Mining toggle error:', e);
   }
+  miningToggleBusy = false;
   btn.disabled = false;
   await loadMining();
 }
@@ -1078,6 +1107,7 @@ function updateStepperState(count) {
 }
 
 function changeThreads(delta) {
+  if (miningToggleBusy) return;
   var el = document.getElementById('mining-threads');
   var current = parseInt(el.textContent) || 1;
   var max = navigator.hardwareConcurrency || 16;
@@ -1100,6 +1130,11 @@ function changeThreads(delta) {
     }
     threadUpdatePending = false;
     threadDebounce = null;
+    // If mining is running, give the daemon time to restart with new thread count
+    if (isMining) {
+      await new Promise(function (r) { setTimeout(r, 1000); });
+    }
+    await loadMining();
   }, 300);
 }
 
@@ -2461,14 +2496,21 @@ async function handlePasswordScreenImportSubmit() {
 // --- Settings ---
 
 async function handleLockWallet() {
+  var lockFailed = false;
   try {
     await api('/api/wallet/lock', { method: 'POST' });
-    playLock();
-    sessionPassword = '';
-    showUnlockScreen();
-    showStatus('Wallet locked. Enter password to unlock.', 'info');
   } catch (e) {
-    showSettingsStatus(normalizeError(e), 'error');
+    console.error('Lock API error (UI locked anyway):', e);
+    lockFailed = true;
+  }
+  // Always lock the UI regardless of API success
+  playLock();
+  sessionPassword = '';
+  showUnlockScreen();
+  if (lockFailed) {
+    showStatus('Wallet UI locked. Warning: daemon lock may have failed — restart app if concerned.', 'warning');
+  } else {
+    showStatus('Wallet locked. Enter password to unlock.', 'info');
   }
 }
 
@@ -2999,12 +3041,12 @@ async function handlePasswordSubmit(e) {
 }
 
 async function waitForDaemon() {
-  const maxAttempts = 120;
+  const maxAttempts = 150;
   let attempts = 0;
   while (attempts < maxAttempts) {
     const ready = await invoke('check_daemon_ready');
     if (ready) return;
-    await new Promise(r => setTimeout(r, 500));
+    await new Promise(r => setTimeout(r, 200));
     attempts++;
   }
   throw new Error('Daemon failed to start within timeout');
@@ -3577,6 +3619,14 @@ document.addEventListener('keydown', function (e) {
     navigate(navKeys[idx]);
   }
 });
+
+// --- Custom Titlebar Controls ---
+(function () {
+  var appWindow = window.__TAURI__.window.getCurrentWindow();
+  document.getElementById('titlebar-minimize').addEventListener('click', function () { appWindow.minimize(); });
+  document.getElementById('titlebar-maximize').addEventListener('click', function () { appWindow.toggleMaximize(); });
+  document.getElementById('titlebar-close').addEventListener('click', function () { appWindow.close(); });
+})();
 
 if (document.readyState === 'loading') {
   document.addEventListener('DOMContentLoaded', init);
