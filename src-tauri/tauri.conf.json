@@ -35,7 +35,9 @@
         "height": 800,
         "backgroundColor": "#000000",
         "resizable": true,
-        "fullscreen": false
+        "fullscreen": false,
+        "decorations": false,
+        "shadow": false
       }
     ],
     "withGlobalTauri": true,
