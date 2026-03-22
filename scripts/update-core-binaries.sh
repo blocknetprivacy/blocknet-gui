@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 BIN_DIR="$ROOT_DIR/src-tauri/binaries"
-API_BASE="https://api.github.com/repos/blocknetprivacy/blocknet/releases"
+API_BASE="https://api.github.com/repos/blocknetprivacy/core/releases"
 PINNED_VERSION="${BLOCKNET_CORE_VERSION:-}"
 if [[ -z "$PINNED_VERSION" && -f "$ROOT_DIR/VERSION" ]]; then
   PINNED_VERSION="$(tr -d '\r\n[:space:]' < "$ROOT_DIR/VERSION")"
@@ -51,9 +51,9 @@ else
   echo "Latest core release: $TAG_NAME"
 fi
 
-MAC_ASSET="blocknet-arm64-darwin-${VERSION}.zip"
-LINUX_ASSET="blocknet-amd64-linux-${VERSION}.zip"
-WIN_ASSET="blocknet-amd64-windows-${VERSION}.zip"
+MAC_ASSET="blocknet-core-arm64-macos-${VERSION}.zip"
+LINUX_ASSET="blocknet-core-amd64-linux-${VERSION}.zip"
+WIN_ASSET="blocknet-core-amd64-windows-${VERSION}.zip"
 
 MAC_URL="$(extract_asset_url "$MAC_ASSET")"
 LINUX_URL="$(extract_asset_url "$LINUX_ASSET")"
@@ -86,8 +86,8 @@ download_and_install() {
   echo "Updated $target_name"
 }
 
-download_and_install "$MAC_URL" "$MAC_ASSET" "blocknet" "blocknet-aarch64-apple-darwin"
-download_and_install "$LINUX_URL" "$LINUX_ASSET" "blocknet" "blocknet-amd64-linux"
-download_and_install "$WIN_URL" "$WIN_ASSET" "blocknet.exe" "blocknet-amd64-windows.exe"
+download_and_install "$MAC_URL" "$MAC_ASSET" "blocknet-core-arm64-macos" "blocknet-aarch64-apple-darwin"
+download_and_install "$LINUX_URL" "$LINUX_ASSET" "blocknet-core-amd64-linux" "blocknet-amd64-linux"
+download_and_install "$WIN_URL" "$WIN_ASSET" "blocknet-core-amd64-windows.exe" "blocknet-amd64-windows.exe"
 
 echo "Core sidecar binaries refreshed in $BIN_DIR"
