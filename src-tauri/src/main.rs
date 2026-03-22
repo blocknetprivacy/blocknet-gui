@@ -949,6 +949,14 @@ async fn main() {
                 app.deep_link().register_all()?;
             }
 
+            #[cfg(not(target_os = "windows"))]
+            {
+                if let Some(w) = app.get_webview_window("main") {
+                    let _ = w.set_decorations(true);
+                    let _ = w.set_shadow(true);
+                }
+            }
+
             let handle = app.handle().clone();
             app.listen("deep-link://new-url", move |_event| {
                 if let Some(w) = handle.get_webview_window("main") {
@@ -960,10 +968,19 @@ async fn main() {
             Ok(())
         })
         .on_window_event(|window, event| {
-            if let WindowEvent::CloseRequested { .. } = event {
-                let app = window.app_handle();
-                stop_api_events_inner(&app.state::<EventsState>());
-                stop_daemon_inner(&app.state::<DaemonState>());
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                #[cfg(target_os = "macos")]
+                {
+                    api.prevent_close();
+                    let _ = window.hide();
+                }
+                #[cfg(not(target_os = "macos"))]
+                {
+                    let _ = api;
+                    let app = window.app_handle();
+                    stop_api_events_inner(&app.state::<EventsState>());
+                    stop_daemon_inner(&app.state::<DaemonState>());
+                }
             }
         })
         .invoke_handler(tauri::generate_handler![

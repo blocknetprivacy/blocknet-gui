@@ -3620,8 +3620,11 @@ document.addEventListener('keydown', function (e) {
   }
 });
 
-// --- Custom Titlebar Controls ---
+// --- Platform Detection & Custom Titlebar Controls ---
 (function () {
+  var isWindows = navigator.platform && navigator.platform.indexOf('Win') === 0;
+  if (!isWindows) return;
+  document.body.classList.add('platform-windows');
   var appWindow = window.__TAURI__.window.getCurrentWindow();
   document.getElementById('titlebar-minimize').addEventListener('click', function () { appWindow.minimize(); });
   document.getElementById('titlebar-maximize').addEventListener('click', function () { appWindow.toggleMaximize(); });
