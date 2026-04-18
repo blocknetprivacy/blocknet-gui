@@ -1855,9 +1855,12 @@ function dismissSaveContactInline() {
   if (saveBtn) saveBtn.style.display = '';
 }
 
-function showAddressSuggestions() {
-  var input = document.getElementById('send-address');
-  var container = document.getElementById('address-book-suggestions');
+function showAddressSuggestions(row) {
+  row = row || getFirstRecipientRow();
+  if (!row) return;
+  var input = getRowAddressInput(row);
+  var container = getRowSuggestionsEl(row);
+  if (!input || !container) return;
   var query = (input.value || '').trim().toLowerCase();
   var book = getAddressBook();
 
@@ -1890,14 +1893,17 @@ function showAddressSuggestions() {
     el.addEventListener('mousedown', function (ev) {
       ev.preventDefault();
       input.value = el.dataset.address;
-      hideAddressSuggestions();
-      debouncedResolve();
+      hideAddressSuggestions(row);
+      debouncedResolve(row);
+      updateSendTotal();
     });
   });
 }
 
-function hideAddressSuggestions() {
-  var container = document.getElementById('address-book-suggestions');
+function hideAddressSuggestions(row) {
+  row = row || getFirstRecipientRow();
+  if (!row) return;
+  var container = getRowSuggestionsEl(row);
   if (container) {
     container.innerHTML = '';
     container.style.display = 'none';
@@ -1942,7 +1948,6 @@ function memoHtml(o) {
 
 // --- Send ---
 
-let resolvedHandle = null;
 let blocknetIdPubKey = null;
 
 async function getBlocknetIdPubKey() {
@@ -1988,8 +1993,11 @@ function abbrAddr(addr) {
   return addr.substring(0, 4) + '...' + addr.substring(addr.length - 4);
 }
 
-function showResolved(prefix, handle, address, verified, updatedAt) {
-  var el = document.getElementById('send-resolved');
+function showResolved(row, prefix, handle, address, verified, updatedAt) {
+  row = row || getFirstRecipientRow();
+  if (!row) return;
+  var el = getRowResolvedEl(row);
+  if (!el) return;
   var parts = '';
   if (verified) {
     parts += ' <span class="resolve-ok">✓ verified</span>';
@@ -2017,97 +2025,297 @@ function humanAge(sec) {
   return Math.floor(sec / 86400) + 'd';
 }
 
-function hideResolved() {
-  resolvedHandle = null;
-  var el = document.getElementById('send-resolved');
+function hideResolved(row) {
+  row = row || getFirstRecipientRow();
+  if (!row) return;
+  row._resolved = null;
+  var el = getRowResolvedEl(row);
   if (el) { el.style.display = 'none'; el.innerHTML = ''; }
 }
 
-var resolveDebounceTimer = null;
-
-function debouncedResolve() {
-  if (resolveDebounceTimer) clearTimeout(resolveDebounceTimer);
-  var val = document.getElementById('send-address').value.trim();
+function debouncedResolve(row) {
+  row = row || getFirstRecipientRow();
+  if (!row) return;
+  if (row._resolveTimer) clearTimeout(row._resolveTimer);
+  var addrInput = getRowAddressInput(row);
+  if (!addrInput) return;
+  var val = (addrInput.value || '').trim();
   if (!val || !isHandlePrefix(val.charAt(0)) || val.length < 2) {
-    hideResolved();
+    hideResolved(row);
     return;
   }
-  resolveDebounceTimer = setTimeout(function () {
-    var current = document.getElementById('send-address').value.trim();
+  row._resolveTimer = setTimeout(function () {
+    var current = (addrInput.value || '').trim();
     if (current !== val) return;
     var prefix = val.charAt(0);
     var handle = val.slice(1);
-    if (resolvedHandle && resolvedHandle.handle === handle) return;
-    var el = document.getElementById('send-resolved');
-    el.textContent = 'Resolving ' + prefix + handle + '...';
-    el.style.display = 'block';
+    if (row._resolved && row._resolved.handle === handle) return;
+    var el = getRowResolvedEl(row);
+    if (el) {
+      el.textContent = 'Resolving ' + prefix + handle + '...';
+      el.style.display = 'block';
+    }
     resolveHandle(handle).then(function (data) {
-      if (document.getElementById('send-address').value.trim() !== val) return;
-      resolvedHandle = { handle: handle, address: data.address, verified: data.verified, updatedAt: data.updated_at };
-      showResolved(prefix, handle, data.address, data.verified, data.updated_at);
+      if ((addrInput.value || '').trim() !== val) return;
+      row._resolved = { handle: handle, address: data.address, verified: data.verified, updatedAt: data.updated_at };
+      showResolved(row, prefix, handle, data.address, data.verified, data.updated_at);
     }).catch(function () {
-      if (document.getElementById('send-address').value.trim() !== val) return;
-      hideResolved();
+      if ((addrInput.value || '').trim() !== val) return;
+      hideResolved(row);
     });
   }, 2000);
 }
 
+// --- Recipient row helpers (multi-recipient send) ---
+
+function getRecipientRows() {
+  var container = document.getElementById('send-recipients');
+  if (!container) return [];
+  return Array.prototype.slice.call(container.querySelectorAll('.recipient-row'));
+}
+
+function getFirstRecipientRow() {
+  var container = document.getElementById('send-recipients');
+  return container ? container.querySelector('.recipient-row') : null;
+}
+
+function getRowAddressInput(row) { return row ? row.querySelector('[data-role="address"]') : null; }
+function getRowAmountInput(row) { return row ? row.querySelector('[data-role="amount"]') : null; }
+function getRowMemoInput(row) { return row ? row.querySelector('[data-role="memo"]') : null; }
+function getRowSuggestionsEl(row) { return row ? row.querySelector('[data-role="suggestions"]') : null; }
+function getRowResolvedEl(row) { return row ? row.querySelector('[data-role="resolved"]') : null; }
+
+function createRecipientRow() {
+  var row = document.createElement('div');
+  row.className = 'recipient-row extra-recipient';
+  row.innerHTML =
+    '<div class="recipient-row-header">' +
+      '<span class="recipient-row-label"></span>' +
+      '<button type="button" class="recipient-remove-btn">Remove</button>' +
+    '</div>' +
+    '<div class="form-group">' +
+      '<label>Recipient</label>' +
+      '<input type="text" data-role="address" placeholder="Address, $handle, or @handle" autocorrect="off" autocapitalize="off" spellcheck="false">' +
+      '<div class="address-suggestions" data-role="suggestions"></div>' +
+      '<div class="send-resolved" data-role="resolved" style="display: none;"></div>' +
+    '</div>' +
+    '<div class="form-group">' +
+      '<label>Amount (BNT)</label>' +
+      '<input type="number" data-role="amount" step="0.00000001" min="0" placeholder="0.00">' +
+    '</div>' +
+    '<div class="form-group">' +
+      '<label>Memo <span class="d">(optional, max 124 bytes)</span></label>' +
+      '<input type="text" data-role="memo" placeholder="" maxlength="124" autocorrect="off" autocapitalize="off" spellcheck="false">' +
+    '</div>';
+  return row;
+}
+
+function addRecipientRow() {
+  var container = document.getElementById('send-recipients');
+  if (!container) return null;
+  var row = createRecipientRow();
+  container.appendChild(row);
+  wireRecipientRow(row);
+  renumberRecipientRows();
+  updateSendTotal();
+  var addrInput = getRowAddressInput(row);
+  if (addrInput) addrInput.focus();
+  return row;
+}
+
+function removeRecipientRow(row) {
+  if (!row) return;
+  var rows = getRecipientRows();
+  if (rows.length <= 1) return;
+  if (row._resolveTimer) { clearTimeout(row._resolveTimer); row._resolveTimer = null; }
+  row.parentNode.removeChild(row);
+  renumberRecipientRows();
+  updateSendTotal();
+}
+
+function renumberRecipientRows() {
+  var rows = getRecipientRows();
+  rows.forEach(function (row, idx) {
+    row.setAttribute('data-recipient-index', String(idx));
+    var header = row.querySelector('.recipient-row-header');
+    if (header) header.style.display = rows.length > 1 ? '' : 'none';
+    var label = row.querySelector('.recipient-row-label');
+    if (label) label.textContent = 'Recipient #' + (idx + 1);
+    var removeBtn = row.querySelector('.recipient-remove-btn');
+    if (removeBtn) removeBtn.style.display = rows.length > 1 ? '' : 'none';
+  });
+}
+
+function updateSendTotal() {
+  var rows = getRecipientRows();
+  var total = 0;
+  rows.forEach(function (row) {
+    var amountInput = getRowAmountInput(row);
+    if (!amountInput) return;
+    var v = parseFloat(amountInput.value);
+    if (!isNaN(v) && v > 0) total += v;
+  });
+  var totalEl = document.getElementById('send-total');
+  var totalValEl = document.getElementById('send-total-value');
+  if (!totalEl || !totalValEl) return;
+  if (rows.length <= 1) {
+    totalEl.style.display = 'none';
+  } else {
+    totalEl.style.display = '';
+    totalValEl.textContent = formatBNT(Math.round(total * 100000000)) + ' BNT';
+  }
+}
+
+function resetSendForm() {
+  var rows = getRecipientRows();
+  rows.forEach(function (row, idx) {
+    if (idx === 0) {
+      var addr = getRowAddressInput(row);
+      var amount = getRowAmountInput(row);
+      var memo = getRowMemoInput(row);
+      if (addr) addr.value = '';
+      if (amount) amount.value = '';
+      if (memo) memo.value = '';
+      hideResolved(row);
+      hideAddressSuggestions(row);
+    } else {
+      if (row._resolveTimer) { clearTimeout(row._resolveTimer); row._resolveTimer = null; }
+      row.parentNode.removeChild(row);
+    }
+  });
+  renumberRecipientRows();
+  updateSendTotal();
+}
+
+function wireRecipientRow(row) {
+  if (!row) return;
+  var addr = getRowAddressInput(row);
+  var amount = getRowAmountInput(row);
+  if (addr) {
+    addr.addEventListener('input', function () { showAddressSuggestions(row); debouncedResolve(row); });
+    addr.addEventListener('paste', function (ev) {
+      var cd = ev.clipboardData || window.clipboardData;
+      var text = cd && typeof cd.getData === 'function' ? cd.getData('text') : '';
+      if (applyPaymentRequestToRow(row, text, false)) ev.preventDefault();
+    });
+    addr.addEventListener('focus', function () { showAddressSuggestions(row); });
+    addr.addEventListener('blur', function () { setTimeout(function () { hideAddressSuggestions(row); }, 150); });
+  }
+  if (amount) {
+    amount.addEventListener('input', updateSendTotal);
+  }
+  var removeBtn = row.querySelector('.recipient-remove-btn');
+  if (removeBtn) {
+    removeBtn.addEventListener('click', function () { removeRecipientRow(row); });
+  }
+}
+
+function applyPaymentRequestToRow(row, raw, silent) {
+  row = row || getFirstRecipientRow();
+  var parsed = parsePaymentRequestUri(raw);
+  if (!parsed || !row) return false;
+  var addrEl = getRowAddressInput(row);
+  var amountEl = getRowAmountInput(row);
+  var memoEl = getRowMemoInput(row);
+  if (!addrEl || !amountEl || !memoEl) return false;
+
+  addrEl.value = parsed.address;
+  if (parsed.amount) amountEl.value = parsed.amount;
+  if (parsed.memo) memoEl.value = parsed.memo;
+  hideAddressSuggestions(row);
+  if (isHandlePrefix(parsed.address.charAt(0))) debouncedResolve(row);
+  else hideResolved(row);
+  updateSendTotal();
+  if (!silent) showSendStatus('Pre-filled from payment link. Review and confirm.', 'info');
+  return true;
+}
+
 async function handleSend(e) {
   e.preventDefault();
-  var rawAddress = document.getElementById('send-address').value.trim();
-  var parsedLink = parsePaymentRequestUri(rawAddress);
-  if (parsedLink) {
-    applyPaymentRequestToSend(rawAddress, true);
-    rawAddress = parsedLink.address;
-  }
-  const amountStr = document.getElementById('send-amount').value;
-  const memo = (document.getElementById('send-memo').value || '').trim();
   const btn = document.getElementById('send-submit');
-
-  if (!rawAddress) {
-    showSendStatus('Enter a recipient address or $handle', 'error');
-    return;
-  }
-  const amountBNT = parseFloat(amountStr);
-  if (!amountBNT || amountBNT <= 0) {
-    showSendStatus('Enter a valid amount', 'error');
+  const rows = getRecipientRows();
+  if (!rows.length) {
+    showSendStatus('Add at least one recipient', 'error');
     return;
   }
 
-  var address = rawAddress;
-  var displayRecipient = rawAddress.substring(0, 16) + '...';
-  var prefix = rawAddress.charAt(0);
-
-  if (isHandlePrefix(prefix)) {
-    var handle = rawAddress.slice(1);
-    if (!handle) {
-      showSendStatus('Enter a handle after ' + prefix, 'error');
-      return;
-    }
-    if (!resolvedHandle || resolvedHandle.handle !== handle) {
-      btn.disabled = true;
-      btn.textContent = 'Resolving...';
-      showSendStatus('Resolving ' + prefix + handle + '...', 'info');
-      try {
-        var resolved = await resolveHandle(handle);
-        resolvedHandle = { handle: handle, address: resolved.address, verified: resolved.verified, updatedAt: resolved.updated_at };
-        showResolved(prefix, handle, resolved.address, resolved.verified, resolved.updated_at);
-      } catch (err) {
-        btn.disabled = false;
-        btn.textContent = 'Send';
-        hideResolved();
-        showSendStatus('Could not resolve ' + prefix + handle + ': ' + normalizeError(err), 'error');
-        return;
-      } finally {
-        btn.disabled = false;
+  // Phase 1: validate each row (and parse payment-link paste on row 0)
+  var entries = [];
+  for (var i = 0; i < rows.length; i++) {
+    var row = rows[i];
+    var addrInput = getRowAddressInput(row);
+    var amountInput = getRowAmountInput(row);
+    var memoInput = getRowMemoInput(row);
+    if (!addrInput || !amountInput || !memoInput) continue;
+    var rawAddress = (addrInput.value || '').trim();
+    if (i === 0) {
+      var parsedLink = parsePaymentRequestUri(rawAddress);
+      if (parsedLink) {
+        applyPaymentRequestToRow(row, rawAddress, true);
+        rawAddress = parsedLink.address;
       }
     }
-    address = resolvedHandle.address;
-    displayRecipient = prefix + handle;
-  } else {
-    hideResolved();
+    var labelPrefix = rows.length > 1 ? ('Recipient #' + (i + 1) + ': ') : '';
+    if (!rawAddress) {
+      showSendStatus(labelPrefix + 'enter an address or $handle', 'error');
+      return;
+    }
+    var amountBNT = parseFloat(amountInput.value);
+    if (!amountBNT || amountBNT <= 0) {
+      showSendStatus(labelPrefix + 'enter a valid amount', 'error');
+      return;
+    }
+    entries.push({
+      row: row,
+      index: i,
+      rawAddress: rawAddress,
+      amountBNT: amountBNT,
+      memo: (memoInput.value || '').trim(),
+      labelPrefix: labelPrefix,
+    });
   }
 
+  // Phase 2: resolve handles for each row
+  btn.disabled = true;
+  var resolvingAny = entries.some(function (e) { return isHandlePrefix(e.rawAddress.charAt(0)); });
+  if (resolvingAny) btn.textContent = 'Resolving...';
+  try {
+    for (var j = 0; j < entries.length; j++) {
+      var entry = entries[j];
+      var prefix = entry.rawAddress.charAt(0);
+      if (isHandlePrefix(prefix)) {
+        var handle = entry.rawAddress.slice(1);
+        if (!handle) {
+          showSendStatus(entry.labelPrefix + 'enter a handle after ' + prefix, 'error');
+          return;
+        }
+        var existing = entry.row._resolved;
+        if (!existing || existing.handle !== handle) {
+          showSendStatus('Resolving ' + prefix + handle + '...', 'info');
+          try {
+            var resolved = await resolveHandle(handle);
+            entry.row._resolved = { handle: handle, address: resolved.address, verified: resolved.verified, updatedAt: resolved.updated_at };
+            showResolved(entry.row, prefix, handle, resolved.address, resolved.verified, resolved.updated_at);
+          } catch (err) {
+            hideResolved(entry.row);
+            showSendStatus(entry.labelPrefix + 'could not resolve ' + prefix + handle + ': ' + normalizeError(err), 'error');
+            return;
+          }
+        }
+        entry.address = entry.row._resolved.address;
+        entry.displayRecipient = prefix + handle;
+      } else {
+        hideResolved(entry.row);
+        entry.address = entry.rawAddress;
+        entry.displayRecipient = entry.rawAddress.substring(0, 16) + '...';
+      }
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = sendArmed ? 'Confirm Send' : 'Send';
+  }
+
+  // Phase 3: arm then confirm
   if (!sendArmed) {
     sendArmed = true;
     if (sendArmTimer) clearTimeout(sendArmTimer);
@@ -2117,12 +2325,17 @@ async function handleSend(e) {
       btn.textContent = 'Send';
       btn.classList.remove('armed');
       document.getElementById('send-status').style.display = 'none';
-      hideResolved();
     }, 10000);
     btn.textContent = 'Confirm Send';
     btn.classList.add('armed');
-    var confirmMsg = 'Send ' + amountBNT + ' BNT to ' + displayRecipient + '?';
-    if (memo) confirmMsg += '  Memo: "' + memo + '"';
+    var totalBNT = entries.reduce(function (s, e) { return s + e.amountBNT; }, 0);
+    var confirmMsg;
+    if (entries.length === 1) {
+      confirmMsg = 'Send ' + entries[0].amountBNT + ' BNT to ' + entries[0].displayRecipient + '?';
+      if (entries[0].memo) confirmMsg += '  Memo: "' + entries[0].memo + '"';
+    } else {
+      confirmMsg = 'Send ' + formatBNT(Math.round(totalBNT * 100000000)) + ' BNT total to ' + entries.length + ' recipients?';
+    }
     confirmMsg += '  Press again within 10s to confirm.';
     showSendStatus(confirmMsg, 'info');
     return;
@@ -2132,9 +2345,12 @@ async function handleSend(e) {
   if (sendArmTimer) { clearTimeout(sendArmTimer); sendArmTimer = null; }
   btn.classList.remove('armed');
 
-  const amount = Math.round(amountBNT * 100000000);
-  const sendPayload = { address, amount };
-  if (memo) sendPayload.memo_text = memo;
+  var recipientsPayload = entries.map(function (e) {
+    var r = { address: e.address, amount: Math.round(e.amountBNT * 100000000) };
+    if (e.memo) r.memo_text = e.memo;
+    return r;
+  });
+  const sendPayload = { recipients: recipientsPayload };
   const payloadKey = JSON.stringify(sendPayload);
   const now = Date.now();
   let idempotencyKey = null;
@@ -2169,24 +2385,25 @@ async function handleSend(e) {
         'Idempotency-Key': idempotencyKey,
       },
     });
+    var totalAtomic = recipientsPayload.reduce(function (s, r) { return s + r.amount; }, 0);
+    var firstRecipient = (result.recipients && result.recipients[0]) || {};
     showSendStatus('Sent! TX: ' + result.txid.substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
-    addPendingSend(result.txid, amount + result.fee, result.memo_hex);
-    if (resolvedHandle && resolvedHandle.handle) {
-      var book = getAddressBook();
-      var handle = resolvedHandle.handle;
-      var handleAddr = '$' + handle;
-      var idx = book.findIndex(function (e) { return e.name.toLowerCase() === handle.toLowerCase(); });
-      if (idx < 0) {
-        book.push({ name: handle, address: handleAddr });
-        saveAddressBook(book);
-        renderAddressBook();
+    addPendingSend(result.txid, totalAtomic + result.fee, firstRecipient.memo_hex);
+    entries.forEach(function (ent) {
+      if (ent.row._resolved && ent.row._resolved.handle) {
+        var book = getAddressBook();
+        var h = ent.row._resolved.handle;
+        var handleAddr = '$' + h;
+        var idx = book.findIndex(function (e) { return e.name.toLowerCase() === h.toLowerCase(); });
+        if (idx < 0) {
+          book.push({ name: h, address: handleAddr });
+          saveAddressBook(book);
+          renderAddressBook();
+        }
       }
-    }
+    });
     pendingSendIdempotency = null;
-    document.getElementById('send-address').value = '';
-    document.getElementById('send-amount').value = '';
-    document.getElementById('send-memo').value = '';
-    hideResolved();
+    resetSendForm();
     dashForceRefresh = true;
   } catch (e) {
     const msg = normalizeError(e);
@@ -3415,21 +3632,7 @@ function parsePaymentRequestUri(raw) {
 }
 
 function applyPaymentRequestToSend(raw, silent) {
-  var parsed = parsePaymentRequestUri(raw);
-  if (!parsed) return false;
-  var addrEl = document.getElementById('send-address');
-  var amountEl = document.getElementById('send-amount');
-  var memoEl = document.getElementById('send-memo');
-  if (!addrEl || !amountEl || !memoEl) return false;
-
-  addrEl.value = parsed.address;
-  if (parsed.amount) amountEl.value = parsed.amount;
-  if (parsed.memo) memoEl.value = parsed.memo;
-  hideAddressSuggestions();
-  if (isHandlePrefix(parsed.address.charAt(0))) debouncedResolve();
-  else hideResolved();
-  if (!silent) showSendStatus('Pre-filled from payment link. Review and confirm.', 'info');
-  return true;
+  return applyPaymentRequestToRow(getFirstRecipientRow(), raw, silent);
 }
 
 function handleDeepLinkUrls(urls) {
@@ -3517,18 +3720,13 @@ document.getElementById('threads-inc').addEventListener('click', function () { c
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
-document.getElementById('send-address').addEventListener('input', function () { showAddressSuggestions(); debouncedResolve(); });
-document.getElementById('send-address').addEventListener('paste', function (ev) {
-  var cd = ev.clipboardData || window.clipboardData;
-  var text = cd && typeof cd.getData === 'function' ? cd.getData('text') : '';
-  if (applyPaymentRequestToSend(text, false)) {
-    ev.preventDefault();
-  }
-});
-document.getElementById('send-address').addEventListener('focus', showAddressSuggestions);
-document.getElementById('send-address').addEventListener('blur', function () {
-  setTimeout(hideAddressSuggestions, 150);
-});
+(function () {
+  var firstRow = getFirstRecipientRow();
+  if (firstRow) wireRecipientRow(firstRow);
+  renumberRecipientRows();
+  var addBtn = document.getElementById('add-recipient-btn');
+  if (addBtn) addBtn.addEventListener('click', function () { addRecipientRow(); });
+})();
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);

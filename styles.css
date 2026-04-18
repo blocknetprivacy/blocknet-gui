@@ -814,6 +814,71 @@ body.platform-windows #app {
   flex: 1;
 }
 
+/* Multi-recipient Send */
+.recipient-row {
+  position: relative;
+}
+
+.recipient-row.extra-recipient {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #222;
+}
+
+.recipient-row-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.recipient-row-label {
+  color: #af0;
+  font-size: 13px;
+}
+
+.recipient-remove-btn {
+  background: transparent;
+  color: #fa0;
+  border: 1px solid #333;
+  padding: 4px 10px;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s;
+}
+
+.recipient-remove-btn:hover {
+  background: rgba(255, 170, 0, 0.05);
+  border-color: #fa0;
+}
+
+.add-recipient-btn {
+  display: block;
+  width: 100%;
+  margin-bottom: 16px;
+}
+
+.send-total {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 14px;
+  margin-bottom: 16px;
+  border: 1px solid #222;
+  background: #000;
+}
+
+.send-total-label {
+  color: #666;
+  font-size: 13px;
+}
+
+.send-total-value {
+  color: #af0;
+  font-size: 15px;
+  font-weight: bold;
+}
+
 /* Address Book */
 .address-book-section {
   margin-top: 40px;
