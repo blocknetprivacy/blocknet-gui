@@ -1,5 +1,6 @@
 let currentView = 'dashboard';
 let pollInterval = null;
+let dashStatusTimer = null;
 let realtimeUnlisten = null;
 let isNewWallet = false;
 let daemonStartPromise = null;
@@ -314,35 +315,10 @@ async function loadVersions() {
 
 // --- Dashboard ---
 
-async function loadDashboard() {
-  try {
-    var walletTitle = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
-    var walletNameEl = document.getElementById('dash-wallet-name');
-    if (walletNameEl) walletNameEl.textContent = walletTitle;
-
-    var shortname = '';
-    try {
-      var receivePrefsRaw = localStorage.getItem(walletKey('receivePrefs')) || '{}';
-      var receivePrefs = JSON.parse(receivePrefsRaw);
-      if (receivePrefs && receivePrefs.handle) shortname = '$' + String(receivePrefs.handle);
-    } catch (_) {}
-
-    var shortEl = document.getElementById('dash-shortname');
-    if (shortEl) {
-      if (shortname) {
-        shortEl.textContent = shortname;
-        shortEl.dataset.copy = shortname;
-        delete shortEl.dataset.copyWired;
-        shortEl.style.display = '';
-        wireCopyable(shortEl.parentNode || shortEl);
-      } else {
-        shortEl.style.display = 'none';
-        shortEl.textContent = '';
-        delete shortEl.dataset.copy;
-      }
-    }
-  } catch (_) {}
-
+// Lightweight status-panel refresh (chain height, peers, mempool, sync %).
+// Cheap enough to run on a fast timer while the dashboard is open so the
+// sync readout advances without the user switching views.
+async function refreshDashStatus() {
   try {
     const status = await api('/api/status');
     const heightLabel = status.chain_height.toLocaleString();
@@ -375,6 +351,38 @@ async function loadDashboard() {
   } catch (e) {
     console.error('Status error:', e);
   }
+}
+
+async function loadDashboard() {
+  try {
+    var walletTitle = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
+    var walletNameEl = document.getElementById('dash-wallet-name');
+    if (walletNameEl) walletNameEl.textContent = walletTitle;
+
+    var shortname = '';
+    try {
+      var receivePrefsRaw = localStorage.getItem(walletKey('receivePrefs')) || '{}';
+      var receivePrefs = JSON.parse(receivePrefsRaw);
+      if (receivePrefs && receivePrefs.handle) shortname = '$' + String(receivePrefs.handle);
+    } catch (_) {}
+
+    var shortEl = document.getElementById('dash-shortname');
+    if (shortEl) {
+      if (shortname) {
+        shortEl.textContent = shortname;
+        shortEl.dataset.copy = shortname;
+        delete shortEl.dataset.copyWired;
+        shortEl.style.display = '';
+        wireCopyable(shortEl.parentNode || shortEl);
+      } else {
+        shortEl.style.display = 'none';
+        shortEl.textContent = '';
+        delete shortEl.dataset.copy;
+      }
+    }
+  } catch (_) {}
+
+  await refreshDashStatus();
 
   try {
     const balance = await api('/api/wallet/balance');
@@ -2947,6 +2955,13 @@ function startPolling() {
       if (currentView === 'peer-detail' && peerDetailActiveId) await showPeerDetail(peerDetailActiveId);
     } catch (_) {}
   }, 15000);
+
+  // Bulk sync advances the chain without firing per-block SSE events, so keep
+  // the dashboard status readout ticking on its own while that view is open.
+  dashStatusTimer = setInterval(async function () {
+    if (currentView !== 'dashboard') return;
+    try { await refreshDashStatus(); } catch (_) {}
+  }, 2000);
 }
 
 function stopPolling() {
@@ -2960,6 +2975,11 @@ function stopPolling() {
   if (pollInterval) {
     clearInterval(pollInterval);
     pollInterval = null;
+  }
+
+  if (dashStatusTimer) {
+    clearInterval(dashStatusTimer);
+    dashStatusTimer = null;
   }
 }
 
