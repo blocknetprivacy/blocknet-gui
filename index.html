@@ -78,9 +78,15 @@
         </form>
 
         <div id="password-status" class="status-message"></div>
+        <div id="daemon-sync-status" class="daemon-sync-status" style="display: none;">
+          <div class="daemon-sync-text"></div>
+          <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill"></div></div>
+          <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
+        </div>
         <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
       </div>
     </div>
+    <div id="app-version-label" class="app-version-label"></div>
   </div>
 
   <!-- Main App (hidden initially) -->
@@ -139,6 +145,7 @@
               <span id="pending-label">Pending: <span id="dash-pending">--</span> BNT</span>
               <span>Total: <span id="dash-total">--</span> BNT</span>
             </div>
+            <div id="dash-sync-notice" class="sync-notice" style="display: none;"></div>
           </div>
           <div class="stats-grid">
             <div class="stat-card">
@@ -428,7 +435,8 @@
                         title="Clears local chain data and triggers a full resync from height zero."
                       >?</span>
                     </div>
-                    <p class="settings-item-desc">Removes local chain state and re-syncs from block 0. Wallet data stays intact.</p>
+                    <p class="settings-item-desc">Removes local chain state and re-syncs from block 0. Fresh checkpoints are pulled on restart. Wallet data stays intact.</p>
+                    <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
                   </div>
                   <div class="settings-item-control">
                     <button class="btn-danger" id="reset-chain-btn">Reset Blockchain Data</button>

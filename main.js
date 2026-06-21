@@ -220,11 +220,15 @@ async function loadOrUnlockWallet(password) {
 // --- Formatting ---
 
 function formatBNT(atomic) {
-  return (atomic / 100000000).toFixed(8);
+  const n = Number(atomic);
+  if (!isFinite(n)) return '--';
+  return (n / 100000000).toFixed(8);
 }
 
 function formatBNTShort(atomic) {
-  const val = atomic / 100000000;
+  const n = Number(atomic);
+  if (!isFinite(n)) return '--';
+  const val = n / 100000000;
   if (val === 0) return '0.00';
   if (val < 0.01) return val.toFixed(8);
   return val.toFixed(2);
@@ -345,12 +349,28 @@ async function loadDashboard() {
     document.getElementById('dash-height').textContent = heightLabel;
     document.getElementById('dash-peers').textContent = status.peers;
     document.getElementById('dash-mempool').textContent = status.mempool_size;
-    document.getElementById('dash-syncing').textContent = status.syncing ? 'Syncing' : 'Synced';
+    const syncLabel = status.syncing
+      ? 'Syncing' + (status.sync_percent ? ' ' + status.sync_percent : '')
+      : 'Synced';
+    document.getElementById('dash-syncing').textContent = syncLabel;
     const dot = document.getElementById('status-dot');
     if (dot) {
       dot.className = 'status-dot' + (status.syncing ? ' syncing' : '');
-      dot.title = 'height: ' + heightLabel;
-      dot.setAttribute('name', 'height: ' + heightLabel);
+      var dotTitle = 'height: ' + heightLabel
+        + (status.syncing && status.sync_target ? ' / ' + Number(status.sync_target).toLocaleString() : '');
+      dot.title = dotTitle;
+      dot.setAttribute('name', dotTitle);
+    }
+    const syncNotice = document.getElementById('dash-sync-notice');
+    if (syncNotice) {
+      if (status.syncing) {
+        const pctPart = status.sync_percent ? ' (' + status.sync_percent + ')' : '';
+        syncNotice.textContent = 'Syncing blockchain' + pctPart
+          + ' — your balance may be incomplete until sync finishes.';
+        syncNotice.style.display = 'block';
+      } else {
+        syncNotice.style.display = 'none';
+      }
     }
   } catch (e) {
     console.error('Status error:', e);
@@ -2828,7 +2848,7 @@ async function handleResetChainData() {
     dashLastHeight = -1;
     dashLastTxCount = -1;
     await invoke('reset_blockchain_data');
-    showSettingsStatus('Starting daemon...', 'info');
+    showSettingsStatus('Fetching fresh checkpoints and restarting core...', 'info');
     await ensureDaemonReady();
     if (sessionPassword) {
       showSettingsStatus('Loading wallet...', 'info');
@@ -3092,6 +3112,7 @@ function showUnlockScreen() {
 }
 
 async function showApp() {
+  stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
   migrateLocalStorageKeys();
   const passwordScreen = document.getElementById('password-screen');
@@ -3105,6 +3126,7 @@ async function showApp() {
 }
 
 async function showAppFromSplash() {
+  stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
   migrateLocalStorageKeys();
   const splash = document.getElementById('splash');
@@ -3258,15 +3280,35 @@ async function handlePasswordSubmit(e) {
 }
 
 async function waitForDaemon() {
-  const maxAttempts = 150;
+  // The daemon can take a while before its API server is reachable: on first
+  // run, or when there is an existing data dir to load/verify, it may sync in
+  // the background before binding the API. Rather than failing on a short fixed
+  // timeout, we keep waiting as long as the daemon process is actually alive
+  // and only surface an error if it has died. A generous upper bound guards
+  // against a truly stuck process.
+  // Wait as long as the daemon process is alive. There is no fixed timeout: a
+  // slow first run (loading/verifying an existing data dir before the API binds)
+  // can legitimately take a long time, and the sync poller shows live feedback
+  // so the screen never looks hung. We only give up if the process actually
+  // dies ; daemon_alive catches that fast.
   let attempts = 0;
-  while (attempts < maxAttempts) {
+  while (true) {
     const ready = await invoke('check_daemon_ready');
     if (ready) return;
+
+    // Give the daemon a few seconds before checking liveness, so we don't race
+    // a process that is still being spawned.
+    if (attempts >= 15) {
+      let alive = true;
+      try { alive = await invoke('daemon_alive'); } catch (_) {}
+      if (!alive) {
+        throw new Error('Daemon stopped unexpectedly during startup');
+      }
+    }
+
     await new Promise(r => setTimeout(r, 200));
     attempts++;
   }
-  throw new Error('Daemon failed to start within timeout');
 }
 
 async function ensureDaemonReady() {
@@ -3347,11 +3389,139 @@ function showSecurityBlockedModal() {
 
 // --- Init ---
 
+async function loadAppVersion() {
+  var el = document.getElementById('app-version-label');
+  if (!el) return;
+  try {
+    var version = await invoke('get_app_version');
+    el.textContent = version ? 'blocknet v' + String(version).trim() : '';
+  } catch (_) {
+    el.textContent = '';
+  }
+}
+
+// --- Daemon startup / sync feedback on the welcome screen ---
+// Polls the daemon while the welcome/password screen is shown so the user sees
+// what's happening (starting, connecting, syncing block M of N) instead of a
+// blank wait that can look like a hang. The wallet itself does NOT wait for
+// sync to finish ; this is purely informational.
+
+let daemonSyncTimer = null;
+// Latest startup phase reported by the Rust side (emitted as 'daemon-phase'
+// events from start_daemon: pulling checkpoints, writing checkpoints, starting
+// core). Shown while the daemon API isn't reachable yet; cleared once it is.
+let daemonPhase = '';
+let daemonPhaseUnlisten = null;
+
+function listenDaemonPhase() {
+  if (daemonPhaseUnlisten) return;
+  var eventApi = window.__TAURI__ && window.__TAURI__.event;
+  if (!eventApi || typeof eventApi.listen !== 'function') return;
+  eventApi.listen('daemon-phase', function (evt) {
+    daemonPhase = (evt && evt.payload) ? String(evt.payload) : '';
+    if (daemonPhase) setDaemonSyncStatus(daemonPhase);
+  }).then(function (un) {
+    daemonPhaseUnlisten = un;
+  }).catch(function () {});
+}
+
+function setDaemonSyncStatus(text, opts) {
+  opts = opts || {};
+  var wrap = document.getElementById('daemon-sync-status');
+  if (!wrap) return;
+  var textEl = wrap.querySelector('.daemon-sync-text');
+  var bar = wrap.querySelector('.daemon-sync-bar');
+  var fill = wrap.querySelector('.daemon-sync-bar-fill');
+
+  if (!text) {
+    wrap.style.display = 'none';
+    return;
+  }
+
+  if (textEl) textEl.textContent = text;
+  wrap.classList.toggle('error', !!opts.error);
+  if (typeof opts.percent === 'number' && isFinite(opts.percent)) {
+    if (bar) bar.style.display = 'block';
+    if (fill) fill.style.width = Math.max(0, Math.min(100, opts.percent)) + '%';
+  } else if (bar) {
+    bar.style.display = 'none';
+  }
+  wrap.style.display = 'block';
+}
+
+async function updateDaemonSyncStatus() {
+  let status = null;
+  try {
+    status = await api('/api/status');
+  } catch (_) {
+    status = null;
+  }
+
+  // API not reachable yet: show the latest startup phase from Rust if we have
+  // one, otherwise distinguish "still starting" from "crashed".
+  if (!status) {
+    if (daemonPhase) {
+      setDaemonSyncStatus(daemonPhase);
+      return;
+    }
+    let alive = true;
+    try { alive = await invoke('daemon_alive'); } catch (_) {}
+    if (alive) {
+      setDaemonSyncStatus('Starting daemon…');
+    } else {
+      setDaemonSyncStatus(null);
+    }
+    return;
+  }
+
+  // API is up ; the startup phase is over, the live sync display takes over.
+  daemonPhase = '';
+  var peers = Number(status.peers || 0);
+
+  if (status.syncing) {
+    var m = Number(status.sync_progress || status.chain_height || 0);
+    var n = Number(status.sync_target || 0);
+    if (n > 0) {
+      var pct = Math.min(100, (m / n) * 100);
+      var pctStr = status.sync_percent || (Math.floor(pct * 10) / 10) + '%';
+      setDaemonSyncStatus(
+        'Syncing blockchain — block ' + m.toLocaleString() + ' of ' + n.toLocaleString() + ' (' + pctStr + ')',
+        { percent: pct }
+      );
+    } else {
+      setDaemonSyncStatus('Syncing blockchain — block ' + m.toLocaleString());
+    }
+  } else if (peers === 0) {
+    setDaemonSyncStatus('Connecting to the network…');
+  } else {
+    setDaemonSyncStatus('Blockchain synced — height ' + Number(status.chain_height || 0).toLocaleString(), { percent: 100 });
+  }
+}
+
+function startDaemonSyncPoller() {
+  if (daemonSyncTimer) return;
+  updateDaemonSyncStatus();
+  daemonSyncTimer = setInterval(updateDaemonSyncStatus, 1500);
+}
+
+function stopDaemonSyncPoller() {
+  if (daemonSyncTimer) {
+    clearInterval(daemonSyncTimer);
+    daemonSyncTimer = null;
+  }
+  daemonPhase = '';
+  setDaemonSyncStatus(null);
+}
+
 async function init() {
   try {
     if (!window.__TAURI__ || !window.__TAURI__.core) {
       throw new Error('Tauri API not available');
     }
+
+    loadAppVersion();
+    listenDaemonPhase();
+    startDaemonSyncPoller();
 
     // Check if daemon is already running
     const daemonReady = await invoke('check_daemon_ready');

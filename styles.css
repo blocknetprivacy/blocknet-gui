@@ -182,6 +182,97 @@ body.platform-windows #password-screen {
   height: calc(100vh - 36px);
 }
 
+.app-version-label {
+  position: absolute;
+  bottom: 16px;
+  left: 0;
+  right: 0;
+  text-align: center;
+  color: #444;
+  font-size: 12px;
+  letter-spacing: 0.5px;
+  pointer-events: none;
+  user-select: text;
+}
+
+.daemon-sync-status {
+  margin-top: 16px;
+  max-width: 420px;
+  width: 100%;
+  margin-left: auto;
+  margin-right: auto;
+  text-align: center;
+}
+
+.daemon-sync-text {
+  color: #af0;
+  font-size: 13px;
+  line-height: 1.4;
+  margin-bottom: 8px;
+}
+
+.daemon-sync-status.error .daemon-sync-text {
+  color: #fa0;
+}
+
+.daemon-sync-bar {
+  height: 4px;
+  background: #222;
+  border-radius: 2px;
+  overflow: hidden;
+}
+
+.daemon-sync-bar-fill {
+  height: 100%;
+  width: 0%;
+  background: #af0;
+  border-radius: 2px;
+  transition: width 0.4s ease;
+}
+
+.daemon-sync-credit {
+  margin-top: 10px;
+  color: #555;
+  font-size: 11px;
+  letter-spacing: 0.3px;
+}
+
+.bntpool-brand {
+  font-weight: 600;
+  background: linear-gradient(
+    90deg,
+    #4f7a16 0%,
+    #aaff00 25%,
+    #e6ffb3 50%,
+    #aaff00 75%,
+    #4f7a16 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: bntpool-shimmer 2.6s linear infinite;
+}
+
+@keyframes bntpool-shimmer {
+  to {
+    background-position: -200% center;
+  }
+}
+
+.sync-notice {
+  margin-top: 14px;
+  padding: 8px 12px;
+  border: 1px solid #530;
+  border-left-width: 3px;
+  background: rgba(255, 170, 0, 0.06);
+  color: #fa0;
+  font-size: 12px;
+  line-height: 1.4;
+  border-radius: 3px;
+}
+
 .password-container {
   max-width: 980px;
   width: 90%;

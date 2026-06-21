@@ -427,6 +427,53 @@ async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
     Ok(())
 }
 
+// Best-effort fetch of the latest checkpoints file from bntpool.com, written
+// atomically into the daemon's data dir. Keeps fast-sync evergreen by replacing
+// any stale local copy on every launch. Any failure (offline, timeout, bad
+// response) is swallowed so it never blocks daemon startup, and the existing
+// checkpoints file (if any) is left untouched as a fallback.
+async fn refresh_checkpoints(app: &AppHandle, data_dir: &std::path::Path) {
+    const MAX_BYTES: usize = 32 << 20; // 32 MiB, matches the daemon's bound
+    let url = std::env::var("BLOCKNET_CHECKPOINTS_URL")
+        .ok()
+        .map(|s| s.trim().to_string())
+        .filter(|s| !s.is_empty())
+        .unwrap_or_else(|| "https://bntpool.com/checkpoints.dat".to_string());
+
+    let client = match reqwest::Client::builder()
+        .timeout(std::time::Duration::from_secs(10))
+        .build()
+    {
+        Ok(c) => c,
+        Err(_) => return,
+    };
+
+    let _ = app.emit("daemon-phase", "Pulling checkpoints from bntpool.com\u{2026}");
+    let resp = match client.get(&url).header("Accept", "text/plain").send().await {
+        Ok(r) if r.status().is_success() => r,
+        _ => return,
+    };
+
+    let bytes = match resp.bytes().await {
+        Ok(b) => b,
+        Err(_) => return,
+    };
+
+    // Sanity-check the payload before overwriting a working file.
+    if bytes.is_empty() || bytes.len() > MAX_BYTES {
+        return;
+    }
+
+    let _ = app.emit("daemon-phase", "Writing checkpoints\u{2026}");
+    let dest = data_dir.join("checkpoints.dat");
+    let tmp = data_dir.join("checkpoints.dat.tmp");
+    if std::fs::write(&tmp, &bytes).is_ok() {
+        if std::fs::rename(&tmp, &dest).is_err() {
+            let _ = std::fs::remove_file(&tmp);
+        }
+    }
+}
+
 #[tauri::command]
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
     // Kill any existing daemon before starting a new one
@@ -449,6 +496,13 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
     // Clean stale cookie
     let _ = std::fs::remove_file(data_dir.join("api.cookie"));
 
+    // Always pull the freshest checkpoints from bntpool.com and drop them into the
+    // data dir before the daemon starts, so fast-sync is evergreen. The daemon only
+    // downloads checkpoints when the file is missing, so without this an existing
+    // (stale) file would pin fast-sync to an old height. On any failure we leave the
+    // existing file in place as a fallback.
+    refresh_checkpoints(&app, &data_dir).await;
+
     let mut args = vec![
         "--daemon".to_string(),
         "--api".to_string(), format!("127.0.0.1:{}", api_port),
@@ -460,6 +514,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
     args.push("--wallet".to_string());
     args.push(wallet_path.to_str().unwrap().to_string());
 
+    let _ = app.emit("daemon-phase", "Starting core\u{2026}");
     let mut cmd = std::process::Command::new(&binary_path);
     cmd.args(&args)
         .stdout(std::process::Stdio::null())
@@ -836,6 +891,27 @@ async fn get_daemon_version(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+fn get_app_version(app: AppHandle) -> Result<String, String> {
+    Ok(app.package_info().version.to_string())
+}
+
+// Returns true if the daemon child process we spawned is still running.
+// Used by the frontend to tell "still starting / syncing" apart from "crashed"
+// while waiting for the daemon's API to come up.
+#[tauri::command]
+async fn daemon_alive(state: State<'_, DaemonState>) -> Result<bool, String> {
+    let mut guard = state.child.lock().map_err(|e| format!("Lock error: {}", e))?;
+    match guard.as_mut() {
+        Some(child) => match child.try_wait() {
+            Ok(Some(_)) => Ok(false), // process has exited
+            Ok(None) => Ok(true),     // still running
+            Err(_) => Ok(false),
+        },
+        None => Ok(false), // no tracked child process
+    }
+}
+
+#[tauri::command]
 fn set_tray_unlocked(unlocked: bool, tray_state: State<'_, TrayState>) -> Result<(), String> {
     let mut guard = tray_state.icon.lock().map_err(|e| e.to_string())?;
     if let Some(tray) = guard.as_mut() {
@@ -1002,6 +1078,8 @@ async fn main() {
             import_wallet_file,
             get_wallet_version,
             get_daemon_version,
+            get_app_version,
+            daemon_alive,
             set_tray_unlocked,
             start_api_events,
             stop_api_events,
