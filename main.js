@@ -3284,6 +3284,9 @@ async function handlePasswordSubmit(e) {
     showStatus('Loading wallet...', 'info');
     await loadOrUnlockWallet(password1);
     sessionPassword = password1;
+    if (isNewWallet) {
+      await runSeedBackupFlow(password1);
+    }
     showApp();
 
   } catch (error) {
@@ -3305,6 +3308,118 @@ async function handlePasswordSubmit(e) {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
   }
+}
+
+function runSeedBackupFlow(password) {
+  return new Promise(function (resolve) {
+    var overlay = document.createElement('div');
+    overlay.id = 'seed-backup-overlay';
+    overlay.className = 'security-blocked-overlay';
+    document.body.appendChild(overlay);
+
+    var words = [];
+
+    function finish() {
+      overlay.remove();
+      resolve();
+    }
+
+    function renderError(msg) {
+      overlay.innerHTML =
+        '<div class="security-blocked-modal seed-backup-modal">' +
+          '<div class="security-blocked-icon">&#9888;</div>' +
+          '<h2>Couldn\'t load your recovery phrase</h2>' +
+          '<p>' + escapeHtml(msg) + '</p>' +
+          '<button class="btn-primary" id="seed-backup-retry">Try Again</button>' +
+        '</div>';
+      document.getElementById('seed-backup-retry').addEventListener('click', loadAndReveal);
+    }
+
+    function renderReveal() {
+      overlay.innerHTML =
+        '<div class="security-blocked-modal seed-backup-modal">' +
+          '<div class="security-blocked-icon">&#128273;</div>' +
+          '<h2>Back up your recovery phrase</h2>' +
+          '<p>These 12 words are the only way to recover this wallet if you lose access to it. Write them down in order, keep them offline, and never share them. You will not be shown them again after this step.</p>' +
+          '<div class="seed-backup-words">' +
+            words.map(function (w, i) {
+              return '<span class="seed-backup-word"><span class="seed-backup-num">' + (i + 1) + '</span>' + escapeHtml(w) + '</span>';
+            }).join('') +
+          '</div>' +
+          '<button class="btn-primary" id="seed-backup-continue">I\'ve written it down</button>' +
+        '</div>';
+      document.getElementById('seed-backup-continue').addEventListener('click', renderVerify);
+    }
+
+    function renderVerify() {
+      var positions = [];
+      while (positions.length < 3) {
+        var p = Math.floor(Math.random() * words.length);
+        if (positions.indexOf(p) < 0) positions.push(p);
+      }
+      positions.sort(function (a, b) { return a - b; });
+      overlay.innerHTML =
+        '<div class="security-blocked-modal seed-backup-modal">' +
+          '<div class="security-blocked-icon">&#128273;</div>' +
+          '<h2>Confirm your recovery phrase</h2>' +
+          '<p>Enter these words to confirm you saved them.</p>' +
+          '<div class="seed-verify-fields">' +
+            positions.map(function (pos) {
+              return '<div class="form-group"><label>Word #' + (pos + 1) + '</label>' +
+                '<input type="text" class="seed-verify-input" data-pos="' + pos + '" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false"></div>';
+            }).join('') +
+          '</div>' +
+          '<div id="seed-verify-status" class="status-message" style="display: none;"></div>' +
+          '<div class="wallet-import-actions">' +
+            '<button class="btn-primary" id="seed-verify-submit">Confirm</button>' +
+            '<button class="btn-secondary" id="seed-verify-back">Show phrase again</button>' +
+          '</div>' +
+        '</div>';
+
+      var inputs = Array.prototype.slice.call(overlay.querySelectorAll('.seed-verify-input'));
+      if (inputs[0]) inputs[0].focus();
+
+      function submit() {
+        var ok = inputs.every(function (inp) {
+          return (inp.value || '').trim().toLowerCase() === words[parseInt(inp.dataset.pos, 10)];
+        });
+        if (!ok) {
+          var st = document.getElementById('seed-verify-status');
+          st.textContent = 'Those words don\'t match your phrase. Check your backup and try again.';
+          st.className = 'status-message error';
+          st.style.display = 'block';
+          return;
+        }
+        finish();
+      }
+
+      document.getElementById('seed-verify-submit').addEventListener('click', submit);
+      document.getElementById('seed-verify-back').addEventListener('click', renderReveal);
+      inputs.forEach(function (inp) {
+        inp.addEventListener('keydown', function (ev) {
+          if (ev.key === 'Enter') { ev.preventDefault(); submit(); }
+        });
+      });
+    }
+
+    async function loadAndReveal() {
+      overlay.innerHTML = '<div class="security-blocked-modal seed-backup-modal"><h2>Loading recovery phrase…</h2></div>';
+      try {
+        var data = await api('/api/wallet/seed', { method: 'POST', body: { password: password } });
+        words = String(data.mnemonic || '').trim().split(/\s+/);
+      } catch (e) {
+        renderError(normalizeError(e));
+        return;
+      }
+      if (words.length < 12) {
+        renderError('The recovery phrase came back incomplete. Try again.');
+        return;
+      }
+      renderReveal();
+    }
+
+    loadAndReveal();
+  });
 }
 
 async function waitForDaemon() {

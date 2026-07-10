@@ -2334,6 +2334,36 @@ textarea:focus {
   cursor: text;
 }
 
+.seed-backup-words {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  margin: 20px 0 24px;
+}
+
+.seed-backup-word {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 8px 10px;
+  background: #000;
+  border: 1px solid #420;
+  color: #fa0;
+  font: 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-align: left;
+  user-select: all;
+}
+
+.seed-backup-num {
+  color: #888;
+  min-width: 16px;
+}
+
+.seed-verify-fields {
+  margin: 16px 0;
+  text-align: left;
+}
+
 @media (max-width: 760px) {
   .settings-item {
     flex-direction: column;
