@@ -2514,6 +2514,18 @@ async function handleSend(e) {
   }
 
   // Phase 3: arm then confirm
+  var balCheckTotal = entries.reduce(function (s, e) { return s + e.atomic; }, 0);
+  try {
+    var bal = await api('/api/wallet/balance');
+    if (bal && !bal.scanning && typeof bal.spendable === 'number' && balCheckTotal > bal.spendable) {
+      showSendStatus('Insufficient funds — you have ' + formatBNT(bal.spendable) + ' BNT spendable (before the network fee).', 'error');
+      sendArmed = false;
+      pendingSendFingerprint = null;
+      btn.textContent = 'Send';
+      btn.classList.remove('armed');
+      return;
+    }
+  } catch (_) {}
   var fingerprint = JSON.stringify(entries.map(function (e) { return [e.address, e.atomic, e.memo]; }));
   if (!sendArmed || fingerprint !== pendingSendFingerprint) {
     sendArmed = true;
