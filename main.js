@@ -1992,9 +1992,15 @@ function wireCopyable(container) {
     el.dataset.copyWired = '1';
     el.addEventListener('click', function (e) {
       e.stopPropagation();
-      navigator.clipboard.writeText(el.dataset.copy);
-      el.classList.add('copied');
-      setTimeout(function () { el.classList.remove('copied'); }, 1500);
+      Promise.resolve().then(function () {
+        return navigator.clipboard.writeText(el.dataset.copy);
+      }).then(function () {
+        el.classList.add('copied');
+        setTimeout(function () { el.classList.remove('copied'); }, 1500);
+      }).catch(function () {
+        el.classList.add('copy-failed');
+        setTimeout(function () { el.classList.remove('copy-failed'); }, 1500);
+      });
     });
   });
 }
