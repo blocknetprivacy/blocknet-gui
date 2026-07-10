@@ -223,10 +223,15 @@ fn api_base_url(port: u16, path: &str) -> String {
     format!("http://127.0.0.1:{}{}", port, path)
 }
 
-fn current_api_port(state: &ApiPortState) -> u16 {
+// The port of the daemon *we* started this process-lifetime, or None if we have
+// not started one yet. We deliberately do NOT fall back to a shared default such
+// as 8332: another blocknet node may be running there (a user's own full node,
+// the CLI, an explorer), and addressing it with our cookie token yields 401
+// "unauthorized" on every wallet call even though the password is correct.
+fn current_api_port(state: &ApiPortState) -> Option<u16> {
     match state.port.lock() {
-        Ok(guard) if *guard != 0 => *guard,
-        _ => 8332,
+        Ok(guard) if *guard != 0 => Some(*guard),
+        _ => None,
     }
 }
 
@@ -358,7 +363,11 @@ async fn sse_loop(app: AppHandle, stop: Arc<AtomicBool>, data_dir: std::path::Pa
 #[tauri::command]
 async fn start_api_events(app: AppHandle, state: State<'_, EventsState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
     let data_dir = get_data_dir(&app)?;
-    let api_port = current_api_port(&api_state);
+    // No daemon of ours yet: nothing to stream. The caller retries after unlock.
+    let api_port = match current_api_port(&api_state) {
+        Some(p) => p,
+        None => return Ok(()),
+    };
     let mut guard = state.worker.lock().map_err(|e| format!("Lock error: {}", e))?;
     if guard.is_some() {
         return Ok(());
@@ -562,7 +571,14 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
 async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) -> Result<bool, String> {
     let data_dir = get_data_dir(&app)?;
     let cookie_path = data_dir.join("api.cookie");
-    let api_port = current_api_port(&api_state);
+
+    // Only probe the daemon we started ourselves. Without our own port there is
+    // nothing ready — do not fall back to a shared default and risk latching onto
+    // an unrelated node (see current_api_port).
+    let api_port = match current_api_port(&api_state) {
+        Some(p) => p,
+        None => return Ok(false),
+    };
 
     if !cookie_path.exists() {
         return Ok(false);
@@ -577,15 +593,23 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
+    // Probe an AUTHENTICATED endpoint, not /api/status: /api/status requires no
+    // token and answers 200 for anyone, so it cannot tell "our daemon accepts our
+    // cookie" from "some other node is listening here". A 401 means the token was
+    // rejected (stale cookie or a foreign daemon) — treat that as not-ready so the
+    // caller (re)starts our own daemon instead of sending passwords to a node that
+    // will reject them with "unauthorized". Any non-401 response means the token
+    // was accepted, i.e. the daemon is ours and up (a wallet-not-loaded error is
+    // still a "ready" daemon).
     let res = client
-        .get(api_base_url(api_port, "/api/status"))
+        .get(api_base_url(api_port, "/api/wallet/balance"))
         .header("Authorization", format!("Bearer {}", token))
         .send()
         .await;
 
     match res {
-        Ok(r) if r.status().is_success() => Ok(true),
-        _ => Ok(false),
+        Ok(r) => Ok(r.status().as_u16() != 401),
+        Err(_) => Ok(false),
     }
 }
 
@@ -604,7 +628,8 @@ async fn api_call(
         .map_err(|e| format!("Failed to read auth cookie: {}", e))?;
 
     let client = reqwest::Client::new();
-    let api_port = current_api_port(&api_state);
+    let api_port = current_api_port(&api_state)
+        .ok_or_else(|| "Daemon not started".to_string())?;
     let url = api_base_url(api_port, &path);
 
     let mut req = match method.as_str() {

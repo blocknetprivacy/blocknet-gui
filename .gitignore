@@ -78,6 +78,7 @@ wallet.dat
 notes.md
 setup.sh
 update.sh
+notes
 
 # Generated icons for platforms we don't target
 src-tauri/icons/ios/
