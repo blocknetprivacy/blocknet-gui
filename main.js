@@ -353,6 +353,21 @@ async function refreshDashStatus() {
   }
 }
 
+async function refreshDashBalance() {
+  try {
+    const balance = await api('/api/wallet/balance');
+    document.getElementById('dash-balance').textContent = formatBNTShort(balance.spendable);
+    document.getElementById('dash-pending').textContent = formatBNTShort(balance.pending);
+    document.getElementById('dash-total').textContent = formatBNTShort(balance.total);
+    document.getElementById('pending-label').classList.toggle('has-pending', balance.pending > 0);
+  } catch (e) {
+    // Balance requires an unlocked wallet and can 403/5xx briefly right after
+    // unlock or during sync. The dashboard status timer retries every 2s, so a
+    // transient failure self-heals; log it so a persistent one is diagnosable.
+    console.warn('balance refresh failed:', normalizeError(e));
+  }
+}
+
 async function loadDashboard() {
   try {
     var walletTitle = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
@@ -384,15 +399,7 @@ async function loadDashboard() {
 
   await refreshDashStatus();
 
-  try {
-    const balance = await api('/api/wallet/balance');
-    document.getElementById('dash-balance').textContent = formatBNTShort(balance.spendable);
-    document.getElementById('dash-pending').textContent = formatBNTShort(balance.pending);
-    document.getElementById('dash-total').textContent = formatBNTShort(balance.total);
-    document.getElementById('pending-label').classList.toggle('has-pending', balance.pending > 0);
-  } catch (e) {
-    // balance may fail during sync, that's ok
-  }
+  await refreshDashBalance();
 
   try {
     var statusHeight = parseInt(document.getElementById('dash-height').textContent.replace(/,/g, '')) || 0;
@@ -2961,6 +2968,7 @@ function startPolling() {
   dashStatusTimer = setInterval(async function () {
     if (currentView !== 'dashboard') return;
     try { await refreshDashStatus(); } catch (_) {}
+    await refreshDashBalance();
   }, 2000);
 }
 
