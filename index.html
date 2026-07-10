@@ -405,8 +405,19 @@
               <div class="wallet-active" id="wallet-active-display"></div>
               <div class="wallet-list" id="wallet-list"></div>
               <div class="wallet-actions">
+                <button class="btn-secondary" id="create-wallet-btn">Create New Wallet</button>
                 <button class="btn-secondary" id="import-seed-btn">Import from Seed</button>
                 <button class="btn-secondary" id="import-file-btn">Load from File</button>
+              </div>
+              <div id="create-wallet-form" class="wallet-import-form" style="display: none;">
+                <input type="text" id="create-wallet-filename" class="seed-pw-input" placeholder="Wallet name (e.g. savings.dat)" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <input type="password" id="create-wallet-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">
+                <input type="password" id="create-wallet-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">
+                <div class="wallet-import-actions">
+                  <button class="btn-primary" id="create-wallet-submit">Create</button>
+                  <button class="btn-secondary" id="create-wallet-cancel">Cancel</button>
+                </div>
+                <div id="create-wallet-status" class="status-message" style="display: none;"></div>
               </div>
               <div id="import-seed-form" class="wallet-import-form" style="display: none;">
                 <textarea id="import-seed-input" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>

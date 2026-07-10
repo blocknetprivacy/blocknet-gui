@@ -760,6 +760,14 @@ async fn switch_wallet(app: AppHandle, state: State<'_, DaemonState>, name: Stri
 }
 
 #[tauri::command]
+async fn set_active_wallet(app: AppHandle, name: String) -> Result<(), String> {
+    if name.contains('/') || name.contains('\\') || name.contains("..") || !name.ends_with(".dat") {
+        return Err("Invalid wallet name".to_string());
+    }
+    set_active_wallet_name(&app, &name)
+}
+
+#[tauri::command]
 async fn rename_wallet(app: AppHandle, old_name: String, new_name: String) -> Result<(), String> {
     for n in [&old_name, &new_name] {
         if n.contains('/') || n.contains('\\') || n.contains("..") || !n.ends_with(".dat") {
@@ -1073,6 +1081,7 @@ async fn main() {
             get_active_wallet,
             get_wallet_path_cmd,
             switch_wallet,
+            set_active_wallet,
             rename_wallet,
             delete_wallet,
             import_wallet_file,

@@ -2364,6 +2364,26 @@ textarea:focus {
   text-align: left;
 }
 
+.spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  margin-right: 8px;
+  border: 2px solid #333;
+  border-top-color: #af0;
+  border-radius: 50%;
+  vertical-align: -2px;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .spinner { animation: none; opacity: 0.6; }
+}
+
 @media (max-width: 760px) {
   .settings-item {
     flex-direction: column;

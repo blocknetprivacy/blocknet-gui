@@ -2619,6 +2619,91 @@ function showImportStatus(msg, type) {
   el.style.display = 'block';
 }
 
+function showCreateForm() {
+  document.getElementById('create-wallet-form').style.display = 'block';
+  document.getElementById('create-wallet-btn').style.display = 'none';
+  document.getElementById('create-wallet-filename').value = '';
+  document.getElementById('create-wallet-password').value = '';
+  document.getElementById('create-wallet-password2').value = '';
+  document.getElementById('create-wallet-status').style.display = 'none';
+  document.getElementById('create-wallet-filename').focus();
+}
+
+function hideCreateForm() {
+  document.getElementById('create-wallet-form').style.display = 'none';
+  document.getElementById('create-wallet-btn').style.display = '';
+}
+
+function showCreateStatus(msg, type, spinner) {
+  var el = document.getElementById('create-wallet-status');
+  el.className = 'status-message ' + type;
+  if (spinner) {
+    el.innerHTML = '<span class="spinner"></span>' + escapeHtml(msg);
+  } else {
+    el.textContent = msg;
+  }
+  el.style.display = 'block';
+}
+
+async function handleCreateWallet() {
+  var name = document.getElementById('create-wallet-filename').value.trim();
+  var password = document.getElementById('create-wallet-password').value;
+  var password2 = document.getElementById('create-wallet-password2').value;
+  var btn = document.getElementById('create-wallet-submit');
+
+  if (!name) {
+    showCreateStatus('Enter a name for the wallet', 'error');
+    return;
+  }
+  if (name.indexOf('/') >= 0 || name.indexOf('\\') >= 0 || name.indexOf('..') >= 0) {
+    showCreateStatus('Name cannot contain / \\ or ..', 'error');
+    return;
+  }
+  if (!name.endsWith('.dat')) name = name + '.dat';
+  if (password.length < 3) {
+    showCreateStatus('Password must be at least 3 characters', 'error');
+    return;
+  }
+  if (password !== password2) {
+    showCreateStatus('Passwords do not match', 'error');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = 'Creating...';
+  showCreateStatus('Generating your wallet…', 'info', true);
+  var previousPassword = sessionPassword;
+  try {
+    stopPolling();
+    try { await api('/api/wallet/unload', { method: 'POST' }); } catch (_) {}
+
+    var result = await api('/api/wallet/create', { method: 'POST', body: { password: password, filename: name } });
+    var createdName = result.filename || name;
+    await invoke('set_active_wallet', { name: createdName });
+    sessionPassword = password;
+    setActiveWalletName(createdName);
+
+    hideCreateForm();
+    await runSeedBackupFlow(password);
+    showSettingsStatus('Wallet "' + createdName.replace(/\.dat$/, '') + '" created.', 'success');
+    await loadWalletList();
+    showApp();
+  } catch (e) {
+    var msg = normalizeError(e);
+    if (msg.toLowerCase().indexOf('exist') >= 0) {
+      showCreateStatus('A wallet with that name already exists. Choose another name.', 'error');
+    } else {
+      showCreateStatus(msg, 'error');
+    }
+    try {
+      if (previousPassword) { await loadOrUnlockWallet(previousPassword); startPolling(); }
+    } catch (_) {}
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Create';
+  }
+}
+
 async function handleImportSeed() {
   var mnemonic = document.getElementById('import-seed-input').value.trim();
   var password = document.getElementById('import-seed-password').value;
@@ -3281,8 +3366,13 @@ async function handlePasswordSubmit(e) {
       await ensureDaemonReady();
     }
 
-    showStatus('Loading wallet...', 'info');
-    await loadOrUnlockWallet(password1);
+    if (isNewWallet) {
+      showStatus('Creating wallet...', 'info');
+      await api('/api/wallet/create', { method: 'POST', body: { password: password1 } });
+    } else {
+      showStatus('Loading wallet...', 'info');
+      await loadOrUnlockWallet(password1);
+    }
     sessionPassword = password1;
     if (isNewWallet) {
       await runSeedBackupFlow(password1);
@@ -3403,7 +3493,7 @@ function runSeedBackupFlow(password) {
     }
 
     async function loadAndReveal() {
-      overlay.innerHTML = '<div class="security-blocked-modal seed-backup-modal"><h2>Loading recovery phrase…</h2></div>';
+      overlay.innerHTML = '<div class="security-blocked-modal seed-backup-modal"><h2><span class="spinner"></span>Loading recovery phrase…</h2></div>';
       try {
         var data = await api('/api/wallet/seed', { method: 'POST', body: { password: password } });
         words = String(data.mnemonic || '').trim().split(/\s+/);
@@ -4083,6 +4173,9 @@ initSignVerifyTabs();
     saveSoundPrefs();
   });
 })();
+document.getElementById('create-wallet-btn').addEventListener('click', showCreateForm);
+document.getElementById('create-wallet-cancel').addEventListener('click', hideCreateForm);
+document.getElementById('create-wallet-submit').addEventListener('click', handleCreateWallet);
 document.getElementById('import-seed-btn').addEventListener('click', showImportForm);
 document.getElementById('import-seed-cancel').addEventListener('click', hideImportForm);
 document.getElementById('import-seed-submit').addEventListener('click', handleImportSeed);
