@@ -2790,3 +2790,48 @@ textarea:focus {
 .recent-tx-row.cached {
   opacity: 0.6;
 }
+
+:where(button, a, [tabindex], input, textarea, select):focus-visible {
+  outline: 2px solid #af0;
+  outline-offset: 2px;
+}
+
+.sound-slider:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(170, 255, 0, 0.5);
+}
+
+.sound-slider:focus-visible::-moz-range-thumb {
+  box-shadow: 0 0 0 3px rgba(170, 255, 0, 0.5);
+}
+
+#main-content {
+  min-width: 0;
+  overflow-x: auto;
+}
+
+.history-memo,
+.recent-tx-memo,
+.send-resolved,
+.balance-value {
+  overflow-wrap: anywhere;
+}
+
+.ab-use-btn,
+.ab-edit-btn,
+.ab-del-btn,
+.recipient-remove-btn {
+  min-height: 24px;
+}
+
+.settings-help::after {
+  white-space: normal;
+  max-width: 260px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}
