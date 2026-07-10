@@ -2883,8 +2883,8 @@ async function handleCreateWallet() {
     return;
   }
   if (!name.endsWith('.dat')) name = name + '.dat';
-  if (password.length < 3) {
-    showCreateStatus('Password must be at least 3 characters', 'error');
+  if (password.length < 8) {
+    showCreateStatus('Password must be at least 8 characters', 'error');
     return;
   }
   if (password !== password2) {
@@ -2942,8 +2942,8 @@ async function handleImportSeed() {
     showImportStatus('Recovery phrase must be exactly 12 words', 'error');
     return;
   }
-  if (password.length < 3) {
-    showImportStatus('Password must be at least 3 characters', 'error');
+  if (password.length < 8) {
+    showImportStatus('Password must be at least 8 characters', 'error');
     return;
   }
   if (!filename) {
@@ -3023,7 +3023,7 @@ async function handlePasswordScreenImportSubmit() {
   if (!mnemonic) { showPsStatus('Enter your 12-word recovery phrase', 'error'); return; }
   var words = mnemonic.split(/\s+/);
   if (words.length !== 12) { showPsStatus('Recovery phrase must be exactly 12 words', 'error'); return; }
-  if (password.length < 3) { showPsStatus('Password must be at least 3 characters', 'error'); return; }
+  if (password.length < 8) { showPsStatus('Password must be at least 8 characters', 'error'); return; }
   if (filename && !filename.endsWith('.dat')) filename = filename + '.dat';
 
   btn.disabled = true;
@@ -3366,7 +3366,9 @@ function showOnboardCreate() {
   password2.style.display = 'block';
   form.style.display = 'flex';
   if (backLink) backLink.style.display = '';
-  document.getElementById('password1').focus();
+  var pwCreate = document.getElementById('password1');
+  pwCreate.autocomplete = 'new-password';
+  pwCreate.focus();
 }
 
 function showOnboardImport() {
@@ -3470,6 +3472,7 @@ function showUnlockScreen() {
   hideStatus();
   if (app) app.style.display = 'none';
   if (passwordScreen) passwordScreen.style.display = 'flex';
+  if (password1) password1.focus();
 }
 
 async function showApp() {
@@ -3596,6 +3599,8 @@ function enterUnlockMode() {
   currentPwMode = 'unlock';
   onboardReturnMode = 'unlock';
   isNewWallet = false;
+  var pwUnlock = document.getElementById('password1');
+  if (pwUnlock) pwUnlock.autocomplete = 'current-password';
 
   var psImport = document.getElementById('password-screen-import');
   if (psImport) psImport.remove();
@@ -3794,8 +3799,8 @@ async function handlePasswordSubmit(e) {
   hideStatus();
 
   if (isNewWallet) {
-    if (password1.length < 3) {
-      showStatus('Password must be at least 3 characters', 'error');
+    if (password1.length < 8) {
+      showStatus('Password must be at least 8 characters', 'error');
       return;
     }
     if (password1 !== password2val) {

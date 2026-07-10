@@ -191,7 +191,7 @@ body.platform-windows #password-screen {
   left: 0;
   right: 0;
   text-align: center;
-  color: #444;
+  color: #8a8a8a;
   font-size: 12px;
   letter-spacing: 0.5px;
   pointer-events: none;
@@ -235,7 +235,7 @@ body.platform-windows #password-screen {
 
 .daemon-sync-credit {
   margin-top: 10px;
-  color: #555;
+  color: #949494;
   font-size: 11px;
   letter-spacing: 0.3px;
 }
@@ -341,7 +341,7 @@ body.platform-windows #password-screen {
 }
 
 #password-subtitle {
-  color: #666;
+  color: #9e9e9e;
   font-size: 14px;
   margin-bottom: 12px;
 }
@@ -453,7 +453,7 @@ body.platform-windows #password-screen {
 }
 
 .onboard-btn-hint {
-  color: #555;
+  color: #949494;
   font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -504,7 +504,7 @@ body.platform-windows #password-screen {
 }
 
 .onboard-wallet-empty {
-  color: #666;
+  color: #9e9e9e;
   font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
@@ -579,7 +579,7 @@ body.platform-windows #password-screen {
   cursor: pointer;
   text-align: left;
   font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  color: #666;
+  color: #9e9e9e;
   transition: color 0.15s;
 }
 
@@ -591,7 +591,7 @@ body.platform-windows #password-screen {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  color: #555;
+  color: #949494;
 }
 
 .wp-file {
@@ -684,7 +684,7 @@ body.platform-windows #password-screen {
   transition: border-color 0.15s, background 0.15s;
 }
 
-.unlock-wallet-row:hover { border-color: #444; background: #111; }
+.unlock-wallet-row:hover { border-color: #8a8a8a; background: #111; }
 .unlock-wallet-row.active { border-color: #af0; background: rgba(170, 255, 0, 0.05); }
 .unlock-wallet-row:disabled { opacity: 0.6; cursor: default; }
 
@@ -719,7 +719,7 @@ body.platform-windows #password-screen {
 .unlock-wallet-row.active .uw-name { color: #af0; }
 
 .uw-meta {
-  color: #666;
+  color: #9e9e9e;
   font-size: 11px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -735,7 +735,7 @@ body.platform-windows #password-screen {
 }
 
 .unlock-wallet-empty {
-  color: #666;
+  color: #9e9e9e;
   font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   padding: 4px 2px;
 }
@@ -801,7 +801,7 @@ body.platform-windows #password-screen {
 .status-message.info {
   border-color: #333;
   background: #000;
-  color: #666;
+  color: #9e9e9e;
 }
 
 /* Main App */
@@ -1039,7 +1039,7 @@ body.platform-windows #app {
 .form-hint {
   margin-top: 6px;
   font-size: 13px;
-  color: #666;
+  color: #9e9e9e;
 }
 
 .btn-primary {
@@ -1081,7 +1081,7 @@ body.platform-windows #app {
 }
 
 .d {
-  color: #555;
+  color: #949494;
 }
 
 /* Balance Card */
@@ -1094,7 +1094,7 @@ body.platform-windows #app {
 }
 
 .balance-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 13px;
   margin-bottom: 4px;
 }
@@ -1117,7 +1117,7 @@ body.platform-windows #app {
   margin-top: 12px;
   display: flex;
   gap: 24px;
-  color: #555;
+  color: #949494;
   font-size: 13px;
 }
 
@@ -1197,7 +1197,7 @@ body.platform-windows #app {
 }
 
 .stat-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 13px;
   margin-bottom: 4px;
 }
@@ -1272,7 +1272,7 @@ body.platform-windows #app {
 }
 
 .send-total-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 13px;
 }
 
@@ -1399,7 +1399,7 @@ body.platform-windows #app {
 
 .ab-cancel-btn:hover {
   background: rgba(255, 255, 255, 0.03);
-  border-color: #666;
+  border-color: #9e9e9e;
 }
 
 .save-contact-inline {
@@ -1925,7 +1925,7 @@ textarea:focus {
 }
 
 .indicator-text {
-  color: #555;
+  color: #949494;
   font-size: 13px;
 }
 
@@ -1946,7 +1946,7 @@ textarea:focus {
 }
 
 .thread-stepper-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 13px;
 }
 
@@ -2010,7 +2010,7 @@ textarea:focus {
 }
 
 .thread-hint {
-  color: #444;
+  color: #8a8a8a;
   font-size: 12px;
 }
 
@@ -2043,7 +2043,7 @@ textarea:focus {
 }
 
 .mempool-meta {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
 }
 
@@ -2064,7 +2064,7 @@ textarea:focus {
 }
 
 .mempool-next-block .label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
 }
 
@@ -2093,7 +2093,7 @@ textarea:focus {
 }
 
 .mempool-stat-item .label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
 }
 
@@ -2222,7 +2222,7 @@ textarea:focus {
 
 /* Empty State */
 .empty {
-  color: #555;
+  color: #949494;
   padding: 24px 0;
   text-align: center;
 }
@@ -2284,7 +2284,7 @@ textarea:focus {
   width: 18px;
   height: 18px;
   border: none;
-  color: #666;
+  color: #9e9e9e;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -2318,7 +2318,7 @@ textarea:focus {
 }
 
 .settings-item-desc {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
   line-height: 1.5;
 }
@@ -2342,7 +2342,7 @@ textarea:focus {
   display: flex;
   flex-direction: column;
   gap: 10px;
-  color: #666;
+  color: #9e9e9e;
   font-size: 13px;
   line-height: 1.5;
   background: #000;
@@ -2426,7 +2426,7 @@ textarea:focus {
 }
 
 .sound-volume-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
   min-width: 32px;
   text-align: right;
@@ -2441,7 +2441,7 @@ textarea:focus {
 }
 
 .wallet-active-label {
-  color: #666;
+  color: #9e9e9e;
   font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.05em;
@@ -2455,7 +2455,7 @@ textarea:focus {
 .wallet-active-path {
   margin-left: auto;
   font-size: 11px;
-  color: #444;
+  color: #8a8a8a;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2489,7 +2489,7 @@ textarea:focus {
 }
 
 .wallet-row-badge {
-  color: #444;
+  color: #8a8a8a;
   font-size: 11px;
 }
 
@@ -2564,7 +2564,7 @@ textarea:focus {
 }
 
 .seed-input::placeholder {
-  color: #444;
+  color: #8a8a8a;
 }
 
 .seed-pw-input {
@@ -2583,7 +2583,7 @@ textarea:focus {
 }
 
 .seed-pw-input::placeholder {
-  color: #444;
+  color: #8a8a8a;
 }
 
 .wallet-import-actions {
@@ -2611,7 +2611,7 @@ textarea:focus {
 .text-link {
   background: none;
   border: none;
-  color: #555;
+  color: #949494;
   font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   cursor: pointer;
   padding: 16px 0 0;
