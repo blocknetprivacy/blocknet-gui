@@ -526,7 +526,7 @@ async function loadDashboard() {
         container.innerHTML = recent.map(function (o) {
           var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
           var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
-          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" data-txid="' + o.txid + '">' +
+          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '">' +
             '<span class="recent-tx-amount ' + (o.spent ? 'r' : 'g') + '">' +
               (o.spent ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
@@ -849,7 +849,7 @@ async function loadHistory() {
 
   container.innerHTML = sorted.map(o => {
     const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
-    return '<div class="history-row' + (o.spent ? ' spent' : '') + '" data-txid="' + o.txid + '">' +
+    return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '">' +
       '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
         (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
       '</div>' +
@@ -1506,7 +1506,7 @@ async function loadNetwork() {
   if (connectedRecords.length > 0) {
     peerList.innerHTML = connectedRecords.map(function (p) {
       var firstAddr = p.addrs && p.addrs.length ? p.addrs[0] : '';
-      return '<div class="peer-row peer-row-link" data-peer-id="' + escapeHtml(p.peer_id) + '">' +
+      return '<div class="peer-row peer-row-link" tabindex="0" role="button" data-peer-id="' + escapeHtml(p.peer_id) + '">' +
         '<div class="mono">' + escapeHtml(p.peer_id) + '</div>' +
         (firstAddr ? '<div class="d mono">' + escapeHtml(firstAddr) + '</div>' : '') +
       '</div>';
@@ -1770,7 +1770,7 @@ async function showPeerDetail(peerId) {
           var rowClass = id === peerId ? ' peer-row-link-selected' : '';
           var rec = connectedRecords.find(function (p) { return p.peer_id === id; }) || { addrs: [] };
           var firstAddr = rec.addrs && rec.addrs.length ? rec.addrs[0] : '';
-          return '<div class="peer-row peer-row-link' + rowClass + '" data-peer-id-link="' + escapeHtml(id) + '">' +
+          return '<div class="peer-row peer-row-link' + rowClass + '" tabindex="0" role="button" data-peer-id-link="' + escapeHtml(id) + '">' +
             '<div class="mono">' + escapeHtml(id) + '</div>' +
             (firstAddr ? '<div class="d mono">' + escapeHtml(firstAddr) + '</div>' : '') +
           '</div>';
@@ -2098,6 +2098,11 @@ function wireCopyable(container) {
   (container || document).querySelectorAll('.sv-copyable[data-copy]').forEach(function (el) {
     if (el.dataset.copyWired) return;
     el.dataset.copyWired = '1';
+    el.tabIndex = 0;
+    el.setAttribute('role', 'button');
+    el.addEventListener('keydown', function (e) {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.click(); }
+    });
     el.addEventListener('click', function (e) {
       e.stopPropagation();
       Promise.resolve().then(function () {
@@ -2112,6 +2117,15 @@ function wireCopyable(container) {
     });
   });
 }
+
+document.addEventListener('keydown', function (e) {
+  if (e.key !== 'Enter' && e.key !== ' ') return;
+  var t = e.target;
+  if (t && t.classList && (t.classList.contains('recent-tx-row') || t.classList.contains('history-row') || t.classList.contains('peer-row-link'))) {
+    e.preventDefault();
+    t.click();
+  }
+});
 
 function hexToUtf8(hex) {
   if (!hex) return '';
