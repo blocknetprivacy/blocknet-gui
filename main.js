@@ -623,7 +623,15 @@ function debouncedVerifyReceiveShortname() {
 }
 
 async function loadReceive() {
-  const data = await api('/api/wallet/address');
+  let data;
+  try {
+    data = await api('/api/wallet/address');
+  } catch (e) {
+    console.warn('receive address load failed:', normalizeError(e));
+    var addrEl = document.getElementById('receive-address');
+    if (addrEl) addrEl.textContent = 'Could not load address — reopen Receive to retry.';
+    return;
+  }
   receiveAddress = data.address;
   receivePreferredHandle = null;
 
@@ -749,8 +757,15 @@ function dismissQROverlay() {
 // --- History ---
 
 async function loadHistory() {
-  const data = await api('/api/wallet/history');
   const container = document.getElementById('history-list');
+  var data = null;
+  var loadFailed = false;
+  try {
+    data = await api('/api/wallet/history');
+  } catch (e) {
+    loadFailed = true;
+    console.warn('history load failed:', normalizeError(e));
+  }
 
   var hasOutputsArray = data && Array.isArray(data.outputs);
   var outputs = hasOutputsArray ? data.outputs : null;
@@ -765,7 +780,9 @@ async function loadHistory() {
 
   if (!outputs || outputs.length === 0) {
     renderHistoryBalanceSparkline([]);
-    container.innerHTML = '<div class="empty">No transactions yet</div>';
+    container.innerHTML = loadFailed
+      ? '<div class="empty">Couldn\'t reach the node — check your connection and reopen History.</div>'
+      : '<div class="empty">No transactions yet</div>';
     return;
   }
 
@@ -951,7 +968,18 @@ async function loadMining() {
   // Skip UI refresh while a toggle or thread change is in progress
   if (miningToggleBusy) return;
 
-  const data = await api('/api/mining');
+  let data;
+  try {
+    data = await api('/api/mining');
+  } catch (e) {
+    console.warn('mining load failed:', normalizeError(e));
+    document.getElementById('mining-status').textContent = 'Unavailable';
+    document.getElementById('mining-hashrate').textContent = '--';
+    document.getElementById('mining-blocks').textContent = '--';
+    await refreshMiningDifficultySparkline();
+    await loadMiningMempool();
+    return;
+  }
   isMining = data.running;
 
   const indicator = document.getElementById('mining-indicator');
@@ -1401,10 +1429,20 @@ async function geolocateIp(ip) {
 }
 
 async function loadNetwork() {
-  const [peers, banned] = await Promise.all([
-    api('/api/peers'),
-    api('/api/peers/banned'),
-  ]);
+  let peers, banned;
+  try {
+    [peers, banned] = await Promise.all([
+      api('/api/peers'),
+      api('/api/peers/banned'),
+    ]);
+  } catch (e) {
+    console.warn('network load failed:', normalizeError(e));
+    var pl = document.getElementById('network-peers');
+    var bl = document.getElementById('network-banned');
+    if (pl) pl.innerHTML = '<div class="empty">Node unavailable — reopen Network to retry.</div>';
+    if (bl) bl.innerHTML = '<div class="empty">Node unavailable</div>';
+    return;
+  }
 
   document.getElementById('network-peer-count').textContent = peers.count;
   const peerList = document.getElementById('network-peers');
