@@ -744,8 +744,7 @@ function renderQRSvg(text) {
 function showQROverlay() {
   var overlay = document.getElementById('qr-overlay');
   overlay.classList.add('visible');
-  if (qrDismissTimer) clearTimeout(qrDismissTimer);
-  qrDismissTimer = setTimeout(dismissQROverlay, 10000);
+  if (qrDismissTimer) { clearTimeout(qrDismissTimer); qrDismissTimer = null; }
 }
 
 function dismissQROverlay() {
