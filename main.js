@@ -2426,9 +2426,18 @@ async function handleSend(e) {
       showSendStatus(labelPrefix + 'enter an address or $handle', 'error');
       return;
     }
+    if (!isHandlePrefix(rawAddress.charAt(0)) && (rawAddress.length < 16 || /\s/.test(rawAddress))) {
+      showSendStatus(labelPrefix + 'that does not look like a valid address', 'error');
+      return;
+    }
     var amountBNT = parseFloat(amountInput.value);
     if (!amountBNT || amountBNT <= 0) {
       showSendStatus(labelPrefix + 'enter a valid amount', 'error');
+      return;
+    }
+    var atomic = Math.round(amountBNT * 100000000);
+    if (atomic < 1) {
+      showSendStatus(labelPrefix + 'amount is below the minimum (0.00000001 BNT)', 'error');
       return;
     }
     var memo = (memoInput.value || '').trim();
@@ -2441,6 +2450,7 @@ async function handleSend(e) {
       index: i,
       rawAddress: rawAddress,
       amountBNT: amountBNT,
+      atomic: atomic,
       memo: memo,
       labelPrefix: labelPrefix,
     });
@@ -2474,11 +2484,12 @@ async function handleSend(e) {
           }
         }
         entry.address = entry.row._resolved.address;
-        entry.displayRecipient = prefix + handle;
+        entry.verified = entry.row._resolved.verified;
+        entry.displayRecipient = prefix + handle + ' → ' + abbrAddr(entry.address);
       } else {
         hideResolved(entry.row);
         entry.address = entry.rawAddress;
-        entry.displayRecipient = entry.rawAddress.substring(0, 16) + '...';
+        entry.displayRecipient = abbrAddr(entry.rawAddress);
       }
     }
   } finally {
@@ -2495,17 +2506,23 @@ async function handleSend(e) {
       sendArmTimer = null;
       btn.textContent = 'Send';
       btn.classList.remove('armed');
-      document.getElementById('send-status').style.display = 'none';
+      var st = document.getElementById('send-status');
+      if (st && st.textContent.indexOf('Press again within 10s') >= 0) {
+        showSendStatus('Confirmation expired — press Send again.', 'info');
+      }
     }, 10000);
     btn.textContent = 'Confirm Send';
     btn.classList.add('armed');
-    var totalBNT = entries.reduce(function (s, e) { return s + e.amountBNT; }, 0);
+    var totalAtomic = entries.reduce(function (s, e) { return s + e.atomic; }, 0);
     var confirmMsg;
     if (entries.length === 1) {
-      confirmMsg = 'Send ' + entries[0].amountBNT + ' BNT to ' + entries[0].displayRecipient + '?';
+      confirmMsg = 'Send ' + formatBNT(entries[0].atomic) + ' BNT to ' + entries[0].displayRecipient + '?';
       if (entries[0].memo) confirmMsg += '  Memo: "' + entries[0].memo + '"';
     } else {
-      confirmMsg = 'Send ' + formatBNT(Math.round(totalBNT * 100000000)) + ' BNT total to ' + entries.length + ' recipients?';
+      confirmMsg = 'Send ' + formatBNT(totalAtomic) + ' BNT total to ' + entries.length + ' recipients?';
+    }
+    if (entries.some(function (e) { return e.verified === false; })) {
+      confirmMsg = '⚠ UNVERIFIED handle — the shown address could not be cryptographically verified. ' + confirmMsg;
     }
     confirmMsg += '  Press again within 10s to confirm.';
     showSendStatus(confirmMsg, 'info');
@@ -2517,7 +2534,7 @@ async function handleSend(e) {
   btn.classList.remove('armed');
 
   var recipientsPayload = entries.map(function (e) {
-    var r = { address: e.address, amount: Math.round(e.amountBNT * 100000000) };
+    var r = { address: e.address, amount: e.atomic };
     if (e.memo) r.memo_text = e.memo;
     return r;
   });
