@@ -829,6 +829,9 @@ async function exportHistoryCSV() {
   var btn = document.getElementById('export-csv-btn');
   if (btn.dataset.openPath) {
     invoke('open_file', { path: btn.dataset.openPath });
+    delete btn.dataset.openPath;
+    btn.textContent = 'Export CSV';
+    btn.title = '';
     return;
   }
   btn.disabled = true;
@@ -845,7 +848,11 @@ async function exportHistoryCSV() {
       setTimeout(function () { btn.disabled = false; btn.textContent = 'Export CSV'; }, 2000);
       return;
     }
-    var sorted = outputs.slice().sort(function (a, b) { return b.block_height - a.block_height; });
+    var sorted = outputs.slice().sort(function (a, b) {
+      if (!a.block_height && b.block_height) return -1;
+      if (a.block_height && !b.block_height) return 1;
+      return b.block_height - a.block_height;
+    });
     var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height'];
     for (var i = 0; i < sorted.length; i++) {
       var o = sorted[i];
@@ -854,7 +861,7 @@ async function exportHistoryCSV() {
         o.txid + ',' +
         o.output_index + ',' +
         formatBNT(o.amount) + ',' +
-        o.block_height + ',' +
+        (o.block_height || '') + ',' +
         type + ',' +
         o.spent + ',' +
         (o.spent_height || '')
@@ -872,13 +879,10 @@ async function exportHistoryCSV() {
       filename: 'blocknet-history-' + ts + '.csv',
       contents: csv,
     });
-    btn.textContent = 'Saved to ' + savedPath;
+    btn.textContent = 'Open CSV ↗';
+    btn.title = 'Saved to ' + savedPath;
     btn.disabled = false;
     btn.dataset.openPath = savedPath;
-    setTimeout(function () {
-      btn.textContent = 'Export CSV';
-      delete btn.dataset.openPath;
-    }, 5000);
   } catch (e) {
     console.error('CSV export error:', e);
     btn.textContent = 'Export failed';
