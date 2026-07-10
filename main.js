@@ -20,6 +20,7 @@ let miningDifficultyLastRefresh = 0;
 let miningDifficultyLoading = false;
 let qrDismissTimer = null;
 let sendArmed = false;
+let pendingSendFingerprint = null;
 let sendArmTimer = null;
 let pendingSendIdempotency = null;
 const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
@@ -2498,11 +2499,14 @@ async function handleSend(e) {
   }
 
   // Phase 3: arm then confirm
-  if (!sendArmed) {
+  var fingerprint = JSON.stringify(entries.map(function (e) { return [e.address, e.atomic, e.memo]; }));
+  if (!sendArmed || fingerprint !== pendingSendFingerprint) {
     sendArmed = true;
+    pendingSendFingerprint = fingerprint;
     if (sendArmTimer) clearTimeout(sendArmTimer);
     sendArmTimer = setTimeout(() => {
       sendArmed = false;
+      pendingSendFingerprint = null;
       sendArmTimer = null;
       btn.textContent = 'Send';
       btn.classList.remove('armed');
@@ -2530,6 +2534,7 @@ async function handleSend(e) {
   }
 
   sendArmed = false;
+  pendingSendFingerprint = null;
   if (sendArmTimer) { clearTimeout(sendArmTimer); sendArmTimer = null; }
   btn.classList.remove('armed');
 
