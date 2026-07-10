@@ -936,6 +936,12 @@ async function exportHistoryCSV() {
     btn.disabled = false;
     btn.dataset.openPath = savedPath;
   } catch (e) {
+    var em = normalizeError(e);
+    if (em === 'Dialog cancelled' || em === 'No location selected') {
+      btn.disabled = false;
+      btn.textContent = 'Export CSV';
+      return;
+    }
     console.error('CSV export error:', e);
     btn.textContent = 'Export failed';
     setTimeout(function () { btn.disabled = false; btn.textContent = 'Export CSV'; }, 3000);

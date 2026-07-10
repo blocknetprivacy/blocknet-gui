@@ -704,17 +704,24 @@ async fn reset_blockchain_data(app: AppHandle, state: State<'_, DaemonState>) ->
 
 #[tauri::command]
 async fn save_file(app: AppHandle, filename: String, contents: String) -> Result<String, String> {
-    let downloads = if cfg!(target_os = "macos") || cfg!(target_os = "linux") {
-        dirs_next::download_dir()
-            .or_else(|| dirs_next::home_dir().map(|h| h.join("Downloads")))
-    } else {
-        dirs_next::download_dir()
-    };
-    let dir = downloads.unwrap_or_else(|| {
-        app.path().app_data_dir().unwrap_or_else(|_| std::path::PathBuf::from("."))
-    });
-    std::fs::create_dir_all(&dir).map_err(|e| format!("Failed to create dir: {}", e))?;
-    let path = dir.join(&filename);
+    use tauri_plugin_dialog::DialogExt;
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(&filename)
+        .save_file(move |file_path| {
+            let _ = tx.send(file_path);
+        });
+
+    let file = rx.await
+        .map_err(|_| "Dialog cancelled".to_string())?
+        .ok_or("No location selected".to_string())?;
+
+    let path = file.as_path()
+        .ok_or("Invalid path".to_string())?
+        .to_path_buf();
+
     std::fs::write(&path, &contents).map_err(|e| format!("Failed to write file: {}", e))?;
     Ok(path.to_string_lossy().to_string())
 }
