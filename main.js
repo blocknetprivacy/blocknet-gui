@@ -3431,8 +3431,10 @@ async function handlePasswordSubmit(e) {
       showStatus('Wallet is already loaded', 'error');
     } else if (msg.includes('api port 8332 is already in use')) {
       showStatus('API port 8332 is already in use. Stop other blocknet daemons and try again.', 'error');
+    } else if (msg.includes('unauthorized') || msg.includes('auth cookie') || msg.includes('daemon not started')) {
+      showStatus('Couldn\'t reach the wallet daemon — wait a moment and try again.', 'error');
     } else {
-      showStatus(normalizeError(error), 'error');
+      showStatus('Couldn\'t unlock the wallet — please try again.', 'error');
     }
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
