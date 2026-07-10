@@ -2720,6 +2720,7 @@ async function handleSwitchWallet(name) {
     showStatus('Switched to ' + name.replace(/\.dat$/, '') + '. Enter password to unlock.', 'info');
   } catch (e) {
     showSettingsStatus(normalizeError(e), 'error');
+    startPolling();
   }
 }
 
@@ -2742,6 +2743,10 @@ function startWalletRename(name) {
   function commitRename() {
     var val = input.value.trim();
     if (!val) { loadWalletList(); return; }
+    if (val.indexOf('/') >= 0 || val.indexOf('\\') >= 0 || val.indexOf('..') >= 0) {
+      showSettingsStatus('Names can\'t contain / \\ or ..', 'error');
+      return;
+    }
     var newName = val.endsWith('.dat') ? val : val + '.dat';
     if (newName === name) { loadWalletList(); return; }
     invoke('rename_wallet', { oldName: name, newName: newName })
@@ -2929,7 +2934,11 @@ async function handleImportSeed() {
     showImportStatus('Password must be at least 3 characters', 'error');
     return;
   }
-  if (filename && !filename.endsWith('.dat')) {
+  if (!filename) {
+    showImportStatus('Enter a filename for the imported wallet (e.g. restored.dat)', 'error');
+    return;
+  }
+  if (!filename.endsWith('.dat')) {
     filename = filename + '.dat';
   }
 
@@ -2968,6 +2977,17 @@ async function handleImportSeed() {
     showApp();
   } catch (e) {
     showImportStatus(normalizeError(e), 'error');
+    try {
+      await ensureDaemonReady();
+      if (sessionPassword) {
+        await loadOrUnlockWallet(sessionPassword);
+        startPolling();
+      } else {
+        showUnlockScreen();
+      }
+    } catch (_) {
+      showUnlockScreen();
+    }
   } finally {
     btn.disabled = false;
     btn.textContent = 'Import';
