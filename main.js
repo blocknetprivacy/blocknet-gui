@@ -2737,13 +2737,20 @@ function handleDeleteWallet(name) {
   var actionsEl = row.querySelector('.wallet-row-actions');
   var display = name.replace(/\.dat$/, '');
 
-  // Replace actions with confirm/cancel
   actionsEl.innerHTML =
-    '<span class="wallet-del-confirm-label">Delete ' + escapeHtml(display) + '?</span>' +
-    '<button class="ab-del-btn wallet-del-yes">Yes</button>' +
-    '<button class="ab-cancel-btn">No</button>';
+    '<span class="wallet-del-confirm-label">Permanently delete "' + escapeHtml(display) + '"? Funds are unrecoverable without its recovery seed. Type the name to confirm:</span>' +
+    '<input type="text" class="ab-edit-input wallet-del-input" autocorrect="off" autocapitalize="off" spellcheck="false">' +
+    '<button class="ab-del-btn wallet-del-yes" disabled>Delete</button>' +
+    '<button class="ab-cancel-btn">Cancel</button>';
 
-  actionsEl.querySelector('.wallet-del-yes').addEventListener('click', function () {
+  var delInput = actionsEl.querySelector('.wallet-del-input');
+  var delYes = actionsEl.querySelector('.wallet-del-yes');
+  delInput.focus();
+  delInput.addEventListener('input', function () {
+    delYes.disabled = delInput.value.trim() !== display;
+  });
+  delYes.addEventListener('click', function () {
+    if (delInput.value.trim() !== display) return;
     invoke('delete_wallet', { name: name })
       .then(function () { loadWalletList(); })
       .catch(function (e) { showSettingsStatus(normalizeError(e), 'error'); loadWalletList(); });
