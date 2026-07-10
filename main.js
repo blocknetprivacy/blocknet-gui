@@ -2587,7 +2587,7 @@ async function handleSend(e) {
     if (entries.some(function (e) { return e.verified === false; })) {
       confirmMsg = '⚠ UNVERIFIED handle — the shown address could not be cryptographically verified. ' + confirmMsg;
     }
-    confirmMsg += '  Press again within 10s to confirm.';
+    confirmMsg += '  A network fee will be added on top.  Press again within 10s to confirm.';
     showSendStatus(confirmMsg, 'info');
     return;
   }
