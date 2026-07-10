@@ -174,6 +174,9 @@ body.platform-windows #splash {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow-y: auto;
+  padding: 24px 16px;
+  box-sizing: border-box;
   z-index: 9998;
 }
 
@@ -309,9 +312,11 @@ body.platform-windows #password-screen {
   max-width: 980px;
   width: 90%;
   text-align: center;
-  min-height: 70vh;
-  display: grid;
-  grid-template-rows: 40% 60%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  padding: 32px 0;
+  margin: auto;
 }
 
 .password-hero {
@@ -321,10 +326,10 @@ body.platform-windows #password-screen {
 }
 
 #password-logo {
-  width: 136px;
-  height: 136px;
+  width: 104px;
+  height: 104px;
   object-fit: contain;
-  margin: 0 auto 14px auto;
+  margin: 0 auto 12px auto;
   display: block;
 }
 
@@ -357,28 +362,35 @@ body.platform-windows #password-screen {
 }
 
 #password-form input[type="password"] {
-  background: #000;
+  background: #0a0a0a;
   border: 1px solid #333;
+  border-radius: 12px;
   color: #eee;
-  padding: 12px 16px;
+  padding: 14px 16px;
   font: 15px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   outline: none;
-  transition: border-color 0.2s;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 #password-form input[type="password"]:focus {
   border-color: #af0;
+  box-shadow: 0 0 0 3px rgba(170, 255, 0, 0.12);
 }
 
 #password-submit {
   background: #af0;
   border: none;
+  border-radius: 12px;
   color: #000;
-  padding: 12px 16px;
+  padding: 14px 16px;
   font: 15px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-weight: bold;
   cursor: pointer;
-  transition: background 0.2s;
+  transition: background 0.2s, transform 0.1s;
+}
+
+#password-submit:active {
+  transform: translateY(1px);
 }
 
 #password-submit:hover {
@@ -414,12 +426,13 @@ body.platform-windows #password-screen {
 }
 
 .onboard-btn {
-  background: #000;
-  border: none;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 12px;
   padding: 20px;
   text-align: left;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, border-color 0.15s;
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -466,8 +479,9 @@ body.platform-windows #password-screen {
 .onboard-wallet-row {
   width: 100%;
   text-align: left;
-  background: #000;
-  border: 1px solid #111;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 10px;
   color: #eee;
   padding: 10px 12px;
   cursor: pointer;
@@ -494,9 +508,263 @@ body.platform-windows #password-screen {
   font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
 }
 
+/* ── Wallet Unlock Screen ── */
+
+#unlock-layout {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 20px;
+  width: 100%;
+}
+
+#password-primary {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Identity card: which wallet you're about to unlock */
+.wallet-id-card {
+  width: 100%;
+  max-width: 420px;
+  margin: 0 auto 16px auto;
+  padding: 15px 18px;
+  background: #0a0a0a;
+  border: 1px solid #1e1e1e;
+  border-radius: 14px;
+  text-align: left;
+  animation: unlock-fade-in 0.35s ease both;
+}
+
+.wallet-id-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.wallet-id-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #af0;
+  box-shadow: 0 0 8px rgba(170, 255, 0, 0.6);
+}
+
+.wallet-id-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  color: #af0;
+  font: 17px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  font-weight: bold;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Path: filename always visible, directory ellipsizes so long & short paths both stay tidy */
+.wallet-id-path {
+  display: flex;
+  align-items: baseline;
+  width: 100%;
+  min-width: 0;
+  margin-top: 7px;
+  padding: 0;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  color: #666;
+  transition: color 0.15s;
+}
+
+.wallet-id-path:hover { color: #9c3; }
+
+.wp-dir {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #555;
+}
+
+.wp-file {
+  flex: 0 0 auto;
+  color: #999;
+  font-weight: bold;
+}
+
+.wallet-id-path.copied .wp-dir,
+.wallet-id-path.copied .wp-file { color: #af0; }
+.wallet-id-path.copied::after {
+  content: '  copied \2713';
+  flex: 0 0 auto;
+  color: #af0;
+  white-space: nowrap;
+}
+
+/* Actions: open / new / seed */
+.unlock-actions {
+  width: 100%;
+  max-width: 420px;
+  margin: 18px auto 0 auto;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.unlock-action {
+  background: #0a0a0a;
+  border: 1px solid #1e1e1e;
+  border-radius: 10px;
+  color: #ccc;
+  padding: 11px 8px;
+  cursor: pointer;
+  font: 12.5px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.unlock-action:hover {
+  background: #111;
+  border-color: #af0;
+  color: #af0;
+}
+
+.unlock-action:disabled { opacity: 0.5; cursor: default; }
+
+/* Wallet switcher list */
+.unlock-wallets {
+  text-align: left;
+  animation: unlock-fade-in 0.35s ease both;
+}
+
+.unlock-wallets-title {
+  color: #777;
+  font: 12px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 10px;
+}
+
+.unlock-wallet-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.unlock-wallet-row {
+  width: 100%;
+  text-align: left;
+  background: #0a0a0a;
+  border: 1px solid #1a1a1a;
+  border-radius: 10px;
+  color: #eee;
+  padding: 11px 13px;
+  cursor: pointer;
+  font: 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.unlock-wallet-row:hover { border-color: #444; background: #111; }
+.unlock-wallet-row.active { border-color: #af0; background: rgba(170, 255, 0, 0.05); }
+.unlock-wallet-row:disabled { opacity: 0.6; cursor: default; }
+
+.uw-dot {
+  flex: 0 0 auto;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #333;
+}
+
+.unlock-wallet-row.active .uw-dot {
+  background: #af0;
+  box-shadow: 0 0 7px rgba(170, 255, 0, 0.6);
+}
+
+.uw-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.uw-name {
+  color: #eee;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.unlock-wallet-row.active .uw-name { color: #af0; }
+
+.uw-meta { color: #666; font-size: 11px; }
+
+.uw-tag {
+  flex: 0 0 auto;
+  color: #af0;
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.unlock-wallet-empty {
+  color: #666;
+  font: 13px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  padding: 4px 2px;
+}
+
+@keyframes unlock-fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* Wide screens: the switcher becomes a left column beside the unlock panel */
+@media (min-width: 1200px) {
+  #unlock-layout.multi {
+    flex-direction: row;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 34px;
+  }
+  #unlock-layout.multi #password-primary {
+    order: 2;
+    flex: 0 1 420px;
+    margin: 0;
+  }
+  #unlock-layout.multi .unlock-wallets {
+    order: 1;
+    flex: 0 0 280px;
+    border-right: 1px solid #161616;
+    padding-right: 30px;
+  }
+  #unlock-layout.multi .unlock-wallet-list { max-height: 58vh; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wallet-id-card,
+  .unlock-wallets { animation: none; }
+}
+
 /* Status Messages */
 .status-message {
   border: 1px solid #333;
+  border-radius: 10px;
   padding: 12px 16px;
   margin-top: 16px;
   background: #000;
@@ -636,12 +904,11 @@ body.platform-windows #app {
 @media (max-width: 1199px) {
   .password-container {
     max-width: 420px;
-    min-height: 66vh;
   }
 
   #password-logo {
-    width: 118px;
-    height: 118px;
+    width: 96px;
+    height: 96px;
   }
 
   .onboard-grid {

@@ -71,19 +71,46 @@
           </div>
         </div>
 
-        <form id="password-form">
-          <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
-          <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
-          <button type="submit" id="password-submit">Continue</button>
-        </form>
+        <!-- Unlock experience: wallet identity + password, with a wallet switcher on wide screens -->
+        <div id="unlock-layout">
+          <div id="password-primary">
+            <div id="wallet-id-card" class="wallet-id-card" style="display: none;">
+              <div class="wallet-id-top">
+                <span class="wallet-id-dot" aria-hidden="true"></span>
+                <span class="wallet-id-name" id="wallet-id-name">wallet</span>
+              </div>
+              <button type="button" class="wallet-id-path" id="wallet-id-path" title="Click to copy full path">
+                <span class="wp-dir" id="wp-dir"></span><span class="wp-file" id="wp-file">wallet.dat</span>
+              </button>
+            </div>
 
-        <div id="password-status" class="status-message"></div>
-        <div id="daemon-sync-status" class="daemon-sync-status" style="display: none;">
-          <div class="daemon-sync-text"></div>
-          <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill"></div></div>
-          <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
+            <form id="password-form">
+              <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
+              <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
+              <button type="submit" id="password-submit">Continue</button>
+            </form>
+
+            <div id="password-status" class="status-message"></div>
+            <div id="daemon-sync-status" class="daemon-sync-status" style="display: none;">
+              <div class="daemon-sync-text"></div>
+              <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill"></div></div>
+              <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
+            </div>
+
+            <div id="unlock-actions" class="unlock-actions" style="display: none;">
+              <button type="button" class="unlock-action" data-act="open">Open Wallet</button>
+              <button type="button" class="unlock-action" data-act="new">New Wallet</button>
+              <button type="button" class="unlock-action" data-act="seed">Enter Seed</button>
+            </div>
+
+            <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
+          </div>
+
+          <aside id="unlock-wallets" class="unlock-wallets" style="display: none;">
+            <div class="unlock-wallets-title">Your wallets</div>
+            <div id="unlock-wallet-list" class="unlock-wallet-list"></div>
+          </aside>
         </div>
-        <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
       </div>
     </div>
     <div id="app-version-label" class="app-version-label"></div>

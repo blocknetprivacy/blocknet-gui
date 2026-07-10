@@ -69,6 +69,57 @@ function setActiveWalletName(name) {
   }
 }
 
+// --- Unlock screen state ---
+// Where the shared password form returns to when "Back" is pressed:
+// 'choice' (first-run onboarding) or 'unlock' (an existing wallet's unlock view).
+var onboardReturnMode = 'choice';
+// The current mode of the password screen, so async populate calls don't
+// re-show unlock chrome after the user has already navigated to create/import.
+var currentPwMode = '';
+// Directory that holds the wallet files (learned from the active wallet path).
+var unlockWalletDir = '';
+
+function splitPath(fullPath) {
+  var norm = String(fullPath || '');
+  var idx = Math.max(norm.lastIndexOf('/'), norm.lastIndexOf('\\'));
+  if (idx < 0) return { dir: '', file: norm };
+  return { dir: norm.slice(0, idx + 1), file: norm.slice(idx + 1) };
+}
+
+function getWalletRecents() {
+  try {
+    var obj = JSON.parse(localStorage.getItem('blocknet.walletRecents') || '{}');
+    return (obj && typeof obj === 'object') ? obj : {};
+  } catch (_) {
+    return {};
+  }
+}
+
+function recordWalletRecency(name) {
+  if (!name) return;
+  try {
+    var recents = getWalletRecents();
+    recents[name] = Date.now();
+    localStorage.setItem('blocknet.walletRecents', JSON.stringify(recents));
+  } catch (_) {}
+}
+
+function formatRecency(ts) {
+  if (!ts) return '';
+  var diff = Date.now() - ts;
+  if (diff < 0) return '';
+  var mins = Math.floor(diff / 60000);
+  if (mins < 1) return 'just now';
+  if (mins < 60) return mins + 'm ago';
+  var hrs = Math.floor(mins / 60);
+  if (hrs < 24) return hrs + 'h ago';
+  var days = Math.floor(hrs / 24);
+  if (days < 30) return days + 'd ago';
+  var months = Math.floor(days / 30);
+  if (months < 12) return months + 'mo ago';
+  return Math.floor(months / 12) + 'y ago';
+}
+
 function migrateLocalStorageKeys() {
   // One-time migration: move unnamespaced txCache/addressBook to the active wallet's namespace
   try {
@@ -3176,18 +3227,20 @@ function showPasswordScreen(newWallet) {
   if (psImport) psImport.remove();
 
   if (newWallet) {
-    // Show the choice screen, hide the form
-    subtitle.textContent = '';
-    form.style.display = 'none';
-    choice.style.display = 'flex';
+    // First-run: show the create/import choice, hide the form and unlock chrome.
+    currentPwMode = 'choice';
+    onboardReturnMode = 'choice';
+    hideUnlockChrome();
+    if (subtitle) subtitle.textContent = '';
+    if (form) form.style.display = 'none';
+    if (choice) choice.style.display = 'flex';
     loadOnboardWalletList();
     if (backLink) backLink.style.display = 'none';
   } else {
-    subtitle.textContent = 'Enter your wallet password';
-    form.style.display = 'flex';
-    password2.style.display = 'none';
-    choice.style.display = 'none';
-    if (backLink) backLink.style.display = 'none';
+    // Existing wallet, locked: show the identity + password unlock view.
+    if (password2) password2.style.display = 'none';
+    if (choice) choice.style.display = 'none';
+    enterUnlockMode();
   }
 
   splash.classList.add('fade-out');
@@ -3205,7 +3258,9 @@ function showOnboardCreate() {
   if (psImport) psImport.remove();
 
   isNewWallet = true;
-  choice.style.display = 'none';
+  currentPwMode = 'create';
+  hideUnlockChrome();
+  if (choice) choice.style.display = 'none';
   subtitle.textContent = 'Create a password for your new wallet';
   password2.style.display = 'block';
   form.style.display = 'flex';
@@ -3219,7 +3274,9 @@ function showOnboardImport() {
   var subtitle = document.getElementById('password-subtitle');
   var backLink = document.getElementById('password-back-link');
 
-  choice.style.display = 'none';
+  currentPwMode = 'import';
+  hideUnlockChrome();
+  if (choice) choice.style.display = 'none';
   form.style.display = 'none';
   subtitle.textContent = 'Restore from recovery seed';
   if (backLink) backLink.style.display = '';
@@ -3229,7 +3286,7 @@ function showOnboardImport() {
   var existing = document.getElementById('password-screen-import');
   if (existing) { existing.remove(); }
 
-  var container = document.querySelector('.password-main');
+  var container = document.getElementById('password-primary');
   var div = document.createElement('div');
   div.id = 'password-screen-import';
   div.className = 'password-import-inline';
@@ -3255,14 +3312,22 @@ function showOnboardBack() {
   document.getElementById('password1').value = '';
   document.getElementById('password2').value = '';
 
-  var choice = document.getElementById('onboard-choice');
-  var subtitle = document.getElementById('password-subtitle');
   var backLink = document.getElementById('password-back-link');
-  choice.style.display = 'flex';
-  loadOnboardWalletList();
-  subtitle.textContent = '';
   if (backLink) backLink.style.display = 'none';
   hideStatus();
+
+  // Return to wherever we entered create/import from.
+  if (onboardReturnMode === 'unlock') {
+    enterUnlockMode();
+    return;
+  }
+
+  var choice = document.getElementById('onboard-choice');
+  var subtitle = document.getElementById('password-subtitle');
+  currentPwMode = 'choice';
+  if (choice) choice.style.display = 'flex';
+  loadOnboardWalletList();
+  if (subtitle) subtitle.textContent = '';
 }
 
 function showUnlockScreen() {
@@ -3290,12 +3355,9 @@ function showUnlockScreen() {
   }
   var psImport = document.getElementById('password-screen-import');
   if (psImport) psImport.remove();
-  var passwordForm = document.getElementById('password-form');
-  if (passwordForm) passwordForm.style.display = 'flex';
   var choice = document.getElementById('onboard-choice');
   if (choice) choice.style.display = 'none';
-  var backLink = document.getElementById('password-back-link');
-  if (backLink) backLink.style.display = 'none';
+  enterUnlockMode();
   if (submitBtn) {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
@@ -3312,6 +3374,7 @@ function showUnlockScreen() {
 async function showApp() {
   stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
+  recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
   const passwordScreen = document.getElementById('password-screen');
   const app = document.getElementById('app');
@@ -3326,6 +3389,7 @@ async function showApp() {
 async function showAppFromSplash() {
   stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
+  recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
   const splash = document.getElementById('splash');
   const app = document.getElementById('app');
@@ -3412,6 +3476,209 @@ async function loadOnboardWalletList() {
   } catch (_) {
     listEl.innerHTML = '<div class="onboard-wallet-empty">Unable to load wallet list.</div>';
   }
+}
+
+// --- Unlock view (existing wallet, locked): identity + switcher + actions ---
+
+function hideUnlockChrome() {
+  var card = document.getElementById('wallet-id-card');
+  if (card) card.style.display = 'none';
+  var actions = document.getElementById('unlock-actions');
+  if (actions) actions.style.display = 'none';
+  var aside = document.getElementById('unlock-wallets');
+  if (aside) aside.style.display = 'none';
+  var layout = document.getElementById('unlock-layout');
+  if (layout) layout.classList.remove('multi');
+}
+
+function enterUnlockMode() {
+  currentPwMode = 'unlock';
+  onboardReturnMode = 'unlock';
+  isNewWallet = false;
+
+  var psImport = document.getElementById('password-screen-import');
+  if (psImport) psImport.remove();
+  var choice = document.getElementById('onboard-choice');
+  if (choice) choice.style.display = 'none';
+
+  var form = document.getElementById('password-form');
+  if (form) form.style.display = 'flex';
+  var password2 = document.getElementById('password2');
+  if (password2) { password2.value = ''; password2.style.display = 'none'; }
+  var backLink = document.getElementById('password-back-link');
+  if (backLink) backLink.style.display = 'none';
+  var subtitle = document.getElementById('password-subtitle');
+  if (subtitle) subtitle.textContent = 'Enter your wallet password';
+
+  var actions = document.getElementById('unlock-actions');
+  if (actions) actions.style.display = 'grid';
+
+  populateWalletIdentity(null);
+  loadUnlockWalletList();
+}
+
+async function populateWalletIdentity(name) {
+  var card = document.getElementById('wallet-id-card');
+  if (!card) return;
+
+  var walletName = name;
+  if (!walletName) {
+    try { walletName = await invoke('get_active_wallet'); } catch (_) {}
+    walletName = walletName || activeWalletName || 'wallet.dat';
+    setActiveWalletName(walletName);
+  }
+
+  // All wallet files live in one directory; learn it from the active wallet's
+  // full path, then any wallet's path is simply that directory + its name.
+  var fullPath;
+  try {
+    var activePath = await invoke('get_wallet_path_cmd');
+    var parts = splitPath(activePath);
+    if (parts.dir) unlockWalletDir = parts.dir;
+  } catch (_) {}
+  fullPath = (unlockWalletDir || '') + walletName;
+
+  // The user may have navigated to create/import while this awaited.
+  if (currentPwMode !== 'unlock') return;
+
+  var nameEl = document.getElementById('wallet-id-name');
+  var dirEl = document.getElementById('wp-dir');
+  var fileEl = document.getElementById('wp-file');
+  var pathBtn = document.getElementById('wallet-id-path');
+  var sp = splitPath(fullPath);
+
+  if (nameEl) nameEl.textContent = String(walletName).replace(/\.dat$/i, '');
+  if (dirEl) dirEl.textContent = sp.dir;
+  if (fileEl) fileEl.textContent = sp.file;
+  if (pathBtn) {
+    pathBtn.title = fullPath;
+    pathBtn.setAttribute('data-full-path', fullPath);
+    pathBtn.classList.remove('copied');
+  }
+  card.style.display = 'block';
+}
+
+async function loadUnlockWalletList() {
+  var listEl = document.getElementById('unlock-wallet-list');
+  var aside = document.getElementById('unlock-wallets');
+  var layout = document.getElementById('unlock-layout');
+  if (!listEl) return;
+
+  var wallets = [];
+  try { wallets = await invoke('list_wallets'); } catch (_) { wallets = []; }
+  var active = activeWalletName;
+  try { active = await invoke('get_active_wallet'); } catch (_) {}
+
+  // A single wallet needs no switcher; also bail if the user navigated away.
+  if (currentPwMode !== 'unlock' || !wallets || wallets.length <= 1) {
+    if (aside) aside.style.display = 'none';
+    if (layout) layout.classList.remove('multi');
+    return;
+  }
+
+  var recents = getWalletRecents();
+  var ordered = wallets.slice().sort(function (a, b) {
+    if (a === active) return -1;
+    if (b === active) return 1;
+    var ra = recents[a] || 0, rb = recents[b] || 0;
+    if (ra !== rb) return rb - ra;
+    return a.localeCompare(b);
+  });
+
+  listEl.innerHTML = ordered.map(function (name) {
+    var display = escapeHtml(name.replace(/\.dat$/i, ''));
+    var isActive = name === active;
+    var rec = recents[name];
+    var meta = isActive
+      ? 'Loaded · locked'
+      : (rec ? 'Last opened ' + escapeHtml(formatRecency(rec)) : 'Not opened here yet');
+    return '<button type="button" class="unlock-wallet-row' + (isActive ? ' active' : '') +
+        '" data-wallet="' + escapeHtml(name) + '">' +
+        '<span class="uw-dot" aria-hidden="true"></span>' +
+        '<span class="uw-body"><span class="uw-name">' + display + '</span>' +
+        '<span class="uw-meta">' + meta + '</span></span>' +
+        (isActive ? '<span class="uw-tag">Active</span>' : '') +
+      '</button>';
+  }).join('');
+
+  listEl.querySelectorAll('.unlock-wallet-row').forEach(function (btn) {
+    btn.addEventListener('click', function () { handleUnlockWalletPick(btn); });
+  });
+
+  if (aside) aside.style.display = 'block';
+  if (layout) layout.classList.add('multi');
+}
+
+async function handleUnlockWalletPick(btn) {
+  var selected = btn.getAttribute('data-wallet');
+  if (!selected) return;
+
+  var current = activeWalletName;
+  try { current = await invoke('get_active_wallet'); } catch (_) {}
+
+  if (selected === current) {
+    var already = document.getElementById('password1');
+    if (already) already.focus();
+    return;
+  }
+
+  // Switching to a different wallet restarts the daemon for that wallet;
+  // the unlock submit then brings it up with the entered password.
+  var rows = document.querySelectorAll('.unlock-wallet-row');
+  rows.forEach(function (r) { r.disabled = true; });
+  showStatus('Switching to ' + selected.replace(/\.dat$/i, '') + '…', 'info');
+  try {
+    await invoke('switch_wallet', { name: selected });
+    setActiveWalletName(selected);
+    isNewWallet = false;
+    await populateWalletIdentity(selected);
+    await loadUnlockWalletList();
+    showStatus('Enter the password for ' + selected.replace(/\.dat$/i, '') + '.', 'info');
+    var pw = document.getElementById('password1');
+    if (pw) { pw.value = ''; pw.focus(); }
+  } catch (e) {
+    showStatus(normalizeError(e), 'error');
+    document.querySelectorAll('.unlock-wallet-row').forEach(function (r) { r.disabled = false; });
+  }
+}
+
+async function handleUnlockOpenFile() {
+  var actionBtns = document.querySelectorAll('.unlock-action');
+  actionBtns.forEach(function (b) { b.disabled = true; });
+  try {
+    var filename = await invoke('import_wallet_file');
+    await invoke('switch_wallet', { name: filename });
+    setActiveWalletName(filename);
+    isNewWallet = false;
+    await populateWalletIdentity(filename);
+    await loadUnlockWalletList();
+    showStatus('Opened ' + filename.replace(/\.dat$/i, '') + '. Enter its password.', 'info');
+    var pw = document.getElementById('password1');
+    if (pw) { pw.value = ''; pw.focus(); }
+  } catch (e) {
+    var msg = normalizeError(e);
+    if (msg.indexOf('already exists') !== -1) {
+      showStatus('That wallet is already in your list — pick it from Your wallets.', 'info');
+    } else if (msg !== 'No file selected' && msg !== 'Dialog cancelled') {
+      showStatus(msg, 'error');
+    }
+  } finally {
+    document.querySelectorAll('.unlock-action').forEach(function (b) { b.disabled = false; });
+  }
+}
+
+function handleCopyWalletPath() {
+  var btn = document.getElementById('wallet-id-path');
+  if (!btn) return;
+  var full = btn.getAttribute('data-full-path') || '';
+  if (!full) return;
+  Promise.resolve()
+    .then(function () { return navigator.clipboard.writeText(full); })
+    .then(function () {
+      btn.classList.add('copied');
+      setTimeout(function () { btn.classList.remove('copied'); }, 1400);
+    })
+    .catch(function () {});
 }
 
 // --- Password form ---
@@ -4275,6 +4542,24 @@ document.getElementById('import-file-btn').addEventListener('click', handleImpor
 document.getElementById('onboard-create').addEventListener('click', showOnboardCreate);
 document.getElementById('onboard-import').addEventListener('click', showOnboardImport);
 document.getElementById('password-back-link').addEventListener('click', showOnboardBack);
+
+// Unlock-screen actions: open a wallet file / new wallet / restore from seed.
+document.querySelectorAll('.unlock-action').forEach(function (btn) {
+  btn.addEventListener('click', function () {
+    var act = btn.getAttribute('data-act');
+    if (act === 'open') {
+      handleUnlockOpenFile();
+    } else if (act === 'new') {
+      onboardReturnMode = 'unlock';
+      showOnboardCreate();
+    } else if (act === 'seed') {
+      onboardReturnMode = 'unlock';
+      showOnboardImport();
+    }
+  });
+});
+var walletIdPathBtn = document.getElementById('wallet-id-path');
+if (walletIdPathBtn) walletIdPathBtn.addEventListener('click', handleCopyWalletPath);
 
 document.querySelectorAll('.nav-link').forEach(btn => {
   btn.addEventListener('click', () => navigate(btn.dataset.view));
