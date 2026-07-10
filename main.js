@@ -2377,12 +2377,17 @@ async function handleSend(e) {
       showSendStatus(labelPrefix + 'enter a valid amount', 'error');
       return;
     }
+    var memo = (memoInput.value || '').trim();
+    if (new TextEncoder().encode(memo).length > 124) {
+      showSendStatus(labelPrefix + 'memo is too long (max 124 bytes)', 'error');
+      return;
+    }
     entries.push({
       row: row,
       index: i,
       rawAddress: rawAddress,
       amountBNT: amountBNT,
-      memo: (memoInput.value || '').trim(),
+      memo: memo,
       labelPrefix: labelPrefix,
     });
   }
@@ -4009,6 +4014,11 @@ async function handleSign() {
   var resultEl = document.getElementById('sign-result');
   if (!message) {
     resultEl.innerHTML = '<span class="r">Enter a message to sign</span>';
+    resultEl.style.display = 'block';
+    return;
+  }
+  if (new TextEncoder().encode(message).length > 1024) {
+    resultEl.innerHTML = '<span class="r">Message is too long (max 1024 bytes)</span>';
     resultEl.style.display = 'block';
     return;
   }
