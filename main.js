@@ -29,6 +29,7 @@ let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let dashForceRefresh = false;
 let peerDetailActiveId = '';
+let geoLookupRequested = {};
 let peerDetailLiveTimer = null;
 let navGeneration = 0;
 
@@ -1696,8 +1697,9 @@ async function showPeerDetail(peerId) {
     var publicIp = ipCandidates.find(isPublicIp) || '';
     var addressHint = summarizePeerAddressHints(addrList);
     var traits = inferMultiaddrTraits(addrList);
+    var geoAvailable = !!(publicIp && addressHint !== 'tor' && addressHint !== 'i2p' && addressHint !== 'relay');
     var geo = null;
-    if (publicIp && addressHint !== 'tor' && addressHint !== 'i2p' && addressHint !== 'relay') {
+    if (geoAvailable && geoLookupRequested[publicIp]) {
       geo = await geolocateIp(publicIp);
     }
     var hasPoint = !!(geo && typeof geo.lat === 'number' && typeof geo.lon === 'number');
@@ -1740,7 +1742,13 @@ async function showPeerDetail(peerId) {
           '</div>' +
           '<div class="detail-grid">' + geoRows + '</div>' +
         '</div>'
-      : '';
+      : (geoAvailable
+          ? '<h2>Geo</h2>' +
+            '<div class="peer-panel">' +
+              '<p class="settings-item-desc">Location lookup sends this peer\'s IP (' + escapeHtml(publicIp) + ') to the third-party service ipwho.is.</p>' +
+              '<button class="btn-secondary" id="peer-geo-lookup" data-ip="' + escapeHtml(publicIp) + '">Look up location</button>' +
+            '</div>'
+          : '');
     var stateSummary = summarizePeerState(connected, !!banEntry);
     var sharePct = connectedPeers.length > 0 ? (100 / connectedPeers.length) : 0;
     var reasonCategory = classifyBanReason(banEntry && banEntry.reason);
@@ -1856,6 +1864,13 @@ async function showPeerDetail(peerId) {
     });
     refreshPeerAgeLabels(container);
     wireCopyable(container);
+    var geoBtn = document.getElementById('peer-geo-lookup');
+    if (geoBtn) {
+      geoBtn.addEventListener('click', function () {
+        geoLookupRequested[geoBtn.dataset.ip] = true;
+        showPeerDetail(peerId);
+      });
+    }
   } catch (e) {
     container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
   }
@@ -3202,7 +3217,6 @@ function startPolling() {
     try {
       if (currentView === 'mining') await loadMining();
       if (currentView === 'network') await loadNetwork();
-      if (currentView === 'peer-detail' && peerDetailActiveId) await showPeerDetail(peerDetailActiveId);
     } catch (_) {}
   }, 15000);
 
