@@ -665,6 +665,8 @@ body.platform-windows #password-screen {
 
 .unlock-wallet-row {
   width: 100%;
+  box-sizing: border-box;
+  min-height: 56px;
   text-align: left;
   background: #0a0a0a;
   border: 1px solid #1a1a1a;
@@ -673,9 +675,12 @@ body.platform-windows #password-screen {
   padding: 11px 13px;
   cursor: pointer;
   font: 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
-  display: flex;
+  /* Fixed tracks: dot | name+meta (this one truncates) | tag. A long name can
+     never push the tag or resize the column — minmax(0,1fr) lets it ellipsize. */
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 10px;
+  column-gap: 10px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -684,7 +689,6 @@ body.platform-windows #password-screen {
 .unlock-wallet-row:disabled { opacity: 0.6; cursor: default; }
 
 .uw-dot {
-  flex: 0 0 auto;
   width: 7px;
   height: 7px;
   border-radius: 50%;
@@ -697,8 +701,8 @@ body.platform-windows #password-screen {
 }
 
 .uw-body {
-  flex: 1 1 auto;
   min-width: 0;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -706,6 +710,7 @@ body.platform-windows #password-screen {
 
 .uw-name {
   color: #eee;
+  max-width: 100%;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -713,14 +718,20 @@ body.platform-windows #password-screen {
 
 .unlock-wallet-row.active .uw-name { color: #af0; }
 
-.uw-meta { color: #666; font-size: 11px; }
+.uw-meta {
+  color: #666;
+  font-size: 11px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
 
 .uw-tag {
-  flex: 0 0 auto;
   color: #af0;
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.5px;
+  white-space: nowrap;
 }
 
 .unlock-wallet-empty {
@@ -750,6 +761,8 @@ body.platform-windows #password-screen {
   #unlock-layout.multi .unlock-wallets {
     order: 1;
     flex: 0 0 280px;
+    min-width: 0;
+    box-sizing: border-box;
     border-right: 1px solid #161616;
     padding-right: 30px;
   }
