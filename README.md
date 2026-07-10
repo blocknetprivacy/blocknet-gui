@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="blocknet.png" width="128" height="128" alt="Blocknet">
+  <img width="1256" height="680" alt="Image" src="https://github.com/user-attachments/assets/36b9aa19-a9b7-4563-b6e8-fec75a052069" />
 </p>
 
 <h1 align="center">Blocknet Wallet</h1>
