@@ -280,8 +280,8 @@
             </div>
             <div class="form-group" id="request-link-group" style="display: none;">
               <div class="payment-link-toggle" id="payment-link-toggle">
-                <button type="button" class="payment-link-mode active" id="request-link-mode-blocknet">blocknet://</button>
-                <button type="button" class="payment-link-mode" id="request-link-mode-bntpay">bntpay</button>
+                <button type="button" class="payment-link-mode active" id="request-link-mode-blocknet" title="App link — opens directly in a Blocknet wallet">blocknet://</button>
+                <button type="button" class="payment-link-mode" id="request-link-mode-bntpay" title="Web link (bntpay.com) — opens in a browser">bntpay</button>
               </div>
               <label>Payment Link <span class="d">(click to copy)</span></label>
               <div class="address-display sv-copyable" id="request-link"></div>
@@ -329,7 +329,7 @@
                   <button class="stepper-btn" id="threads-inc" aria-label="Increase threads">+</button>
                 </div>
               </div>
-              <span class="thread-hint" id="thread-hint">~2 GB RAM</span>
+              <span class="thread-hint" id="thread-hint">--</span>
             </div>
           </div>
           <div class="stats-grid mining-stats">
@@ -340,6 +340,10 @@
             <div class="stat-card">
               <div class="stat-label">Blocks Found</div>
               <div class="stat-value" id="mining-blocks">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Difficulty</div>
+              <div class="stat-value" id="mining-difficulty">--</div>
             </div>
           </div>
           <div class="mempool-panel">

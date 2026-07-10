@@ -1165,6 +1165,8 @@ async function refreshMiningDifficultySparkline() {
 
     if (nextSeries.length > 1) {
       miningDifficultySeries = nextSeries;
+      var diffEl = document.getElementById('mining-difficulty');
+      if (diffEl && nextSeries.length) diffEl.textContent = Math.round(nextSeries[nextSeries.length - 1]).toLocaleString();
       miningDifficultyTipHeight = tip;
       miningDifficultyLastRefresh = now;
       renderMiningDifficultySparkline(miningDifficultySeries);
@@ -1255,7 +1257,17 @@ function updateStepperState(count) {
   var max = navigator.hardwareConcurrency || 16;
   document.getElementById('threads-inc').disabled = count >= max;
   var hint = document.getElementById('thread-hint');
-  if (hint) hint.textContent = '~' + (count * 2) + ' GB RAM';
+  if (hint) {
+    var estGb = count * 2;
+    var devMem = navigator.deviceMemory;
+    if (devMem && estGb >= devMem) {
+      hint.textContent = '~' + estGb + ' GB RAM — exceeds this machine\'s memory';
+      hint.style.color = '#fa0';
+    } else {
+      hint.textContent = '~' + estGb + ' GB RAM';
+      hint.style.color = '';
+    }
+  }
 }
 
 function changeThreads(delta) {
