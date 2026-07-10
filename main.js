@@ -356,6 +356,11 @@ async function refreshDashStatus() {
 async function refreshDashBalance() {
   try {
     const balance = await api('/api/wallet/balance');
+    if (balance.scanning) {
+      showDashScan(balance.synced_height, balance.chain_height);
+      return;
+    }
+    hideDashScan();
     document.getElementById('dash-balance').textContent = formatBNTShort(balance.spendable);
     document.getElementById('dash-pending').textContent = formatBNTShort(balance.pending);
     document.getElementById('dash-total').textContent = formatBNTShort(balance.total);
@@ -366,6 +371,34 @@ async function refreshDashBalance() {
     // transient failure self-heals; log it so a persistent one is diagnosable.
     console.warn('balance refresh failed:', normalizeError(e));
   }
+}
+
+function showDashScan(synced, chain) {
+  var s = Number(synced) || 0;
+  var c = Number(chain) || 0;
+  var pct = c > 0 ? Math.min(100, Math.max(0, Math.round((s / c) * 100))) : 0;
+  var val = document.getElementById('dash-balance');
+  val.textContent = 'Scanning ' + pct + '%';
+  val.classList.add('scanning-text');
+  var unit = document.getElementById('dash-balance-unit');
+  if (unit) unit.style.display = 'none';
+  var sub = document.querySelector('.balance-sub');
+  if (sub) sub.style.display = 'none';
+  document.getElementById('dash-scan-fill').style.width = pct + '%';
+  document.getElementById('dash-scan-blocks').textContent =
+    'Reading wallet outputs · block ' + s.toLocaleString() + ' / ' + c.toLocaleString();
+  document.getElementById('dash-scan').style.display = 'block';
+}
+
+function hideDashScan() {
+  var val = document.getElementById('dash-balance');
+  val.classList.remove('scanning-text');
+  var unit = document.getElementById('dash-balance-unit');
+  if (unit) unit.style.display = '';
+  var sub = document.querySelector('.balance-sub');
+  if (sub) sub.style.display = '';
+  var scan = document.getElementById('dash-scan');
+  if (scan) scan.style.display = 'none';
 }
 
 async function loadDashboard() {

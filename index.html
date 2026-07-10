@@ -140,10 +140,14 @@
           <div class="balance-card">
             <div class="balance-label"><span id="dash-wallet-name" class="g">wallet</span> <span>Spendable Balance</span></div>
             <div class="balance-shortname sv-copyable" id="dash-shortname" style="display: none;"></div>
-            <div class="balance-value"><span id="dash-balance">--</span> <span class="d">BNT</span></div>
+            <div class="balance-value"><span id="dash-balance">--</span> <span class="d" id="dash-balance-unit">BNT</span></div>
             <div class="balance-sub">
               <span id="pending-label">Pending: <span id="dash-pending">--</span> BNT</span>
               <span>Total: <span id="dash-total">--</span> BNT</span>
+            </div>
+            <div id="dash-scan" class="dash-scan" style="display: none;">
+              <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill" id="dash-scan-fill"></div></div>
+              <div class="dash-scan-blocks" id="dash-scan-blocks"></div>
             </div>
             <div id="dash-sync-notice" class="sync-notice" style="display: none;"></div>
           </div>

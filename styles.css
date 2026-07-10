@@ -273,6 +273,38 @@ body.platform-windows #password-screen {
   border-radius: 3px;
 }
 
+.scanning-text {
+  background: linear-gradient(
+    90deg,
+    #4f7a16 0%,
+    #aaff00 25%,
+    #e6ffb3 50%,
+    #aaff00 75%,
+    #4f7a16 100%
+  );
+  background-size: 200% auto;
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  color: transparent;
+  animation: bntpool-shimmer 2.6s linear infinite;
+}
+
+.dash-scan {
+  margin-top: 16px;
+}
+
+.dash-scan-blocks {
+  margin-top: 8px;
+  color: #888;
+  font-size: 12px;
+  letter-spacing: 0.3px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scanning-text { animation: none; }
+}
+
 .password-container {
   max-width: 980px;
   width: 90%;
