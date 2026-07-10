@@ -544,7 +544,7 @@ async function loadDashboard() {
       }
     }
   } catch (e) {
-    // history may fail during sync
+    console.warn('dashboard recent activity failed:', normalizeError(e));
   }
 }
 
@@ -1902,7 +1902,7 @@ function renderAddressBook() {
     return '<div class="address-book-row" data-idx="' + i + '">' +
       '<div class="ab-info">' +
         '<span class="ab-name">' + escapeHtml(entry.name) + '</span>' +
-        '<span class="ab-addr d">' + (isHandlePrefix(entry.address.charAt(0)) ? escapeHtml(entry.address) : entry.address.substring(0, 24) + '...') + '</span>' +
+        '<span class="ab-addr d">' + (isHandlePrefix(entry.address.charAt(0)) ? escapeHtml(entry.address) : escapeHtml(entry.address.substring(0, 24)) + '...') + '</span>' +
       '</div>' +
       '<div class="ab-actions">' +
         '<button class="ab-use-btn" data-idx="' + i + '">Use</button>' +
@@ -2059,9 +2059,9 @@ function showAddressSuggestions(row) {
 
   container.style.display = 'block';
   container.innerHTML = matches.map(function (e) {
-    return '<div class="address-suggestion" data-address="' + e.address + '">' +
+    return '<div class="address-suggestion" data-address="' + escapeHtml(e.address) + '">' +
       '<span class="as-name">' + escapeHtml(e.name) + '</span>' +
-      '<span class="as-addr d">' + (isHandlePrefix(e.address.charAt(0)) ? escapeHtml(e.address) : e.address.substring(0, 20) + '...') + '</span>' +
+      '<span class="as-addr d">' + (isHandlePrefix(e.address.charAt(0)) ? escapeHtml(e.address) : escapeHtml(e.address.substring(0, 20)) + '...') + '</span>' +
     '</div>';
   }).join('');
 
@@ -2598,11 +2598,11 @@ async function handleSend(e) {
     showSendStatus('Sent! TX: ' + result.txid.substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
     addPendingSend(result.txid, totalAtomic + result.fee, firstRecipient.memo_hex);
     entries.forEach(function (ent) {
-      if (ent.row._resolved && ent.row._resolved.handle) {
+      if (ent.row._resolved && ent.row._resolved.handle && ent.row._resolved.verified) {
         var book = getAddressBook();
         var h = ent.row._resolved.handle;
         var handleAddr = '$' + h;
-        var idx = book.findIndex(function (e) { return e.name.toLowerCase() === h.toLowerCase(); });
+        var idx = book.findIndex(function (e) { return e.name.toLowerCase() === h.toLowerCase() || e.address.toLowerCase() === handleAddr.toLowerCase(); });
         if (idx < 0) {
           book.push({ name: h, address: handleAddr });
           saveAddressBook(book);
