@@ -76,6 +76,53 @@ function updateCargoTomlVersion(filePath, version) {
   fs.writeFileSync(filePath, updated);
 }
 
+function readCargoLockWalletVersion(filePath) {
+  const original = fs.readFileSync(filePath, 'utf8');
+  const match = original.match(/name = "blocknet-wallet"\s*\nversion = "([^"]+)"/);
+  return match ? match[1] : null;
+}
+
+function updateCargoLockVersion(filePath, version) {
+  const original = fs.readFileSync(filePath, 'utf8');
+  const re = /(name = "blocknet-wallet"\s*\nversion = ")[^"]+(")/;
+  if (!re.test(original)) {
+    throw new Error('Failed to locate blocknet-wallet package in src-tauri/Cargo.lock');
+  }
+  const updated = original.replace(re, `$1${version}$2`);
+  if (updated !== original) {
+    fs.writeFileSync(filePath, updated);
+  }
+}
+
+function updatePackageLockVersion(filePath, version) {
+  const data = readJson(filePath);
+  data.version = version;
+  if (data.packages && data.packages['']) {
+    data.packages[''].version = version;
+  }
+  writeJson(filePath, data);
+}
+
+function metainfoHasRelease(filePath, version) {
+  const original = fs.readFileSync(filePath, 'utf8');
+  const re = new RegExp(`<release version="${version.replace(/\./g, '\\.')}"`);
+  return re.test(original);
+}
+
+function updateMetainfoRelease(filePath, version) {
+  if (metainfoHasRelease(filePath, version)) {
+    return;
+  }
+  const original = fs.readFileSync(filePath, 'utf8');
+  const date = new Date().toISOString().slice(0, 10);
+  const entry = `    <release version="${version}" date="${date}"/>\n`;
+  const updated = original.replace(/(<releases>[^\n]*\n)/, `$1${entry}`);
+  if (updated === original) {
+    throw new Error('Failed to locate <releases> in flatpak/com.blocknet.wallet.metainfo.xml');
+  }
+  fs.writeFileSync(filePath, updated);
+}
+
 function assertEqual(label, actual, expected) {
   if (String(actual) !== String(expected)) {
     throw new Error(`${label} mismatch: expected ${expected}, found ${actual}`);
@@ -86,6 +133,9 @@ function main() {
   const binaryPath = getDaemonBinaryPath();
   const daemonVersion = readDaemonVersion(binaryPath);
   const versionPath = path.join(root, 'VERSION');
+  const packageLockPath = path.join(root, 'package-lock.json');
+  const cargoLockPath = path.join(root, 'src-tauri', 'Cargo.lock');
+  const metainfoPath = path.join(root, 'flatpak', 'com.blocknet.wallet.metainfo.xml');
 
   if (checkOnly) {
     const fileVersion = fs.existsSync(versionPath) ? fs.readFileSync(versionPath, 'utf8').trim() : '';
@@ -100,6 +150,19 @@ function main() {
     const cargoToml = fs.readFileSync(path.join(root, 'src-tauri', 'Cargo.toml'), 'utf8');
     const cargoMatch = cargoToml.match(/\[package\][\s\S]*?^version\s*=\s*"([^"]+)"/m);
     assertEqual('Cargo.toml [package] version', cargoMatch ? cargoMatch[1] : '', daemonVersion);
+
+    if (fs.existsSync(packageLockPath)) {
+      const pkgLock = readJson(packageLockPath);
+      assertEqual('package-lock.json version', pkgLock.version, daemonVersion);
+    }
+
+    if (fs.existsSync(cargoLockPath)) {
+      assertEqual('Cargo.lock blocknet-wallet version', readCargoLockWalletVersion(cargoLockPath), daemonVersion);
+    }
+
+    if (fs.existsSync(metainfoPath) && !metainfoHasRelease(metainfoPath, daemonVersion)) {
+      throw new Error(`metainfo.xml release entry mismatch: expected a <release version="${daemonVersion}">`);
+    }
 
     process.stdout.write(daemonVersion + '\n');
     return;
@@ -124,6 +187,18 @@ function main() {
   writeJson(tauriPath, tauri);
 
   updateCargoTomlVersion(cargoPath, daemonVersion);
+
+  if (fs.existsSync(packageLockPath)) {
+    updatePackageLockVersion(packageLockPath, daemonVersion);
+  }
+
+  if (fs.existsSync(cargoLockPath)) {
+    updateCargoLockVersion(cargoLockPath, daemonVersion);
+  }
+
+  if (fs.existsSync(metainfoPath)) {
+    updateMetainfoRelease(metainfoPath, daemonVersion);
+  }
 
   process.stdout.write(daemonVersion + '\n');
 }
