@@ -1073,6 +1073,11 @@ async function loadHistory() {
   });
 }
 
+function csvField(s) {
+  s = String(s == null ? '' : s);
+  return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
 async function exportHistoryCSV() {
   var btn = document.getElementById('export-csv-btn');
   if (btn.dataset.openPath) {
@@ -1101,7 +1106,7 @@ async function exportHistoryCSV() {
       if (a.block_height && !b.block_height) return 1;
       return b.block_height - a.block_height;
     });
-    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height'];
+    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo'];
     for (var i = 0; i < sorted.length; i++) {
       var o = sorted[i];
       var type = o.is_coinbase ? 'mining_reward' : (o.spent ? 'sent' : 'received');
@@ -1112,7 +1117,8 @@ async function exportHistoryCSV() {
         (o.block_height || '') + ',' +
         type + ',' +
         o.spent + ',' +
-        (o.spent_height || '')
+        (o.spent_height || '') + ',' +
+        csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '')
       );
     }
     var csv = lines.join('\n');
