@@ -1,6 +1,4 @@
-<p align="center">
-  <img src="blocknet.png" width="128" height="128" alt="Blocknet">
-</p>
+
 
 <h1 align="center">Blocknet Wallet</h1>
 
@@ -10,8 +8,9 @@
   <img src="https://img.shields.io/badge/platforms-macOS%20%7C%20Linux%20%7C%20Windows-aaff00?style=flat-square&labelColor=000">
 </p>
 
-<img width="1313" height="686" alt="image" src="https://github.com/user-attachments/assets/3334cc0a-917b-4875-a170-5e59a12f09f2" />
-
+<p align="center">
+  <img width="1256" height="680" alt="Image" src="https://github.com/user-attachments/assets/36b9aa19-a9b7-4563-b6e8-fec75a052069" />
+</p>
 ---
 
 ## Download
