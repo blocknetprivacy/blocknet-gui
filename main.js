@@ -2889,7 +2889,9 @@ async function handleSend(e) {
 function finalizeSend(result, entries, recipientsPayload) {
   var totalAtomic = recipientsPayload.reduce(function (s, r) { return s + r.amount; }, 0);
   var firstRecipient = (result.recipients && result.recipients[0]) || {};
-  showSendStatus('Sent! TX: ' + String(result.txid).substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
+  var sentMsg = 'Sent! TX: ' + String(result.txid).substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT';
+  if (typeof result.change === 'number' && result.change > 0) sentMsg += ' · Change: ' + formatBNT(result.change) + ' BNT';
+  showSendStatus(sentMsg, 'success');
   addPendingSend(result.txid, totalAtomic + (Number(result.fee) || 0), firstRecipient.memo_hex);
   entries.forEach(function (ent) {
     if (ent.row._resolved && ent.row._resolved.handle && ent.row._resolved.verified) {
