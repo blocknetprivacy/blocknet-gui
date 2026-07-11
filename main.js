@@ -289,7 +289,6 @@ function formatBNTShort(atomic) {
   return val.toFixed(2);
 }
 
-// Human-readable ETA from a seconds value (e.g. balance.pending_unconfirmed_eta).
 function formatEta(secs) {
   var mins = Math.round((Number(secs) || 0) / 60);
   if (mins < 60) return mins + ' min';
@@ -305,7 +304,6 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
-// Hashes/sec → human units (for the Economics network-hashrate stat).
 function formatHashrate(hs) {
   var n = Number(hs) || 0;
   if (n < 1000) return n.toFixed(0) + ' H/s';
@@ -315,10 +313,6 @@ function formatHashrate(hs) {
   return n.toFixed(2) + ' ' + units[i];
 }
 
-// Deterministic blockies-style identicon as an inline SVG string. Self-contained
-// (no CDN/deps), seeded by the address/handle so the same input always yields the
-// same avatar — helps recognize an address at a glance and catch paste mistakes.
-// The seed only drives the PRNG; it is never echoed into the markup (no XSS).
 function identiconSvg(seedStr, dim) {
   var SIZE = 8;
   var seed = [0, 0, 0, 0];
@@ -432,9 +426,6 @@ async function loadVersions() {
 
 // --- Economics ---
 
-// Emission constants mirror blocknet-core/miner.go (consensus values). Live
-// figures come authoritatively from GET /api/stats; these are used ONLY to draw
-// the illustrative emission curve, whose shape is a deterministic function of them.
 var ECON_INITIAL_REWARD = 72325093035; // 723.25 BNT in atomic units
 var ECON_TAIL_EMISSION = 200000000;    // 2.0 BNT in atomic units
 var ECON_MONTHS_TO_TAIL = 48;
@@ -495,8 +486,6 @@ async function loadEconomics() {
   if (chart) chart.innerHTML = buildEmissionCurve(currentMonth);
 }
 
-// Inline SVG emission curve: block reward (log Y) over months (X), decaying to
-// the perpetual tail, with the tail switch and the current block marked.
 function buildEmissionCurve(currentMonth) {
   var W = 640, H = 240, padL = 52, padR = 16, padT = 16, padB = 28;
   var plotW = W - padL - padR, plotH = H - padT - padB;
@@ -620,7 +609,6 @@ function showDashScan(synced, chain) {
   if (unconf) unconf.style.display = 'none';
 }
 
-// Show incoming unconfirmed funds + a confirmation ETA when the balance reports them.
 function updateDashUnconfirmed(balance) {
   var el = document.getElementById('dash-unconfirmed');
   if (!el) return;
@@ -2769,7 +2757,6 @@ async function handleSend(e) {
   } catch (_) {}
   var fingerprint = JSON.stringify(entries.map(function (e) { return [e.address, e.atomic, e.memo]; }));
   if (!sendArmed || fingerprint !== pendingSendFingerprint) {
-    // Fee preview: dry-run the send so the confirm step shows the real fee before arming.
     var dryRunRecipients = entries.map(function (e) {
       var r = { address: e.address, amount: e.atomic };
       if (e.memo) r.memo_text = e.memo;
@@ -2785,8 +2772,6 @@ async function handleSend(e) {
         body: { recipients: dryRunRecipients, dry_run: true },
       });
     } catch (err) {
-      // Fail soft: surface the estimate error here (e.g. insufficient funds incl. fee)
-      // instead of letting the user arm and hit it at final submit.
       showSendStatus(normalizeError(err), 'error');
       sendArmed = false;
       pendingSendFingerprint = null;
@@ -3460,8 +3445,6 @@ function showSettingsStatus(msg, type) {
   el.style.display = 'block';
 }
 
-// Wallet health: POST /api/wallet/audit scans owned outputs for duplicate key
-// images (burned, permanently unspendable funds). Read-only.
 async function handleWalletAudit() {
   var btn = document.getElementById('wallet-audit-btn');
   var el = document.getElementById('wallet-audit-result');
@@ -3500,8 +3483,6 @@ async function handleWalletAudit() {
   }
 }
 
-// Manual rescan: POST /api/wallet/sync rescans from the wallet's synced height
-// to the chain tip. Async on the daemon — the dashboard scan UI shows progress.
 async function handleWalletRescan() {
   var btn = document.getElementById('wallet-rescan-btn');
   var el = document.getElementById('wallet-rescan-status');
@@ -3532,8 +3513,6 @@ async function handleWalletRescan() {
   }
 }
 
-// Chain integrity: GET /api/certify runs an arithmetic check of the whole chain
-// (difficulty / timestamps / linkage). Can be slow on a long chain.
 async function handleCertifyChain() {
   var btn = document.getElementById('certify-chain-btn');
   var el = document.getElementById('certify-chain-result');
@@ -4629,9 +4608,6 @@ async function showTxDetail(txid, opts) {
   try {
     var data = await api('/api/tx/' + txid);
     var tx = data.tx;
-    // Payment proof (POST /api/wallet/prove) only works for txns THIS wallet sent,
-    // and never for coinbase. Only offer it when we opened from an outbound row and
-    // the tx actually has inputs (coinbase has none).
     var isCoinbaseTx = !tx.inputs || tx.inputs.length === 0;
     var canProve = !!(opts && opts.sent) && !isCoinbaseTx;
     var status = data.in_mempool
@@ -4676,9 +4652,6 @@ async function showTxDetail(txid, opts) {
   }
 }
 
-// Generate a shareable payment proof (txid + tx_key) for an outbound tx. In a
-// privacy coin the recipient can't otherwise tell who paid them, so this proof
-// lets the sender demonstrate the payment via the explorer's public verifier.
 function wireProveButton(txid) {
   var proveBtn = document.getElementById('tx-prove');
   if (!proveBtn) return;
