@@ -304,6 +304,17 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+function formatDuration(ms) {
+  var s = Math.floor(Math.max(0, ms) / 1000);
+  var d = Math.floor(s / 86400); s -= d * 86400;
+  var h = Math.floor(s / 3600); s -= h * 3600;
+  var m = Math.floor(s / 60); s -= m * 60;
+  if (d > 0) return d + 'd ' + h + 'h';
+  if (h > 0) return h + 'h ' + m + 'm';
+  if (m > 0) return m + 'm ' + s + 's';
+  return s + 's';
+}
+
 function formatHashrate(hs) {
   var n = Number(hs) || 0;
   if (n < 1000) return n.toFixed(0) + ' H/s';
@@ -1258,6 +1269,10 @@ async function loadMining() {
     ? (data.hashrate || 0).toFixed(2) + ' H/s' : '--';
   document.getElementById('mining-blocks').textContent = data.running
     ? (data.blocks_found || 0) : '--';
+  document.getElementById('mining-hashcount').textContent = data.running
+    ? (Number(data.hash_count) || 0).toLocaleString() : '--';
+  var startedMs = data.running && data.started_at ? Date.parse(data.started_at) : NaN;
+  document.getElementById('mining-uptime').textContent = isNaN(startedMs) ? '--' : formatDuration(Date.now() - startedMs);
 
   const btn = document.getElementById('mining-toggle');
   if (!btn.disabled) {
