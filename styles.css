@@ -1537,6 +1537,79 @@ body.platform-windows #app {
   border-radius: 5px;
 }
 
+/* Economics view */
+.econ-supply-card {
+  background: #0c0c0c;
+  border: 1px solid #1e1e1e;
+  border-radius: 8px;
+  padding: 20px;
+  margin-bottom: 28px;
+}
+.econ-supply-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+}
+.econ-supply-label {
+  color: #949494;
+  font-size: 13px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+.econ-supply-pct {
+  color: #af0;
+  font-size: 28px;
+  font-weight: bold;
+}
+.econ-supply-bar {
+  margin: 12px 0;
+  height: 10px;
+  background: #000;
+  border: 1px solid #222;
+  border-radius: 5px;
+  overflow: hidden;
+}
+.econ-supply-fill {
+  height: 100%;
+  width: 0;
+  background: #af0;
+  transition: width 0.4s ease;
+}
+.econ-supply-sub {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  color: #949494;
+  font-size: 13px;
+}
+.econ-tail-note {
+  margin-top: 14px;
+  color: #FFAA00;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.econ-chart {
+  background: #0c0c0c;
+  border: 1px solid #1e1e1e;
+  border-radius: 8px;
+  padding: 12px;
+  margin-top: 8px;
+}
+.econ-curve {
+  width: 100%;
+  height: auto;
+  display: block;
+}
+.econ-grid { stroke: #1a1a1a; stroke-width: 1; }
+.econ-axis { fill: #6f6f6f; font-size: 11px; }
+.econ-line { stroke: #af0; stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.econ-tailline { stroke: #444; stroke-width: 1; stroke-dasharray: 3 3; }
+.econ-nowline { stroke: #FFAA00; stroke-width: 1; stroke-dasharray: 2 2; }
+.econ-nowdot { fill: #FFAA00; }
+.econ-chart-caption { margin-top: 8px; font-size: 12px; }
+.econ-stats-grid { margin-top: 28px; }
+
 .payment-request-section {
   margin-top: 40px;
   padding-top: 24px;

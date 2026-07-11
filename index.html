@@ -149,6 +149,10 @@
           <img src="icons/network.svg" class="nav-icon" alt="">
           <span class="nav-text">Network</span>
         </button>
+        <button class="nav-link" data-view="economics">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M19 7l-6 6-4-4-4 4"/></svg>
+          <span class="nav-text">Economics</span>
+        </button>
         <button class="nav-link" data-view="signverify">
           <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
           <span class="nav-text">Sign / Verify</span>
@@ -370,6 +374,59 @@
           <div id="network-peers" style="margin: 16px 0 32px 0;">Loading...</div>
           <h2>Banned Peers (<span id="network-banned-count">0</span>)</h2>
           <div id="network-banned">Loading...</div>
+        </div>
+      </div>
+
+      <!-- Economics -->
+      <div id="view-economics" class="view">
+        <div class="container">
+          <h1>Economics</h1>
+          <div id="economics-status" class="status-message" style="display: none;"></div>
+
+          <div class="econ-supply-card">
+            <div class="econ-supply-head">
+              <span class="econ-supply-label">Supply emitted</span>
+              <span class="econ-supply-pct" id="econ-pct">--%</span>
+            </div>
+            <div class="econ-supply-bar"><div class="econ-supply-fill" id="econ-supply-fill"></div></div>
+            <div class="econ-supply-sub">
+              <span><span class="g" id="econ-emitted">--</span> emitted</span>
+              <span><span id="econ-remaining">--</span> to reference cap</span>
+              <span><span id="econ-target">--</span> BNT reference</span>
+            </div>
+            <p class="econ-tail-note">No hard cap: after month <span id="econ-months-to-tail">48</span> a perpetual tail of <span id="econ-tail">2.0</span> BNT/block keeps issuance alive forever.</p>
+          </div>
+
+          <h2>Emission curve</h2>
+          <div class="econ-chart" id="econ-chart"><div class="d">Loading...</div></div>
+          <p class="econ-chart-caption d">Block reward over time — smooth decay to the perpetual tail. The marker shows the current block.</p>
+
+          <div class="stats-grid econ-stats-grid">
+            <div class="stat-card">
+              <div class="stat-label">Block Reward (now)</div>
+              <div class="stat-value g" id="econ-reward">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Network Hashrate</div>
+              <div class="stat-value" id="econ-hashrate">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Avg Block Time</div>
+              <div class="stat-value" id="econ-blocktime">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Difficulty</div>
+              <div class="stat-value" id="econ-difficulty">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Height</div>
+              <div class="stat-value" id="econ-height">--</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-label">Blocks / Month</div>
+              <div class="stat-value" id="econ-blocks-month">--</div>
+            </div>
+          </div>
         </div>
       </div>
 
