@@ -1150,6 +1150,13 @@ body.platform-windows #app {
   margin-top: 32px;
 }
 
+.node-diag-section {
+  margin-top: 32px;
+}
+.node-diag-section #dash-best-hash {
+  overflow-wrap: anywhere;
+}
+
 .recent-tx-section h2 {
   font-size: 16px;
   margin-bottom: 12px;

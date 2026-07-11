@@ -552,6 +552,18 @@ async function refreshDashStatus() {
     document.getElementById('dash-height').textContent = heightLabel;
     document.getElementById('dash-peers').textContent = status.peers;
     document.getElementById('dash-mempool').textContent = status.mempool_size;
+    var bestHashEl = document.getElementById('dash-best-hash');
+    if (bestHashEl) {
+      var bestHash = String(status.best_hash || '');
+      bestHashEl.textContent = bestHash ? bestHash.slice(0, 20) + '…' + bestHash.slice(-8) : '--';
+      bestHashEl.title = bestHash;
+    }
+    var totalWorkEl = document.getElementById('dash-total-work');
+    if (totalWorkEl) totalWorkEl.textContent = (Number(status.total_work) || 0).toLocaleString();
+    var mempoolBytesEl = document.getElementById('dash-mempool-bytes');
+    if (mempoolBytesEl) mempoolBytesEl.textContent = formatBytes(status.mempool_bytes);
+    var identityAgeEl = document.getElementById('dash-identity-age');
+    if (identityAgeEl) identityAgeEl.textContent = status.identity_age || '--';
     const syncLabel = status.syncing
       ? 'Syncing' + (status.sync_percent ? ' ' + status.sync_percent : '')
       : 'Synced';
