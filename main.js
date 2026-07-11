@@ -305,6 +305,49 @@ function formatBytes(bytes) {
   return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
 }
 
+// Deterministic blockies-style identicon as an inline SVG string. Self-contained
+// (no CDN/deps), seeded by the address/handle so the same input always yields the
+// same avatar — helps recognize an address at a glance and catch paste mistakes.
+// The seed only drives the PRNG; it is never echoed into the markup (no XSS).
+function identiconSvg(seedStr, dim) {
+  var SIZE = 8;
+  var seed = [0, 0, 0, 0];
+  var s = String(seedStr || '').toLowerCase();
+  for (var i = 0; i < s.length; i++) {
+    seed[i % 4] = ((seed[i % 4] << 5) - seed[i % 4] + s.charCodeAt(i)) | 0;
+  }
+  function rand() {
+    var t = seed[0] ^ (seed[0] << 11);
+    seed[0] = seed[1]; seed[1] = seed[2]; seed[2] = seed[3];
+    seed[3] = (seed[3] ^ (seed[3] >>> 19) ^ t ^ (t >>> 8)) | 0;
+    return (seed[3] >>> 0) / 4294967296;
+  }
+  function color() {
+    var h = Math.floor(rand() * 360);
+    var sat = rand() * 60 + 40;
+    var li = (rand() + rand() + rand() + rand()) * 25;
+    return 'hsl(' + h + ',' + sat.toFixed(0) + '%,' + li.toFixed(0) + '%)';
+  }
+  var fg = color(), bg = color(), spot = color();
+  var cells = [];
+  var dataW = Math.ceil(SIZE / 2);
+  for (var y = 0; y < SIZE; y++) {
+    var row = [];
+    for (var x = 0; x < dataW; x++) row[x] = Math.floor(rand() * 2.3);
+    row = row.concat(row.slice(0, SIZE - dataW).reverse());
+    for (var k = 0; k < SIZE; k++) cells.push(row[k]);
+  }
+  var rects = '';
+  for (var c = 0; c < cells.length; c++) {
+    if (cells[c] === 0) continue;
+    rects += '<rect x="' + (c % SIZE) + '" y="' + Math.floor(c / SIZE) + '" width="1" height="1" fill="' + (cells[c] === 1 ? fg : spot) + '"/>';
+  }
+  var px = dim || 24;
+  return '<svg class="identicon" width="' + px + '" height="' + px + '" viewBox="0 0 ' + SIZE + ' ' + SIZE +
+    '" shape-rendering="crispEdges" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false">' +
+    '<rect width="' + SIZE + '" height="' + SIZE + '" fill="' + bg + '"/>' + rects + '</svg>';
+}
+
 // --- Navigation ---
 
 var viewStack = [];
@@ -648,6 +691,8 @@ function setReceiveShortnameStatus(html, cls) {
 
 function renderReceiveAddressAndQr() {
   var target = getReceiveHandleUriTarget();
+  var iconEl = document.getElementById('receive-identicon');
+  if (iconEl) iconEl.innerHTML = receiveAddress ? identiconSvg(receiveAddress, 40) : '';
   var addrEl = document.getElementById('receive-address');
   if (addrEl) {
     if (receivePreferredHandle) {
@@ -1960,6 +2005,7 @@ function renderAddressBook() {
   }
   list.innerHTML = book.map(function (entry, i) {
     return '<div class="address-book-row" data-idx="' + i + '">' +
+      identiconSvg(entry.address, 30) +
       '<div class="ab-info">' +
         '<span class="ab-name">' + escapeHtml(entry.name) + '</span>' +
         '<span class="ab-addr d">' + (isHandlePrefix(entry.address.charAt(0)) ? escapeHtml(entry.address) : escapeHtml(entry.address.substring(0, 24)) + '...') + '</span>' +

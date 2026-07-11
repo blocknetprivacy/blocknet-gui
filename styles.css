@@ -1513,6 +1513,30 @@ body.platform-windows #app {
   user-select: all;
 }
 
+.address-display-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.address-display-row .address-display {
+  flex: 1;
+  min-width: 0;
+}
+
+/* Deterministic address avatars (blockies-style identicons) */
+.identicon {
+  display: block;
+  border-radius: 4px;
+  flex: none;
+}
+.address-identicon {
+  flex: none;
+  line-height: 0;
+}
+.address-book-row .identicon {
+  border-radius: 5px;
+}
+
 .payment-request-section {
   margin-top: 40px;
   padding-top: 24px;
