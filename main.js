@@ -2868,36 +2868,70 @@ async function handleSend(e) {
         'Idempotency-Key': idempotencyKey,
       },
     });
-    var totalAtomic = recipientsPayload.reduce(function (s, r) { return s + r.amount; }, 0);
-    var firstRecipient = (result.recipients && result.recipients[0]) || {};
-    showSendStatus('Sent! TX: ' + result.txid.substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
-    addPendingSend(result.txid, totalAtomic + result.fee, firstRecipient.memo_hex);
-    entries.forEach(function (ent) {
-      if (ent.row._resolved && ent.row._resolved.handle && ent.row._resolved.verified) {
-        var book = getAddressBook();
-        var h = ent.row._resolved.handle;
-        var handleAddr = '$' + h;
-        var idx = book.findIndex(function (e) { return e.name.toLowerCase() === h.toLowerCase() || e.address.toLowerCase() === handleAddr.toLowerCase(); });
-        if (idx < 0) {
-          book.push({ name: h, address: handleAddr });
-          saveAddressBook(book);
-          renderAddressBook();
-        }
-      }
-    });
-    pendingSendIdempotency = null;
-    resetSendForm();
-    dashForceRefresh = true;
+    finalizeSend(result, entries, recipientsPayload);
   } catch (e) {
     const msg = normalizeError(e);
-    showSendStatus(msg, 'error');
-    if (!msg.toLowerCase().includes('request failed:')) {
+    if (msg.toLowerCase().includes('request failed:')) {
+      var handled = await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
+      if (!handled) {
+        showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
+      }
+    } else {
+      showSendStatus(msg, 'error');
       pendingSendIdempotency = null;
     }
   } finally {
     btn.disabled = false;
     btn.textContent = 'Send';
   }
+}
+
+function finalizeSend(result, entries, recipientsPayload) {
+  var totalAtomic = recipientsPayload.reduce(function (s, r) { return s + r.amount; }, 0);
+  var firstRecipient = (result.recipients && result.recipients[0]) || {};
+  showSendStatus('Sent! TX: ' + String(result.txid).substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT', 'success');
+  addPendingSend(result.txid, totalAtomic + (Number(result.fee) || 0), firstRecipient.memo_hex);
+  entries.forEach(function (ent) {
+    if (ent.row._resolved && ent.row._resolved.handle && ent.row._resolved.verified) {
+      var book = getAddressBook();
+      var h = ent.row._resolved.handle;
+      var handleAddr = '$' + h;
+      var idx = book.findIndex(function (e) { return e.name.toLowerCase() === h.toLowerCase() || e.address.toLowerCase() === handleAddr.toLowerCase(); });
+      if (idx < 0) {
+        book.push({ name: h, address: handleAddr });
+        saveAddressBook(book);
+        renderAddressBook();
+      }
+    }
+  });
+  pendingSendIdempotency = null;
+  resetSendForm();
+  dashForceRefresh = true;
+}
+
+async function resolveTimedOutSend(idempotencyKey, entries, recipientsPayload) {
+  var status;
+  try {
+    status = await api('/api/wallet/send/status?idempotency_key=' + encodeURIComponent(idempotencyKey));
+  } catch (_) {
+    return false;
+  }
+  var state = status && status.state;
+  if (state === 'completed' && status.result && status.result.txid) {
+    finalizeSend(status.result, entries, recipientsPayload);
+    return true;
+  }
+  if (state === 'failed') {
+    showSendStatus('Your send was rejected: ' + (status.error || 'the network did not accept it') + '. Nothing was spent — adjust and try again.', 'error');
+    pendingSendIdempotency = null;
+    return true;
+  }
+  if (state === 'not_found') {
+    showSendStatus('The send never reached the network — nothing was spent. Press Send again to retry.', 'error');
+    return true;
+  }
+  showSendStatus('Your send is still processing on the node — press Send again in a moment to check whether it completed.', 'info');
+  return true;
 }
 
 function showSendStatus(msg, type) {
