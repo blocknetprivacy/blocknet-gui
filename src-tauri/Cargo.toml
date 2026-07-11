@@ -1,6 +1,6 @@
 [package]
 name = "blocknet-wallet"
-version = "0.15.0"
+version = "0.16.0"
 description = "Blocknet Wallet"
 authors = ["Blocknet Privacy"]
 license = "BSD-3-Clause"
