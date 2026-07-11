@@ -3293,6 +3293,115 @@ function showSettingsStatus(msg, type) {
   el.style.display = 'block';
 }
 
+// Wallet health: POST /api/wallet/audit scans owned outputs for duplicate key
+// images (burned, permanently unspendable funds). Read-only.
+async function handleWalletAudit() {
+  var btn = document.getElementById('wallet-audit-btn');
+  var el = document.getElementById('wallet-audit-result');
+  var prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Checking...';
+  el.style.display = 'block';
+  el.className = 'status-message info';
+  el.textContent = 'Scanning wallet outputs...';
+  try {
+    var data = await api('/api/wallet/audit', { method: 'POST' });
+    var burned = Number(data.total_burned) || 0;
+    var burnedOutputs = Number(data.burned_outputs) || 0;
+    var groups = Array.isArray(data.duplicate_groups) ? data.duplicate_groups.length : 0;
+    var totalOutputs = Number(data.total_outputs) || 0;
+    var failed = Number(data.failed_key_images) || 0;
+    if (groups === 0 && burned === 0 && burnedOutputs === 0) {
+      el.className = 'status-message success';
+      el.innerHTML = '✓ Healthy — no duplicate key images across ' + totalOutputs + ' output' + (totalOutputs === 1 ? '' : 's') + '.';
+    } else {
+      el.className = 'status-message warning';
+      el.innerHTML = '⚠ ' + groups + ' duplicate group' + (groups === 1 ? '' : 's') + ' — ' +
+        formatBNT(burned) + ' BNT burned (permanently unspendable) across ' +
+        burnedOutputs + ' output' + (burnedOutputs === 1 ? '' : 's') +
+        '. This comes from a historical self-send bug and cannot be reversed.';
+    }
+    if (failed > 0) {
+      el.innerHTML += '<br><span class="d">' + failed + ' output' + (failed === 1 ? '' : 's') + ' could not be checked.</span>';
+    }
+  } catch (e) {
+    el.className = 'status-message error';
+    el.textContent = normalizeError(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+// Manual rescan: POST /api/wallet/sync rescans from the wallet's synced height
+// to the chain tip. Async on the daemon — the dashboard scan UI shows progress.
+async function handleWalletRescan() {
+  var btn = document.getElementById('wallet-rescan-btn');
+  var el = document.getElementById('wallet-rescan-status');
+  var prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Starting...';
+  el.style.display = 'block';
+  el.className = 'status-message info';
+  el.textContent = 'Requesting rescan...';
+  try {
+    var data = await api('/api/wallet/sync', { method: 'POST' });
+    var synced = Number(data.synced_height) || 0;
+    var chain = Number(data.chain_height) || 0;
+    if (data.status === 'already synced') {
+      el.className = 'status-message success';
+      el.textContent = 'Already fully synced (block ' + synced.toLocaleString() + ').';
+    } else {
+      el.className = 'status-message success';
+      el.textContent = 'Rescanning from block ' + synced.toLocaleString() + ' to ' + chain.toLocaleString() + '. Watch the dashboard for progress.';
+      dashForceRefresh = true;
+    }
+  } catch (e) {
+    el.className = 'status-message error';
+    el.textContent = normalizeError(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+// Chain integrity: GET /api/certify runs an arithmetic check of the whole chain
+// (difficulty / timestamps / linkage). Can be slow on a long chain.
+async function handleCertifyChain() {
+  var btn = document.getElementById('certify-chain-btn');
+  var el = document.getElementById('certify-chain-result');
+  var prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Verifying...';
+  el.style.display = 'block';
+  el.className = 'status-message info';
+  el.textContent = 'Verifying chain (this can take a moment)...';
+  try {
+    var data = await api('/api/certify');
+    var height = Number(data.height) || 0;
+    if (data.clean) {
+      el.className = 'status-message success';
+      el.innerHTML = '✓ Chain verified clean up to block ' + height.toLocaleString() + '.';
+    } else {
+      var violations = Array.isArray(data.violations) ? data.violations : [];
+      var lines = violations.slice(0, 5).map(function (v) {
+        var h = (v && v.height != null) ? v.height : '?';
+        return 'Block ' + h + ': ' + escapeHtml(String((v && v.message) || ''));
+      }).join('<br>');
+      el.className = 'status-message warning';
+      el.innerHTML = '⚠ ' + violations.length + ' violation' + (violations.length === 1 ? '' : 's') +
+        ' found up to block ' + height.toLocaleString() + '.<br>' + lines +
+        (violations.length > 5 ? '<br><span class="d">…and ' + (violations.length - 5) + ' more.</span>' : '');
+    }
+  } catch (e) {
+    el.className = 'status-message error';
+    el.textContent = normalizeError(e);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
 function showSeedStatus(msg, type) {
   const globalStatus = document.getElementById('settings-status');
   if (globalStatus) globalStatus.style.display = 'none';
@@ -4731,6 +4840,9 @@ document.getElementById('save-contact-btn').addEventListener('click', handleSave
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
+document.getElementById('wallet-audit-btn').addEventListener('click', handleWalletAudit);
+document.getElementById('wallet-rescan-btn').addEventListener('click', handleWalletRescan);
+document.getElementById('certify-chain-btn').addEventListener('click', handleCertifyChain);
 document.getElementById('peer-detail-back').addEventListener('click', navigateBack);
 document.getElementById('tx-detail-back').addEventListener('click', navigateBack);
 document.getElementById('block-detail-back').addEventListener('click', navigateBack);

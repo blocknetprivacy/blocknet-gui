@@ -417,6 +417,26 @@
                     <button class="btn-primary" id="lock-wallet-btn">Lock Wallet</button>
                   </div>
                 </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Check Wallet Health</span>
+                      <span
+                        class="settings-help"
+                        name="wallet-health-help"
+                        tabindex="0"
+                        aria-label="Scans your outputs for duplicate key images (burned, permanently unspendable funds). Nothing is changed."
+                        title="Scans your outputs for duplicate key images (burned, permanently unspendable funds). Nothing is changed."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Scans your wallet outputs for duplicate key images — burned funds from a historical self-send bug. Read-only; nothing is changed.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-primary" id="wallet-audit-btn">Check Wallet Health</button>
+                    <div id="wallet-audit-result" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
               </div>
             </section>
 
@@ -466,6 +486,51 @@
                   <button class="btn-secondary" id="import-seed-cancel">Cancel</button>
                 </div>
                 <div id="import-seed-status" class="status-message" style="display: none;"></div>
+              </div>
+            </section>
+
+            <section class="settings-category">
+              <h2>Maintenance</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Rescan Wallet</span>
+                      <span
+                        class="settings-help"
+                        name="rescan-wallet-help"
+                        tabindex="0"
+                        aria-label="Re-scans blocks from your wallet's synced height to the chain tip to recover a wrong-looking balance."
+                        title="Re-scans blocks from your wallet's synced height to the chain tip to recover a wrong-looking balance."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">If your balance looks wrong, rescan from your wallet's last synced block to the tip. Lighter than a full reset — the dashboard shows progress.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-secondary" id="wallet-rescan-btn">Rescan Wallet</button>
+                    <div id="wallet-rescan-status" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Verify Chain Integrity</span>
+                      <span
+                        class="settings-help"
+                        name="certify-chain-help"
+                        tabindex="0"
+                        aria-label="Checks the whole chain for difficulty, timestamp, and linkage violations. Can be slow on a long chain."
+                        title="Checks the whole chain for difficulty, timestamp, and linkage violations. Can be slow on a long chain."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Runs an arithmetic check over the entire chain (difficulty, timestamps, block linkage). Can take a moment on a long chain.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-secondary" id="certify-chain-btn">Verify Chain Integrity</button>
+                    <div id="certify-chain-result" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
               </div>
             </section>
 
