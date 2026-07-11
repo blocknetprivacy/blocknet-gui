@@ -4666,7 +4666,8 @@ function wireProveButton(txid) {
       proofEl.innerHTML =
         '<h2>Payment proof</h2>' +
         '<p class="d">Share both values with the recipient. They can confirm you sent this ' +
-        'payment on the explorer’s Prove-Send page — without exposing your wallet.</p>' +
+        'payment — in this wallet under Sign / Verify → Verify Payment, or on the explorer’s ' +
+        'Prove-Send page — without exposing your wallet.</p>' +
         '<div class="detail-grid">' +
           '<div class="detail-label">TX Hash</div>' +
           '<div class="detail-value mono">' + copyable(proof.txid || txid) + '</div>' +
@@ -4674,9 +4675,13 @@ function wireProveButton(txid) {
           '<div class="detail-value mono">' + copyable(proof.tx_key) + '</div>' +
         '</div>' +
         '<div class="detail-actions">' +
-          '<button class="btn-secondary" id="tx-open-verifier">Open verifier</button>' +
+          '<button class="btn-secondary" id="tx-verify-proof">Verify in wallet</button>' +
+          '<button class="btn-secondary" id="tx-open-verifier">Open explorer verifier</button>' +
         '</div>';
       wireCopyable(proofEl);
+      document.getElementById('tx-verify-proof').addEventListener('click', function () {
+        openVerifyProof(proof.txid || txid, proof.tx_key);
+      });
       document.getElementById('tx-open-verifier').addEventListener('click', function () {
         window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/prove-send');
       });
@@ -4753,17 +4758,69 @@ async function showBlockDetail(id) {
 // --- Sign / Verify ---
 
 function initSignVerifyTabs() {
+  var panels = ['sign', 'verify', 'verifyproof'];
   document.querySelectorAll('.sv-tab').forEach(function (tab) {
     tab.addEventListener('click', function () {
       document.querySelectorAll('.sv-tab').forEach(function (t) { t.classList.remove('active'); });
       tab.classList.add('active');
       var target = tab.dataset.tab;
-      document.getElementById('sv-sign').style.display = target === 'sign' ? '' : 'none';
-      document.getElementById('sv-verify').style.display = target === 'verify' ? '' : 'none';
-      document.getElementById('sign-result').style.display = 'none';
-      document.getElementById('verify-result').style.display = 'none';
+      panels.forEach(function (p) {
+        var panel = document.getElementById('sv-' + p);
+        if (panel) panel.style.display = p === target ? '' : 'none';
+        var result = document.getElementById(p + '-result');
+        if (result) result.style.display = 'none';
+      });
     });
   });
+}
+
+function openVerifyProof(txid, txKey) {
+  navigate('signverify');
+  var tab = document.querySelector('.sv-tab[data-tab="verifyproof"]');
+  if (tab) tab.click();
+  var t = document.getElementById('verifyproof-txid'); if (t) t.value = txid || '';
+  var k = document.getElementById('verifyproof-txkey'); if (k) k.value = txKey || '';
+  var a = document.getElementById('verifyproof-address'); if (a) { a.value = ''; a.focus(); }
+}
+
+async function handleVerifyProof() {
+  var btn = document.getElementById('verifyproof-btn');
+  var txid = document.getElementById('verifyproof-txid').value.trim();
+  var txKey = document.getElementById('verifyproof-txkey').value.trim();
+  var address = document.getElementById('verifyproof-address').value.trim();
+  var resultEl = document.getElementById('verifyproof-result');
+  if (!txid || !txKey || !address) {
+    resultEl.innerHTML = '<span class="r">All fields are required</span>';
+    resultEl.style.display = 'block';
+    return;
+  }
+  btn.disabled = true;
+  resultEl.innerHTML = '<span class="d">Verifying...</span>';
+  resultEl.style.display = 'block';
+  try {
+    var data = await api('/api/verify-proof', {
+      method: 'POST',
+      body: { txid: txid, tx_key: txKey, address: address }
+    });
+    if (!data.valid) {
+      resultEl.innerHTML = '<span class="r">✗ Invalid proof — the tx key does not match this transaction.</span>';
+    } else if (Number(data.total_matched) > 0) {
+      var rows = (data.outputs || []).filter(function (o) { return o.match; }).map(function (o) {
+        return '<div class="detail-label">Output #' + o.index + '</div>' +
+          '<div class="detail-value">' + formatBNT(o.amount) + ' BNT' +
+          (o.memo ? ' <span class="d">— "' + escapeHtml(String(o.memo)) + '"</span>' : '') + '</div>';
+      }).join('');
+      resultEl.innerHTML =
+        '<div class="resolve-ok">✓ Valid — this address received ' + formatBNT(data.total_matched) + ' BNT</div>' +
+        '<div class="detail-grid sv-proof-outputs">' + rows + '</div>';
+    } else {
+      resultEl.innerHTML = '<span class="resolve-ok">✓ Proof valid, but this address received nothing in this transaction.</span>';
+    }
+  } catch (e) {
+    resultEl.innerHTML = '<span class="r">' + escapeHtml(normalizeError(e)) + '</span>';
+  } finally {
+    btn.disabled = false;
+  }
 }
 
 async function handleSign() {
@@ -4988,6 +5045,7 @@ document.getElementById('tx-detail-back').addEventListener('click', navigateBack
 document.getElementById('block-detail-back').addEventListener('click', navigateBack);
 document.getElementById('sign-btn').addEventListener('click', handleSign);
 document.getElementById('verify-btn').addEventListener('click', handleVerify);
+document.getElementById('verifyproof-btn').addEventListener('click', handleVerifyProof);
 initSignVerifyTabs();
 
 // Sound controls
