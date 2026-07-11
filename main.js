@@ -1744,9 +1744,14 @@ async function loadNetwork() {
   if (bannedRecords.length > 0) {
     bannedList.innerHTML = bannedRecords.map(function (b) {
       var firstAddr = b.addrs && b.addrs.length ? b.addrs[0] : '';
+      var expiresMs = b.expires_at ? Date.parse(b.expires_at) : NaN;
+      var meta = [];
+      if (b.ban_count) meta.push(b.ban_count + ' ban' + (b.ban_count === 1 ? '' : 's'));
+      meta.push(b.permanent ? 'permanent' : (isNaN(expiresMs) ? 'expiry unknown' : 'expires ' + formatRemaining(expiresMs - Date.now())));
       return '<div class="peer-row banned">' +
         '<span class="detail-link mono" data-peer-id="' + escapeHtml(b.peer_id) + '">' + escapeHtml(b.peer_id.substring(0, 24)) + '...</span>' +
         '<span class="d">' + escapeHtml((b.reason || 'banned') + (firstAddr ? ' ; ' + firstAddr : '')) + '</span>' +
+        '<span class="d">' + escapeHtml(meta.join(' · ')) + '</span>' +
       '</div>';
     }).join('');
     bannedList.querySelectorAll('[data-peer-id]').forEach(function (el) {
