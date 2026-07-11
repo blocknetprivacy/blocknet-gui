@@ -568,7 +568,7 @@ async function loadDashboard() {
           } else {
             blockLabel = 'Pending';
           }
-          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '">' +
+          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
             '<span class="recent-tx-amount ' + (o.spent ? 'r' : 'g') + '">' +
               (o.spent ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
@@ -578,7 +578,7 @@ async function loadDashboard() {
           '</div>';
         }).join('');
         container.querySelectorAll('.recent-tx-row[data-txid]').forEach(function (row) {
-          row.addEventListener('click', function () { showTxDetail(row.dataset.txid); });
+          row.addEventListener('click', function () { showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' }); });
         });
         if (fromCache) {
           container.insertAdjacentHTML('beforeend', '<div class="tx-cache-note d">Cached ; resyncing blockchain</div>');
@@ -891,7 +891,7 @@ async function loadHistory() {
 
   container.innerHTML = sorted.map(o => {
     const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
-    return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '">' +
+    return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
       '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
         (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
       '</div>' +
@@ -912,7 +912,7 @@ async function loadHistory() {
 
   wireCopyable(container);
   container.querySelectorAll('.history-row[data-txid]').forEach(row => {
-    row.addEventListener('click', function () { showTxDetail(row.dataset.txid); });
+    row.addEventListener('click', function () { showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' }); });
   });
   container.querySelectorAll('[data-block]').forEach(function (el) {
     el.addEventListener('click', function (e) { e.stopPropagation(); showBlockDetail(el.dataset.block); });
@@ -4346,13 +4346,18 @@ async function init() {
 
 // --- TX Detail ---
 
-async function showTxDetail(txid) {
+async function showTxDetail(txid, opts) {
   navigate('tx-detail');
   var container = document.getElementById('tx-detail-content');
   container.innerHTML = '<div class="d">Loading...</div>';
   try {
     var data = await api('/api/tx/' + txid);
     var tx = data.tx;
+    // Payment proof (POST /api/wallet/prove) only works for txns THIS wallet sent,
+    // and never for coinbase. Only offer it when we opened from an outbound row and
+    // the tx actually has inputs (coinbase has none).
+    var isCoinbaseTx = !tx.inputs || tx.inputs.length === 0;
+    var canProve = !!(opts && opts.sent) && !isCoinbaseTx;
     var status = data.in_mempool
       ? '<span class="g">In mempool</span>'
       : '<span class="d">' + data.confirmations + ' confirmation' + (data.confirmations !== 1 ? 's' : '') + '</span>';
@@ -4377,11 +4382,14 @@ async function showTxDetail(txid) {
       '</div>' +
       '<div class="detail-actions">' +
         '<button class="btn-secondary" id="tx-open-explorer">Open in Explorer</button>' +
-      '</div>';
+        (canProve ? '<button class="btn-secondary" id="tx-prove">Prove I sent this</button>' : '') +
+      '</div>' +
+      '<div id="tx-proof" class="tx-proof" style="display: none;"></div>';
 
     document.getElementById('tx-open-explorer').addEventListener('click', function () {
       window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/tx/' + txid);
     });
+    if (canProve) wireProveButton(txid);
     wireCopyable(container);
 
     container.querySelectorAll('[data-block]').forEach(function (el) {
@@ -4390,6 +4398,46 @@ async function showTxDetail(txid) {
   } catch (e) {
     container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
   }
+}
+
+// Generate a shareable payment proof (txid + tx_key) for an outbound tx. In a
+// privacy coin the recipient can't otherwise tell who paid them, so this proof
+// lets the sender demonstrate the payment via the explorer's public verifier.
+function wireProveButton(txid) {
+  var proveBtn = document.getElementById('tx-prove');
+  if (!proveBtn) return;
+  proveBtn.addEventListener('click', async function () {
+    proveBtn.disabled = true;
+    proveBtn.textContent = 'Generating...';
+    var proofEl = document.getElementById('tx-proof');
+    proofEl.style.display = 'block';
+    proofEl.innerHTML = '<div class="d">Generating payment proof...</div>';
+    try {
+      var proof = await api('/api/wallet/prove', { method: 'POST', body: { txid: txid } });
+      proofEl.innerHTML =
+        '<h2>Payment proof</h2>' +
+        '<p class="d">Share both values with the recipient. They can confirm you sent this ' +
+        'payment on the explorer’s Prove-Send page — without exposing your wallet.</p>' +
+        '<div class="detail-grid">' +
+          '<div class="detail-label">TX Hash</div>' +
+          '<div class="detail-value mono">' + copyable(proof.txid || txid) + '</div>' +
+          '<div class="detail-label">TX Key</div>' +
+          '<div class="detail-value mono">' + copyable(proof.tx_key) + '</div>' +
+        '</div>' +
+        '<div class="detail-actions">' +
+          '<button class="btn-secondary" id="tx-open-verifier">Open verifier</button>' +
+        '</div>';
+      wireCopyable(proofEl);
+      document.getElementById('tx-open-verifier').addEventListener('click', function () {
+        window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/prove-send');
+      });
+      proveBtn.textContent = 'Proof generated';
+    } catch (e) {
+      proofEl.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
+      proveBtn.disabled = false;
+      proveBtn.textContent = 'Prove I sent this';
+    }
+  });
 }
 
 // --- Block Detail ---

@@ -1745,6 +1745,18 @@ body.platform-windows #app {
 .detail-actions {
   margin-top: 16px;
 }
+
+.tx-proof {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid #222;
+}
+.tx-proof h2 {
+  margin-bottom: 6px;
+}
+.tx-proof p {
+  margin-bottom: 12px;
+}
 .detail-explorer-link {
   display: inline-block;
   text-decoration: none;
