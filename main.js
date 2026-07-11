@@ -2560,6 +2560,34 @@ async function handleSend(e) {
   } catch (_) {}
   var fingerprint = JSON.stringify(entries.map(function (e) { return [e.address, e.atomic, e.memo]; }));
   if (!sendArmed || fingerprint !== pendingSendFingerprint) {
+    // Fee preview: dry-run the send so the confirm step shows the real fee before arming.
+    var dryRunRecipients = entries.map(function (e) {
+      var r = { address: e.address, amount: e.atomic };
+      if (e.memo) r.memo_text = e.memo;
+      return r;
+    });
+    var feePreview = null;
+    btn.disabled = true;
+    btn.textContent = 'Estimating fee...';
+    showSendStatus('Estimating network fee...', 'info');
+    try {
+      feePreview = await api('/api/wallet/send', {
+        method: 'POST',
+        body: { recipients: dryRunRecipients, dry_run: true },
+      });
+    } catch (err) {
+      // Fail soft: surface the estimate error here (e.g. insufficient funds incl. fee)
+      // instead of letting the user arm and hit it at final submit.
+      showSendStatus(normalizeError(err), 'error');
+      sendArmed = false;
+      pendingSendFingerprint = null;
+      btn.disabled = false;
+      btn.textContent = 'Send';
+      btn.classList.remove('armed');
+      return;
+    }
+    btn.disabled = false;
+
     sendArmed = true;
     pendingSendFingerprint = fingerprint;
     if (sendArmTimer) clearTimeout(sendArmTimer);
@@ -2587,7 +2615,16 @@ async function handleSend(e) {
     if (entries.some(function (e) { return e.verified === false; })) {
       confirmMsg = '⚠ UNVERIFIED handle — the shown address could not be cryptographically verified. ' + confirmMsg;
     }
-    confirmMsg += '  A network fee will be added on top.  Press again within 10s to confirm.';
+    if (feePreview && typeof feePreview.fee === 'number') {
+      confirmMsg += '  Fee: ' + formatBNT(feePreview.fee) + ' BNT · Total ' + formatBNT(totalAtomic + feePreview.fee) + ' BNT';
+      if (typeof feePreview.change === 'number' && feePreview.change > 0) {
+        confirmMsg += ' · Change ' + formatBNT(feePreview.change) + ' BNT';
+      }
+      confirmMsg += '.';
+    } else {
+      confirmMsg += '  A network fee will be added on top.';
+    }
+    confirmMsg += '  Press again within 10s to confirm.';
     showSendStatus(confirmMsg, 'info');
     return;
   }
