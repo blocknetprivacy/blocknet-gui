@@ -1126,6 +1126,20 @@ body.platform-windows #app {
   animation: pending-glow 3s ease-in-out infinite;
 }
 
+.balance-unconfirmed {
+  margin-top: 8px;
+  font-size: 13px;
+  color: #FFAA00;
+}
+
+.balance-unconfirmed .balance-unconfirmed-amt {
+  font-weight: bold;
+}
+
+.balance-unconfirmed #dash-unconfirmed-eta {
+  color: #949494;
+}
+
 @keyframes pending-glow {
   0%, 100% { text-shadow: 0 0 6px rgba(255, 170, 0, 0.4); }
   50% { text-shadow: 0 0 6px rgba(255, 170, 0, 0.08); }

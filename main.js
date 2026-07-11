@@ -28,6 +28,7 @@ let pendingDeepLink = null;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let dashForceRefresh = false;
+let dashPendingEta = 0; // seconds until unconfirmed funds confirm (from balance.pending_unconfirmed_eta)
 let peerDetailActiveId = '';
 let geoLookupRequested = {};
 let peerDetailLiveTimer = null;
@@ -288,6 +289,15 @@ function formatBNTShort(atomic) {
   return val.toFixed(2);
 }
 
+// Human-readable ETA from a seconds value (e.g. balance.pending_unconfirmed_eta).
+function formatEta(secs) {
+  var mins = Math.round((Number(secs) || 0) / 60);
+  if (mins < 60) return mins + ' min';
+  var hrs = Math.floor(mins / 60);
+  var rem = mins % 60;
+  return rem ? (hrs + 'h ' + rem + 'm') : (hrs + 'h');
+}
+
 function formatBytes(bytes) {
   if (!bytes || bytes < 0) return '0 B';
   if (bytes < 1024) return bytes + ' B';
@@ -418,6 +428,7 @@ async function refreshDashBalance() {
     document.getElementById('dash-pending').textContent = formatBNTShort(balance.pending);
     document.getElementById('dash-total').textContent = formatBNTShort(balance.total);
     document.getElementById('pending-label').classList.toggle('has-pending', balance.pending > 0);
+    updateDashUnconfirmed(balance);
   } catch (e) {
     // Balance requires an unlocked wallet and can 403/5xx briefly right after
     // unlock or during sync. The dashboard status timer retries every 2s, so a
@@ -441,6 +452,29 @@ function showDashScan(synced, chain) {
   document.getElementById('dash-scan-blocks').textContent =
     'Reading wallet outputs · block ' + s.toLocaleString() + ' / ' + c.toLocaleString();
   document.getElementById('dash-scan').style.display = 'block';
+  var unconf = document.getElementById('dash-unconfirmed');
+  if (unconf) unconf.style.display = 'none';
+}
+
+// Show incoming unconfirmed funds + a confirmation ETA when the balance reports them.
+function updateDashUnconfirmed(balance) {
+  var el = document.getElementById('dash-unconfirmed');
+  if (!el) return;
+  var amt = Number(balance && balance.pending_unconfirmed) || 0;
+  var etaSecs = Number(balance && balance.pending_unconfirmed_eta) || 0;
+  dashPendingEta = etaSecs > 0 ? etaSecs : 0;
+  if (amt > 0) {
+    document.getElementById('dash-unconfirmed-amt').textContent = formatBNTShort(amt);
+    var etaEl = document.getElementById('dash-unconfirmed-eta');
+    if (dashPendingEta > 0) {
+      etaEl.textContent = dashPendingEta < 60 ? ' · confirms in under a minute' : ' · confirms in ~' + formatEta(dashPendingEta);
+    } else {
+      etaEl.textContent = '';
+    }
+    el.style.display = '';
+  } else {
+    el.style.display = 'none';
+  }
 }
 
 function hideDashScan() {
@@ -526,13 +560,21 @@ async function loadDashboard() {
         container.innerHTML = recent.map(function (o) {
           var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
           var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
+          var blockLabel;
+          if (o.block_height) {
+            blockLabel = 'Block ' + o.block_height;
+          } else if (!o.spent && dashPendingEta > 0) {
+            blockLabel = dashPendingEta < 60 ? 'Pending · <1 min' : 'Pending · ~' + formatEta(dashPendingEta);
+          } else {
+            blockLabel = 'Pending';
+          }
           return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '">' +
             '<span class="recent-tx-amount ' + (o.spent ? 'r' : 'g') + '">' +
               (o.spent ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
             '<span class="recent-tx-type ' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
             (memoText ? '<span class="recent-tx-memo d">"' + escapeHtml(memoText) + '"</span>' : '') +
-            '<span class="recent-tx-block d">' + (o.block_height ? 'Block ' + o.block_height : 'Pending') + '</span>' +
+            '<span class="recent-tx-block d">' + blockLabel + '</span>' +
           '</div>';
         }).join('');
         container.querySelectorAll('.recent-tx-row[data-txid]').forEach(function (row) {
