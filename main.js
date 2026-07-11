@@ -3295,7 +3295,7 @@ async function handleImportSeed() {
     sessionPassword = password;
 
     hideImportForm();
-    showSettingsStatus('Wallet imported. Scanning blockchain for your outputs...', 'success');
+    showSettingsStatus('Wallet imported' + (result.address ? ' — address ' + abbrAddr(result.address) : '') + '. Scanning blockchain for your outputs...', 'success');
     await loadWalletList();
     showApp();
   } catch (e) {
