@@ -498,28 +498,27 @@ async function loadEconomics() {
 }
 
 function buildEmissionCurve(currentMonth) {
-  var W = 640, H = 240, padL = 52, padR = 16, padT = 16, padB = 28;
+  var W = 640, H = 240, padL = 52, padR = 16, padT = 22, padB = 28;
   var plotW = W - padL - padR, plotH = H - padT - padB;
   var maxMonth = ECON_MONTHS_TO_TAIL + 12;
-  var minR = ECON_TAIL_EMISSION / 100000000;
   var maxR = ECON_INITIAL_REWARD / 100000000;
-  var logMin = Math.log(minR), logMax = Math.log(maxR);
   function xOf(m) { return padL + (m / maxMonth) * plotW; }
-  function yOf(rBnt) {
-    var t = (Math.log(Math.max(minR, rBnt)) - logMin) / (logMax - logMin);
-    return padT + (1 - t) * plotH;
-  }
+  // Linear y-scale from 0 to the initial reward, matching the explorer's
+  // emission chart. The unit is shown once as a legend above the plot rather
+  // than repeated on each tick.
+  function yOf(rBnt) { return padT + (1 - rBnt / maxR) * plotH; }
   var pts = [];
   for (var m = 0; m <= maxMonth; m += 0.5) {
     pts.push(xOf(m).toFixed(1) + ',' + yOf(econBlockReward(m) / 100000000).toFixed(1));
   }
+  // Five evenly-spaced gridlines/ticks, like explorer.go's draw() helper.
   var grid = '', ylabels = '';
-  [2, 10, 50, 200, 723].forEach(function (v) {
-    if (v < minR || v > maxR) return;
+  for (var i = 0; i <= 4; i++) {
+    var v = maxR * (4 - i) / 4;
     var y = yOf(v);
     grid += '<line x1="' + padL + '" y1="' + y.toFixed(1) + '" x2="' + (W - padR) + '" y2="' + y.toFixed(1) + '" class="econ-grid"/>';
-    ylabels += '<text x="' + (padL - 8) + '" y="' + (y + 3).toFixed(1) + '" class="econ-axis" text-anchor="end">' + v + '</text>';
-  });
+    ylabels += '<text x="' + (padL - 8) + '" y="' + (y + 3).toFixed(1) + '" class="econ-axis" text-anchor="end">' + Math.round(v) + '</text>';
+  }
   var xlabels = '';
   [0, 12, 24, 36, 48, 60].forEach(function (mo) {
     if (mo > maxMonth) return;
@@ -531,11 +530,11 @@ function buildEmissionCurve(currentMonth) {
   return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="econ-curve" preserveAspectRatio="xMidYMid meet" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Block reward emission curve">' +
     grid +
     '<line x1="' + tailX.toFixed(1) + '" y1="' + padT + '" x2="' + tailX.toFixed(1) + '" y2="' + (H - padB) + '" class="econ-tailline"/>' +
-    '<text x="' + tailX.toFixed(1) + '" y="' + (padT + 9) + '" class="econ-axis" text-anchor="middle">tail</text>' +
+    '<text x="' + tailX.toFixed(1) + '" y="' + (padT - 8) + '" class="econ-axis" text-anchor="middle">tail</text>' +
     '<polyline points="' + pts.join(' ') + '" class="econ-line" fill="none"/>' +
     '<line x1="' + curX.toFixed(1) + '" y1="' + padT + '" x2="' + curX.toFixed(1) + '" y2="' + (H - padB) + '" class="econ-nowline"/>' +
     '<circle cx="' + curX.toFixed(1) + '" cy="' + curY.toFixed(1) + '" r="4" class="econ-nowdot"/>' +
-    '<text x="' + (padL - 8) + '" y="' + (padT + 4) + '" class="econ-axis" text-anchor="end">BNT</text>' +
+    '<text x="' + padL + '" y="' + (padT - 8) + '" class="econ-axis" text-anchor="start">BNT/block</text>' +
     ylabels + xlabels +
     '</svg>';
 }
