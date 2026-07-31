@@ -1167,6 +1167,9 @@ async function loadHistory() {
     console.warn('history load failed:', normalizeError(e));
   }
 
+  var chainHeight = 0;
+  try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
+
   var hasOutputsArray = data && Array.isArray(data.outputs);
   var outputs = hasOutputsArray ? data.outputs : null;
   var fromCache = false;
@@ -1197,13 +1200,18 @@ async function loadHistory() {
 
   container.innerHTML = sorted.map(o => {
     const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
+    var confHtml = '';
+    if (o.block_height && chainHeight >= o.block_height) {
+      var confs = chainHeight - o.block_height + 1;
+      confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
+    }
     return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
       '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
         (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
       '</div>' +
       '<div class="history-meta">' +
         (o.block_height
-          ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>'
+          ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
           : '<span class="d">Pending</span>') +
         '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
       '</div>' +
