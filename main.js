@@ -96,9 +96,36 @@ function prunePendingSends(confirmedOutputs) {
   if (pruned.length !== list.length) savePendingSends(pruned);
   return pruned;
 }
-function mergeWithPending(outputs) {
-  var pending = prunePendingSends(outputs);
-  if (!pending || !pending.length) return outputs;
+async function getDaemonPending() {
+  try {
+    var data = await api('/api/wallet/sends');
+    if (!data || !Array.isArray(data.sends)) return [];
+    return data.sends.filter(function (s) { return s && s.txid && s.in_mempool; }).map(function (s) {
+      var memo = (s.recipients && s.recipients[0] && s.recipients[0].memo_hex) || undefined;
+      return {
+        txid: s.txid,
+        amount: (Number(s.total_amount) || 0) + (Number(s.fee) || 0),
+        block_height: 0,
+        spent: true,
+        is_coinbase: false,
+        memo_hex: memo
+      };
+    });
+  } catch (_) { return []; }
+}
+async function mergeWithPending(outputs) {
+  var local = prunePendingSends(outputs) || [];
+  var daemon = await getDaemonPending();
+  var confirmed = {};
+  outputs.forEach(function (o) { confirmed[o.txid] = true; });
+  var seen = {};
+  var pending = [];
+  daemon.concat(local).forEach(function (p) {
+    if (!p || !p.txid || seen[p.txid] || confirmed[p.txid]) return;
+    seen[p.txid] = true;
+    pending.push(p);
+  });
+  if (!pending.length) return outputs;
   return pending.concat(outputs);
 }
 let activeWalletName = 'wallet.dat';
@@ -840,7 +867,7 @@ async function loadDashboard() {
       } else {
         try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
       }
-      if (outputs) outputs = mergeWithPending(outputs);
+      if (outputs) outputs = await mergeWithPending(outputs);
       if (!outputs || outputs.length === 0) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
         dashLastTxCount = 0;
@@ -1179,7 +1206,7 @@ async function loadHistory() {
     try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
   }
 
-  if (outputs) outputs = mergeWithPending(outputs);
+  if (outputs) outputs = await mergeWithPending(outputs);
 
   if (!outputs || outputs.length === 0) {
     renderHistoryBalanceSparkline([]);
