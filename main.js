@@ -128,18 +128,90 @@ async function mergeWithPending(outputs) {
   if (!pending.length) return outputs;
   return pending.concat(outputs);
 }
+// --- Encrypted user-data store (contacts + tx notes), keyed by the wallet password ---
+var userData = { contacts: [], txNotes: {} };
+var userDataWallet = '';
+var userDataReady = false;
+var userDataWriteChain = Promise.resolve();
+
+async function loadUserData() {
+  userDataReady = false;
+  userData = { contacts: [], txNotes: {} };
+  userDataWallet = activeWalletName;
+  if (!sessionPassword) return;
+  try {
+    var raw = await invoke('read_user_data', { wallet: userDataWallet, password: sessionPassword });
+    var parsed = {};
+    try { parsed = JSON.parse(raw) || {}; } catch (_) { parsed = {}; }
+    userData.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : [];
+    userData.txNotes = (parsed.txNotes && typeof parsed.txNotes === 'object') ? parsed.txNotes : {};
+    userDataReady = true;
+  } catch (e) {
+    userDataReady = false;
+    console.warn('user data load failed:', normalizeError(e));
+    return;
+  }
+  await migrateLegacyUserData();
+}
+
+async function migrateLegacyUserData() {
+  if (!userDataReady) return;
+  var changed = false;
+  try {
+    if (!userData.contacts.length) {
+      var lb = localStorage.getItem(walletKey('addressBook'));
+      if (lb) {
+        var book = JSON.parse(lb);
+        if (Array.isArray(book) && book.length) { userData.contacts = book; changed = true; }
+      }
+    }
+  } catch (_) {}
+  try {
+    var ln = localStorage.getItem('txNotes');
+    if (ln) {
+      var notes = JSON.parse(ln) || {};
+      Object.keys(notes).forEach(function (txid) {
+        if (userData.txNotes[txid] === undefined) { userData.txNotes[txid] = notes[txid]; changed = true; }
+      });
+    }
+  } catch (_) {}
+  if (!changed) return;
+  try {
+    await invoke('write_user_data', { wallet: userDataWallet, password: sessionPassword, contents: JSON.stringify(userData) });
+    try { localStorage.removeItem(walletKey('addressBook')); } catch (_) {}
+    try { localStorage.removeItem('txNotes'); } catch (_) {}
+  } catch (e) {
+    console.warn('user data migration failed:', normalizeError(e));
+  }
+}
+
+function persistUserData() {
+  if (!userDataReady || !sessionPassword || !userDataWallet) return;
+  var wallet = userDataWallet;
+  var pw = sessionPassword;
+  var snapshot = JSON.stringify(userData);
+  userDataWriteChain = userDataWriteChain.then(function () {
+    return invoke('write_user_data', { wallet: wallet, password: pw, contents: snapshot });
+  }).catch(function (e) { console.warn('user data save failed:', normalizeError(e)); });
+}
+
+function resetUserData() {
+  userData = { contacts: [], txNotes: {} };
+  userDataWallet = '';
+  userDataReady = false;
+}
+
 function getTxNotes() {
-  try { return JSON.parse(localStorage.getItem('txNotes') || '{}') || {}; } catch (_) { return {}; }
+  return userData.txNotes || {};
 }
 function getTxNote(txid) {
-  var notes = getTxNotes();
-  return (notes && notes[txid]) || '';
+  return (userData.txNotes && userData.txNotes[txid]) || '';
 }
 function setTxNote(txid, note) {
-  var notes = getTxNotes();
   note = String(note || '').trim();
-  if (note) notes[txid] = note; else delete notes[txid];
-  try { localStorage.setItem('txNotes', JSON.stringify(notes)); } catch (_) {}
+  if (!userData.txNotes) userData.txNotes = {};
+  if (note) userData.txNotes[txid] = note; else delete userData.txNotes[txid];
+  persistUserData();
 }
 function updateHistoryRowNote(txid, note) {
   var list = document.getElementById('history-list');
@@ -2362,14 +2434,15 @@ async function showPeerDetail(peerId) {
 
 function getAddressBook() {
   try {
-    return JSON.parse(localStorage.getItem(walletKey('addressBook')) || '[]');
+    return JSON.parse(JSON.stringify(userData.contacts || []));
   } catch (_) {
     return [];
   }
 }
 
 function saveAddressBook(book) {
-  localStorage.setItem(walletKey('addressBook'), JSON.stringify(book));
+  userData.contacts = Array.isArray(book) ? book : [];
+  persistUserData();
 }
 
 function renderAddressBook() {
@@ -3643,6 +3716,7 @@ async function handleLockWallet() {
   // Always lock the UI regardless of API success
   playLock();
   sessionPassword = '';
+  resetUserData();
   showUnlockScreen();
   if (lockFailed) {
     showStatus('Wallet UI locked. Warning: daemon lock may have failed — restart app if concerned.', 'warning');
@@ -4156,6 +4230,7 @@ async function showApp() {
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
   recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
+  await loadUserData();
   const passwordScreen = document.getElementById('password-screen');
   const app = document.getElementById('app');
   if (passwordScreen) passwordScreen.style.display = 'none';
@@ -4171,6 +4246,7 @@ async function showAppFromSplash() {
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
   recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
+  await loadUserData();
   const splash = document.getElementById('splash');
   const app = document.getElementById('app');
   splash.classList.add('fade-out');

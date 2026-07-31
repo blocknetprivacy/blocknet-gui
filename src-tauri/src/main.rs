@@ -742,6 +742,111 @@ async fn open_file(path: String) -> Result<(), String> {
     Ok(())
 }
 
+// --- Encrypted user-data store ---
+
+const USERDATA_MAGIC: &[u8; 5] = b"BNUD1";
+
+fn userdata_path(app: &AppHandle, wallet: &str) -> Result<std::path::PathBuf, String> {
+    if wallet.is_empty() || wallet.contains('/') || wallet.contains('\\') || wallet.contains("..") {
+        return Err("Invalid wallet name".to_string());
+    }
+    let base = wallet.strip_suffix(".dat").unwrap_or(wallet);
+    if base.is_empty() {
+        return Err("Invalid wallet name".to_string());
+    }
+    Ok(get_app_dir(app)?.join(format!("{}.userdata", base)))
+}
+
+fn derive_userdata_key(password: &str, salt: &[u8]) -> Result<[u8; 32], String> {
+    use argon2::Argon2;
+    let mut key = [0u8; 32];
+    Argon2::default()
+        .hash_password_into(password.as_bytes(), salt, &mut key)
+        .map_err(|e| format!("key derivation failed: {}", e))?;
+    Ok(key)
+}
+
+fn encrypt_userdata(password: &str, plaintext: &[u8]) -> Result<Vec<u8>, String> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+    use rand::RngCore;
+
+    let mut salt = [0u8; 16];
+    let mut nonce_bytes = [0u8; 12];
+    rand::rngs::OsRng.fill_bytes(&mut salt);
+    rand::rngs::OsRng.fill_bytes(&mut nonce_bytes);
+    let key_bytes = derive_userdata_key(password, &salt)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let ciphertext = cipher
+        .encrypt(Nonce::from_slice(&nonce_bytes), plaintext)
+        .map_err(|_| "encryption failed".to_string())?;
+    let mut out = Vec::with_capacity(5 + 16 + 12 + ciphertext.len());
+    out.extend_from_slice(USERDATA_MAGIC);
+    out.extend_from_slice(&salt);
+    out.extend_from_slice(&nonce_bytes);
+    out.extend_from_slice(&ciphertext);
+    Ok(out)
+}
+
+fn decrypt_userdata(password: &str, raw: &[u8]) -> Result<String, String> {
+    use aes_gcm::aead::{Aead, KeyInit};
+    use aes_gcm::{Aes256Gcm, Key, Nonce};
+
+    if raw.len() < 5 + 16 + 12 || &raw[0..5] != USERDATA_MAGIC {
+        return Err("user data file is corrupt".to_string());
+    }
+    let salt = &raw[5..21];
+    let nonce_bytes = &raw[21..33];
+    let ciphertext = &raw[33..];
+    let key_bytes = derive_userdata_key(password, salt)?;
+    let cipher = Aes256Gcm::new(Key::<Aes256Gcm>::from_slice(&key_bytes));
+    let plaintext = cipher
+        .decrypt(Nonce::from_slice(nonce_bytes), ciphertext)
+        .map_err(|_| "decryption failed".to_string())?;
+    String::from_utf8(plaintext).map_err(|_| "invalid utf8".to_string())
+}
+
+#[tauri::command]
+async fn read_user_data(app: AppHandle, wallet: String, password: String) -> Result<String, String> {
+    let path = userdata_path(&app, &wallet)?;
+    let raw = match std::fs::read(&path) {
+        Ok(d) => d,
+        Err(_) => return Ok("{}".to_string()),
+    };
+    decrypt_userdata(&password, &raw)
+}
+
+#[tauri::command]
+async fn write_user_data(app: AppHandle, wallet: String, password: String, contents: String) -> Result<(), String> {
+    let path = userdata_path(&app, &wallet)?;
+    let out = encrypt_userdata(&password, contents.as_bytes())?;
+    let mut tmp = path.clone().into_os_string();
+    tmp.push(".tmp");
+    let tmp = std::path::PathBuf::from(tmp);
+    std::fs::write(&tmp, &out).map_err(|e| format!("write failed: {}", e))?;
+    std::fs::rename(&tmp, &path).map_err(|e| format!("rename failed: {}", e))?;
+    Ok(())
+}
+
+#[cfg(test)]
+mod userdata_tests {
+    use super::{decrypt_userdata, encrypt_userdata, USERDATA_MAGIC};
+
+    #[test]
+    fn roundtrip_and_wrong_password() {
+        let pw = "correct horse battery staple";
+        let plain = r#"{"contacts":[{"name":"mom","address":"bnt1abc"}],"txNotes":{"deadbeef":"rent"}}"#;
+        let enc = encrypt_userdata(pw, plain.as_bytes()).unwrap();
+        assert!(enc.len() > 33);
+        assert_eq!(&enc[0..5], USERDATA_MAGIC);
+        assert_ne!(&enc[33..], plain.as_bytes());
+        let dec = decrypt_userdata(pw, &enc).unwrap();
+        assert_eq!(dec, plain);
+        assert!(decrypt_userdata("wrong password", &enc).is_err());
+        assert!(decrypt_userdata(pw, b"short").is_err());
+    }
+}
+
 // --- Wallet management ---
 
 #[tauri::command]
@@ -1126,6 +1231,8 @@ async fn main() {
             start_api_events,
             stop_api_events,
             fetch_url,
+            read_user_data,
+            write_user_data,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
