@@ -272,10 +272,24 @@ function invoke(cmd, args) {
 // --- Desktop notifications ---
 
 var notifyReady = false;
+var notifyEnabled = true;
 var txNotifyState = null;
 var txNotifyTimer = null;
 
+function loadNotifyPref() {
+  try {
+    var v = localStorage.getItem('notifyEnabled');
+    if (v !== null) notifyEnabled = v !== 'false';
+  } catch (_) {}
+}
+
+function saveNotifyPref() {
+  try { localStorage.setItem('notifyEnabled', notifyEnabled ? 'true' : 'false'); } catch (_) {}
+}
+
 async function initNotifications() {
+  loadNotifyPref();
+  if (!notifyEnabled) return;
   try {
     var n = window.__TAURI__ && window.__TAURI__.notification;
     if (!n) return;
@@ -291,7 +305,7 @@ async function initNotifications() {
 }
 
 function sendDesktopNotification(title, body) {
-  if (!notifyReady) return;
+  if (!notifyReady || !notifyEnabled) return;
   try {
     var n = window.__TAURI__ && window.__TAURI__.notification;
     if (n) n.sendNotification({ title: title, body: body });
@@ -5300,6 +5314,33 @@ initSignVerifyTabs();
     slider.classList.toggle('muted', soundMuted);
     applyVolume();
     saveSoundPrefs();
+  });
+})();
+
+// Notification controls
+(function () {
+  var onBtn = document.getElementById('notif-enabled-on');
+  var offBtn = document.getElementById('notif-enabled-off');
+  if (!onBtn || !offBtn) return;
+
+  loadNotifyPref();
+
+  function paint() {
+    onBtn.classList.toggle('active', notifyEnabled);
+    offBtn.classList.toggle('active', !notifyEnabled);
+  }
+  paint();
+
+  onBtn.addEventListener('click', function () {
+    notifyEnabled = true;
+    saveNotifyPref();
+    paint();
+    initNotifications();
+  });
+  offBtn.addEventListener('click', function () {
+    notifyEnabled = false;
+    saveNotifyPref();
+    paint();
   });
 })();
 document.getElementById('create-wallet-btn').addEventListener('click', showCreateForm);
