@@ -1786,6 +1786,26 @@ body.platform-windows #app {
 .history-memo::before { content: '"'; color: #777; }
 .history-memo::after  { content: '"'; color: #777; }
 
+.history-note {
+  font-size: 0.85em;
+  color: #fa0;
+  opacity: 0.9;
+  margin-top: 3px;
+  font-style: italic;
+}
+.history-note::before { content: "\270E  "; font-style: normal; opacity: 0.8; }
+.history-row .note-add {
+  color: #555;
+  font-size: 0.8em;
+  margin-top: 3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s;
+}
+.history-row:hover .note-add,
+.history-row:focus-within .note-add { opacity: 1; }
+.history-row .note-add:hover { color: #af0; }
+
 .recent-tx-memo {
   font-style: italic;
   font-size: 12px;

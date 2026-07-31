@@ -129,7 +129,7 @@ async function mergeWithPending(outputs) {
   return pending.concat(outputs);
 }
 function getTxNotes() {
-  try { return JSON.parse(localStorage.getItem(walletKey('txNotes')) || '{}') || {}; } catch (_) { return {}; }
+  try { return JSON.parse(localStorage.getItem('txNotes') || '{}') || {}; } catch (_) { return {}; }
 }
 function getTxNote(txid) {
   var notes = getTxNotes();
@@ -139,7 +139,36 @@ function setTxNote(txid, note) {
   var notes = getTxNotes();
   note = String(note || '').trim();
   if (note) notes[txid] = note; else delete notes[txid];
-  try { localStorage.setItem(walletKey('txNotes'), JSON.stringify(notes)); } catch (_) {}
+  try { localStorage.setItem('txNotes', JSON.stringify(notes)); } catch (_) {}
+}
+function updateHistoryRowNote(txid, note) {
+  var list = document.getElementById('history-list');
+  if (!list) return;
+  var row = list.querySelector('.history-row[data-txid="' + txid + '"]');
+  if (!row) return;
+  note = String(note || '').trim();
+  var noteEl = row.querySelector('.history-note');
+  var addEl = row.querySelector('.note-add');
+  if (note) {
+    if (noteEl) {
+      noteEl.textContent = note;
+    } else {
+      var el = document.createElement('div');
+      el.className = 'history-note';
+      el.textContent = note;
+      if (addEl) {
+        addEl.replaceWith(el);
+      } else {
+        var txEl = row.querySelector('.history-tx');
+        if (txEl) row.insertBefore(el, txEl); else row.appendChild(el);
+      }
+    }
+  } else if (noteEl) {
+    var add = document.createElement('div');
+    add.className = 'note-add';
+    add.textContent = '+ add note';
+    noteEl.replaceWith(add);
+  }
 }
 let activeWalletName = 'wallet.dat';
 
@@ -219,6 +248,24 @@ function migrateLocalStorageKeys() {
       localStorage.setItem(walletKey('addressBook'), oldBook);
     }
     localStorage.removeItem('addressBook');
+  } catch (_) {}
+  try {
+    var globalNotes = JSON.parse(localStorage.getItem('txNotes') || '{}') || {};
+    var changed = false;
+    for (var i = localStorage.length - 1; i >= 0; i--) {
+      var k = localStorage.key(i);
+      if (k && k.indexOf('txNotes:') === 0) {
+        try {
+          var legacy = JSON.parse(localStorage.getItem(k) || '{}') || {};
+          Object.keys(legacy).forEach(function (txid) {
+            if (!globalNotes[txid]) globalNotes[txid] = legacy[txid];
+          });
+        } catch (_) {}
+        localStorage.removeItem(k);
+        changed = true;
+      }
+    }
+    if (changed) localStorage.setItem('txNotes', JSON.stringify(globalNotes));
   } catch (_) {}
 }
 
@@ -1238,8 +1285,10 @@ async function loadHistory() {
     return b.block_height - a.block_height;
   });
 
+  var allNotes = getTxNotes();
   container.innerHTML = sorted.map(o => {
     const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
+    var noteText = allNotes[o.txid] || '';
     var confHtml = '';
     if (o.block_height && chainHeight >= o.block_height) {
       var confs = chainHeight - o.block_height + 1;
@@ -1256,6 +1305,9 @@ async function loadHistory() {
         '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
       '</div>' +
       memoHtml(o) +
+      (noteText
+        ? '<div class="history-note">' + escapeHtml(noteText) + '</div>'
+        : '<div class="note-add">+ add note</div>') +
       '<div class="history-tx d">' + copyable(o.txid, o.txid.substring(0, 24) + '...') + '</div>' +
     '</div>';
   }).join('');
@@ -4935,7 +4987,9 @@ async function showTxDetail(txid, opts) {
     if (noteInput) noteInput.value = getTxNote(txid);
     if (noteSave) {
       noteSave.addEventListener('click', function () {
-        setTxNote(txid, noteInput ? noteInput.value : '');
+        var val = noteInput ? noteInput.value : '';
+        setTxNote(txid, val);
+        updateHistoryRowNote(txid, val);
         noteSave.textContent = 'Saved';
         setTimeout(function () { noteSave.textContent = 'Save'; }, 1500);
       });
