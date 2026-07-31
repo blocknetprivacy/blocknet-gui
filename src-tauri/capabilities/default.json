@@ -6,6 +6,7 @@
     "shell:allow-open",
     "core:event:default",
     "deep-link:default",
+    "notification:default",
     "core:window:allow-show",
     "core:window:allow-set-focus",
     "core:window:allow-minimize",

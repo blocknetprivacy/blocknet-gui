@@ -1,6 +1,6 @@
 [package]
 name = "blocknet-wallet"
-version = "0.16.0"
+version = "0.17.0"
 description = "Blocknet Wallet"
 authors = ["Blocknet Privacy"]
 license = "BSD-3-Clause"
@@ -22,6 +22,7 @@ dirs-next = "2"
 tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
+tauri-plugin-notification = "2"
 
 [target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\"))".dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }

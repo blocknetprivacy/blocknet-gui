@@ -1001,6 +1001,7 @@ async fn main() {
             )
             .build())
         .plugin(tauri_plugin_deep_link::init())
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             let show_i = MenuItem::with_id(app, "show", "Show", true, None::<&str>)?;
             let hide_i = MenuItem::with_id(app, "hide", "Hide", true, None::<&str>)?;
@@ -1129,9 +1130,19 @@ async fn main() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application")
         .run(|app, event| {
-            if let RunEvent::Exit = event {
-                stop_api_events_inner(&app.state::<EventsState>());
-                stop_daemon_inner(&app.state::<DaemonState>());
+            match event {
+                RunEvent::Exit => {
+                    stop_api_events_inner(&app.state::<EventsState>());
+                    stop_daemon_inner(&app.state::<DaemonState>());
+                }
+                #[cfg(target_os = "macos")]
+                RunEvent::Reopen { .. } => {
+                    if let Some(w) = app.get_webview_window("main") {
+                        let _ = w.show();
+                        let _ = w.set_focus();
+                    }
+                }
+                _ => {}
             }
         });
 }

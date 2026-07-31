@@ -24,6 +24,47 @@ let pendingSendFingerprint = null;
 let sendArmTimer = null;
 let pendingSendIdempotency = null;
 const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
+const SEND_MAX_RETRIES = 2;
+
+// The daemon auto-selects UTXOs for /api/wallet/send. Under rapid sends (spending
+// change that hasn't confirmed yet), across a reorg, or when another process shares
+// the wallet, it can pick an output the network then rejects as already spent. That
+// rejection is definitive — nothing was broadcast — so retrying with a fresh
+// idempotency key lets the daemon re-select fresh inputs. Mirrors the exclude-and-retry
+// posture of the predict payout service's coin-control path.
+//
+// Note: the auto-select endpoint does not document a distinct stale-input string (it
+// surfaces as a generic build failure); these matchers are a safety net in case the
+// daemon bubbles the underlying reason up. Genuine broadcast failures like "not enough
+// ring members available" are deliberately NOT matched — retrying wouldn't help.
+function isStaleInputError(msg) {
+  var m = String(msg || '').toLowerCase();
+  return (
+    m.indexOf('already spent') >= 0 ||
+    m.indexOf('key image already') >= 0 ||
+    m.indexOf('already in mempool') >= 0 ||
+    m.indexOf('double spend') >= 0 ||
+    m.indexOf('double-spend') >= 0
+  );
+}
+
+// Transient backpressure from the daemon (HTTP 429). The request was rejected before
+// anything was built, so a short backoff + retry with the SAME idempotency key is safe.
+function isTransientSendError(msg) {
+  var m = String(msg || '').toLowerCase();
+  return (
+    m.indexOf('send busy') >= 0 ||
+    m.indexOf('retry later') >= 0 ||
+    m.indexOf('rate limit') >= 0
+  );
+}
+
+function freshIdempotencyKey() {
+  var now = Date.now();
+  return (window.crypto && typeof window.crypto.randomUUID === 'function')
+    ? window.crypto.randomUUID()
+    : ('send-' + now + '-' + Math.random().toString(16).slice(2));
+}
 let pendingDeepLink = null;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
@@ -226,6 +267,81 @@ function playTada() {
 
 function invoke(cmd, args) {
   return window.__TAURI__.core.invoke(cmd, args);
+}
+
+// --- Desktop notifications ---
+
+var notifyReady = false;
+var txNotifyState = null;
+var txNotifyTimer = null;
+
+async function initNotifications() {
+  try {
+    var n = window.__TAURI__ && window.__TAURI__.notification;
+    if (!n) return;
+    var granted = await n.isPermissionGranted();
+    if (!granted) {
+      var res = await n.requestPermission();
+      granted = res === 'granted';
+    }
+    notifyReady = granted;
+  } catch (_) {
+    notifyReady = false;
+  }
+}
+
+function sendDesktopNotification(title, body) {
+  if (!notifyReady) return;
+  try {
+    var n = window.__TAURI__ && window.__TAURI__.notification;
+    if (n) n.sendNotification({ title: title, body: body });
+  } catch (_) {}
+}
+
+function processTxNotifications(outputs, silent) {
+  if (!Array.isArray(outputs)) return;
+  var seeding = txNotifyState === null;
+  if (seeding) txNotifyState = {};
+  var quiet = seeding || silent;
+  for (var i = 0; i < outputs.length; i++) {
+    var o = outputs[i];
+    if (!o || o.spent || !o.txid) continue;
+    var height = Number(o.block_height) || 0;
+    var prev = txNotifyState[o.txid];
+    if (quiet) {
+      if (prev === undefined || height > prev) txNotifyState[o.txid] = height;
+      continue;
+    }
+    if (prev === undefined) {
+      txNotifyState[o.txid] = height;
+      if (height > 0) {
+        sendDesktopNotification('Payment received', '+' + formatBNTShort(o.amount) + ' BNT');
+      } else {
+        sendDesktopNotification('Incoming payment', '+' + formatBNTShort(o.amount) + ' BNT pending');
+      }
+    } else if (prev === 0 && height > 0) {
+      txNotifyState[o.txid] = height;
+      sendDesktopNotification('Payment confirmed', '+' + formatBNTShort(o.amount) + ' BNT confirmed');
+    } else if (height > prev) {
+      txNotifyState[o.txid] = height;
+    }
+  }
+}
+
+async function pollTxNotifications() {
+  try {
+    var silent = false;
+    try {
+      var bal = await api('/api/wallet/balance');
+      silent = !!(bal && bal.scanning);
+    } catch (_) {
+      silent = true;
+    }
+    var data = await api('/api/wallet/history');
+    if (data && Array.isArray(data.outputs)) {
+      processTxNotifications(data.outputs, silent);
+    }
+  } catch (_) {}
 }
 
 // --- API Client (proxied through Rust, no CORS) ---
@@ -2881,11 +2997,7 @@ async function handleSend(e) {
   ) {
     idempotencyKey = pendingSendIdempotency.key;
   } else {
-    idempotencyKey = (
-      (window.crypto && typeof window.crypto.randomUUID === 'function')
-        ? window.crypto.randomUUID()
-        : ('send-' + now + '-' + Math.random().toString(16).slice(2))
-    );
+    idempotencyKey = freshIdempotencyKey();
     pendingSendIdempotency = {
       payloadKey: payloadKey,
       key: idempotencyKey,
@@ -2898,24 +3010,49 @@ async function handleSend(e) {
   showSendStatus('Building transaction...', 'info');
 
   try {
-    const result = await api('/api/wallet/send', {
-      method: 'POST',
-      body: sendPayload,
-      headers: {
-        'Idempotency-Key': idempotencyKey,
-      },
-    });
-    finalizeSend(result, entries, recipientsPayload);
-  } catch (e) {
-    const msg = normalizeError(e);
-    if (msg.toLowerCase().includes('request failed:')) {
-      var handled = await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
-      if (!handled) {
-        showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
+    var attempt = 0;
+    while (true) {
+      try {
+        const result = await api('/api/wallet/send', {
+          method: 'POST',
+          body: sendPayload,
+          headers: {
+            'Idempotency-Key': idempotencyKey,
+          },
+        });
+        finalizeSend(result, entries, recipientsPayload);
+        break;
+      } catch (e) {
+        const msg = normalizeError(e);
+        if (isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
+          attempt++;
+          // Definitive rejection — the tx was never broadcast — so it's safe to
+          // rotate to a fresh idempotency key, which makes the daemon re-select
+          // inputs rather than replay the cached failure.
+          idempotencyKey = freshIdempotencyKey();
+          if (pendingSendIdempotency) pendingSendIdempotency.key = idempotencyKey;
+          showSendStatus('A coin was already spent — reselecting inputs and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
+          continue;
+        }
+        if (isTransientSendError(msg) && attempt < SEND_MAX_RETRIES) {
+          attempt++;
+          // Rejected before build — keep the same idempotency key so an accepted-but-
+          // slow prior attempt would dedupe rather than double-send. Brief backoff.
+          showSendStatus('Node is busy — retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
+          await new Promise(function (resolve) { setTimeout(resolve, 600 * attempt); });
+          continue;
+        }
+        if (msg.toLowerCase().includes('request failed:')) {
+          var handled = await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
+          if (!handled) {
+            showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
+          }
+        } else {
+          showSendStatus(msg, 'error');
+          pendingSendIdempotency = null;
+        }
+        break;
       }
-    } else {
-      showSendStatus(msg, 'error');
-      pendingSendIdempotency = null;
     }
   } finally {
     btn.disabled = false;
@@ -3705,6 +3842,11 @@ function startPolling() {
     try { await refreshDashStatus(); } catch (_) {}
     await refreshDashBalance();
   }, 2000);
+
+  // Desktop notifications for incoming/confirming transactions, any view.
+  initNotifications();
+  pollTxNotifications();
+  txNotifyTimer = setInterval(pollTxNotifications, 8000);
 }
 
 function stopPolling() {
@@ -3724,6 +3866,12 @@ function stopPolling() {
     clearInterval(dashStatusTimer);
     dashStatusTimer = null;
   }
+
+  if (txNotifyTimer) {
+    clearInterval(txNotifyTimer);
+    txNotifyTimer = null;
+  }
+  txNotifyState = null;
 }
 
 // --- Screen transitions ---
