@@ -128,6 +128,19 @@ async function mergeWithPending(outputs) {
   if (!pending.length) return outputs;
   return pending.concat(outputs);
 }
+function getTxNotes() {
+  try { return JSON.parse(localStorage.getItem(walletKey('txNotes')) || '{}') || {}; } catch (_) { return {}; }
+}
+function getTxNote(txid) {
+  var notes = getTxNotes();
+  return (notes && notes[txid]) || '';
+}
+function setTxNote(txid, note) {
+  var notes = getTxNotes();
+  note = String(note || '').trim();
+  if (note) notes[txid] = note; else delete notes[txid];
+  try { localStorage.setItem(walletKey('txNotes'), JSON.stringify(notes)); } catch (_) {}
+}
 let activeWalletName = 'wallet.dat';
 
 function walletKey(base) {
@@ -1293,7 +1306,7 @@ async function exportHistoryCSV() {
       if (a.block_height && !b.block_height) return 1;
       return b.block_height - a.block_height;
     });
-    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo'];
+    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo,note'];
     for (var i = 0; i < sorted.length; i++) {
       var o = sorted[i];
       var type = o.is_coinbase ? 'mining_reward' : (o.spent ? 'sent' : 'received');
@@ -1305,7 +1318,8 @@ async function exportHistoryCSV() {
         type + ',' +
         o.spent + ',' +
         (o.spent_height || '') + ',' +
-        csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '')
+        csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '') + ',' +
+        csvField(getTxNote(o.txid))
       );
     }
     var csv = lines.join('\n');
@@ -4902,11 +4916,35 @@ async function showTxDetail(txid, opts) {
         '<div class="detail-label">Outputs</div>' +
         '<div class="detail-value">' + (tx.outputs ? tx.outputs.length : 0) + '</div>' +
       '</div>' +
+      '<div class="tx-note-block">' +
+        '<span class="detail-label">Note <span class="d">(private, saved on this device only)</span></span>' +
+        '<div class="tx-note-row">' +
+          '<input class="tx-note-input" id="tx-note-input" type="text" placeholder="Add a private note for this transaction" autocorrect="off" autocapitalize="off" spellcheck="false">' +
+          '<button class="btn-secondary" id="tx-note-save">Save</button>' +
+        '</div>' +
+        '<div class="tx-note-hint">Never sent to the network. Your own label, separate from the on-chain memo.</div>' +
+      '</div>' +
       '<div class="detail-actions">' +
         '<button class="btn-secondary" id="tx-open-explorer">Open in Explorer</button>' +
         (canProve ? '<button class="btn-secondary" id="tx-prove">Prove I sent this</button>' : '') +
       '</div>' +
       '<div id="tx-proof" class="tx-proof" style="display: none;"></div>';
+
+    var noteInput = document.getElementById('tx-note-input');
+    var noteSave = document.getElementById('tx-note-save');
+    if (noteInput) noteInput.value = getTxNote(txid);
+    if (noteSave) {
+      noteSave.addEventListener('click', function () {
+        setTxNote(txid, noteInput ? noteInput.value : '');
+        noteSave.textContent = 'Saved';
+        setTimeout(function () { noteSave.textContent = 'Save'; }, 1500);
+      });
+    }
+    if (noteInput) {
+      noteInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') { e.preventDefault(); noteSave.click(); }
+      });
+    }
 
     document.getElementById('tx-open-explorer').addEventListener('click', function () {
       window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/tx/' + txid);

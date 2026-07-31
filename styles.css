@@ -1850,6 +1850,40 @@ body.platform-windows #app {
   margin-top: 16px;
 }
 
+/* Transaction note */
+.tx-note-block {
+  margin-top: 18px;
+  max-width: 640px;
+}
+.tx-note-block .detail-label {
+  display: block;
+  margin-bottom: 6px;
+}
+.tx-note-row {
+  display: flex;
+  gap: 8px;
+  align-items: stretch;
+}
+.tx-note-input {
+  flex: 1;
+  background: #000;
+  border: 1px solid #333;
+  color: #eee;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 8px 10px;
+  box-sizing: border-box;
+}
+.tx-note-input:focus {
+  outline: none;
+  border-color: #af0;
+}
+.tx-note-hint {
+  color: #666;
+  font-size: 11px;
+  margin-top: 6px;
+}
+
 .tx-proof {
   margin-top: 20px;
   padding-top: 16px;
