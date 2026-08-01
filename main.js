@@ -925,6 +925,37 @@ async function refreshDashStatus() {
   }
 }
 
+var lockedFetchAt = 0;
+async function updateLockedFundsPreview(balance) {
+  var el = document.getElementById('dash-locked');
+  if (!el) return;
+  var pending = Number(balance && balance.pending) || 0;
+  if (pending <= 0) { el.style.display = 'none'; el.dataset.filled = ''; return; }
+  var now = Date.now();
+  if (now - lockedFetchAt < 15000 && el.dataset.filled === '1') { el.style.display = ''; return; }
+  lockedFetchAt = now;
+  try {
+    var data = await api('/api/wallet/outputs');
+    var outs = (data && Array.isArray(data.outputs)) ? data.outputs : [];
+    var minRemaining = 0;
+    for (var i = 0; i < outs.length; i++) {
+      var o = outs[i];
+      if (!o || o.status !== 'pending') continue;
+      var needed = o.type === 'coinbase' ? 60 : 10;
+      var rem = needed - (Number(o.confirmations) || 0);
+      if (rem < 1) rem = 1;
+      if (minRemaining === 0 || rem < minRemaining) minRemaining = rem;
+    }
+    if (minRemaining > 0) {
+      el.textContent = 'Confirming, spendable in ~' + minRemaining + ' block' + (minRemaining !== 1 ? 's' : '') + ' (~' + formatEta(minRemaining * 300) + ')';
+      el.dataset.filled = '1';
+      el.style.display = '';
+    } else {
+      el.style.display = 'none';
+    }
+  } catch (_) {}
+}
+
 async function refreshDashBalance() {
   try {
     const balance = await api('/api/wallet/balance');
@@ -938,6 +969,7 @@ async function refreshDashBalance() {
     document.getElementById('dash-total').textContent = formatBNTShort(balance.total);
     document.getElementById('pending-label').classList.toggle('has-pending', balance.pending > 0);
     updateDashUnconfirmed(balance);
+    updateLockedFundsPreview(balance);
   } catch (e) {
     // Balance requires an unlocked wallet and can 403/5xx briefly right after
     // unlock or during sync. The dashboard status timer retries every 2s, so a
@@ -1537,10 +1569,23 @@ async function exportHistoryCSV() {
       if (a.block_height && !b.block_height) return 1;
       return b.block_height - a.block_height;
     });
-    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo,note'];
+    var sendTo = {};
+    try {
+      var sdata = await api('/api/wallet/sends');
+      if (sdata && Array.isArray(sdata.sends)) {
+        sdata.sends.forEach(function (s) {
+          if (s && s.txid && s.recipients && s.recipients[0]) sendTo[s.txid] = s.recipients[0].address;
+        });
+      }
+    } catch (_) {}
+    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo,note,recipient'];
     for (var i = 0; i < sorted.length; i++) {
       var o = sorted[i];
       var type = o.is_coinbase ? 'mining_reward' : (o.spent ? 'sent' : 'received');
+      var recipient = '';
+      if (o.spent) {
+        recipient = (userData.sendLabels && userData.sendLabels[o.txid]) || contactNameForAddress(sendTo[o.txid] || '') || (sendTo[o.txid] || '');
+      }
       lines.push(
         o.txid + ',' +
         o.output_index + ',' +
@@ -1550,7 +1595,8 @@ async function exportHistoryCSV() {
         o.spent + ',' +
         (o.spent_height || '') + ',' +
         csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '') + ',' +
-        csvField(getTxNote(o.txid))
+        csvField(getTxNote(o.txid)) + ',' +
+        csvField(recipient)
       );
     }
     var csv = lines.join('\n');
