@@ -128,15 +128,21 @@ async function mergeWithPending(outputs) {
   if (!pending.length) return outputs;
   return pending.concat(outputs);
 }
-// --- Encrypted user-data store (contacts + tx notes), keyed by the wallet password ---
-var userData = { contacts: [], txNotes: {} };
+// --- Encrypted user-data store (contacts, notes, and per-wallet caches), keyed by the wallet password ---
+function emptyUserData() {
+  return { contacts: [], txNotes: {}, txCache: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {} };
+}
+function udObj(x) { return (x && typeof x === 'object' && !Array.isArray(x)) ? x : {}; }
+
+var userData = emptyUserData();
 var userDataWallet = '';
 var userDataReady = false;
-var userDataWriteChain = Promise.resolve();
+var userDataDirty = false;
+var userDataWriting = false;
 
 async function loadUserData() {
   userDataReady = false;
-  userData = { contacts: [], txNotes: {} };
+  userData = emptyUserData();
   userDataWallet = activeWalletName;
   if (!sessionPassword) return;
   try {
@@ -144,7 +150,11 @@ async function loadUserData() {
     var parsed = {};
     try { parsed = JSON.parse(raw) || {}; } catch (_) { parsed = {}; }
     userData.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : [];
-    userData.txNotes = (parsed.txNotes && typeof parsed.txNotes === 'object') ? parsed.txNotes : {};
+    userData.txNotes = udObj(parsed.txNotes);
+    userData.txCache = Array.isArray(parsed.txCache) ? parsed.txCache : [];
+    userData.receivePrefs = udObj(parsed.receivePrefs);
+    userData.peerGeoCache = udObj(parsed.peerGeoCache);
+    userData.peerObservationCache = udObj(parsed.peerObservationCache);
     userDataReady = true;
   } catch (e) {
     userDataReady = false;
@@ -175,10 +185,28 @@ async function migrateLegacyUserData() {
       });
     }
   } catch (_) {}
+  ['txCache'].forEach(function (k) {
+    try {
+      var raw = localStorage.getItem(walletKey(k));
+      if (!raw) return;
+      var val = JSON.parse(raw);
+      if (Array.isArray(val) && val.length && (!userData[k] || !userData[k].length)) { userData[k] = val; changed = true; }
+    } catch (_) {}
+  });
+  ['receivePrefs', 'peerGeoCache', 'peerObservationCache'].forEach(function (k) {
+    try {
+      var raw = localStorage.getItem(walletKey(k));
+      if (!raw) return;
+      var val = JSON.parse(raw);
+      if (val && typeof val === 'object' && Object.keys(val).length && (!userData[k] || !Object.keys(userData[k]).length)) { userData[k] = val; changed = true; }
+    } catch (_) {}
+  });
   if (!changed) return;
   try {
     await invoke('write_user_data', { wallet: userDataWallet, password: sessionPassword, contents: JSON.stringify(userData) });
-    try { localStorage.removeItem(walletKey('addressBook')); } catch (_) {}
+    ['addressBook', 'txCache', 'receivePrefs', 'peerGeoCache', 'peerObservationCache'].forEach(function (k) {
+      try { localStorage.removeItem(walletKey(k)); } catch (_) {}
+    });
     try { localStorage.removeItem('txNotes'); } catch (_) {}
   } catch (e) {
     console.warn('user data migration failed:', normalizeError(e));
@@ -187,18 +215,29 @@ async function migrateLegacyUserData() {
 
 function persistUserData() {
   if (!userDataReady || !sessionPassword || !userDataWallet) return;
+  userDataDirty = true;
+  if (userDataWriting) return;
+  flushUserData();
+}
+
+function flushUserData() {
+  if (!userDataDirty) return;
+  userDataDirty = false;
+  userDataWriting = true;
   var wallet = userDataWallet;
   var pw = sessionPassword;
   var snapshot = JSON.stringify(userData);
-  userDataWriteChain = userDataWriteChain.then(function () {
-    return invoke('write_user_data', { wallet: wallet, password: pw, contents: snapshot });
-  }).catch(function (e) { console.warn('user data save failed:', normalizeError(e)); });
+  invoke('write_user_data', { wallet: wallet, password: pw, contents: snapshot })
+    .catch(function (e) { console.warn('user data save failed:', normalizeError(e)); })
+    .then(function () { userDataWriting = false; if (userDataDirty) flushUserData(); });
 }
 
 function resetUserData() {
-  userData = { contacts: [], txNotes: {} };
+  userData = emptyUserData();
   userDataWallet = '';
   userDataReady = false;
+  userDataDirty = false;
+  userDataWriting = false;
 }
 
 function getTxNotes() {
@@ -211,6 +250,13 @@ function setTxNote(txid, note) {
   note = String(note || '').trim();
   if (!userData.txNotes) userData.txNotes = {};
   if (note) userData.txNotes[txid] = note; else delete userData.txNotes[txid];
+  persistUserData();
+}
+function getTxCache() {
+  return Array.isArray(userData.txCache) ? userData.txCache : [];
+}
+function setTxCache(outputs) {
+  userData.txCache = Array.isArray(outputs) ? outputs : [];
   persistUserData();
 }
 function updateHistoryRowNote(txid, note) {
@@ -959,8 +1005,7 @@ async function loadDashboard() {
 
     var shortname = '';
     try {
-      var receivePrefsRaw = localStorage.getItem(walletKey('receivePrefs')) || '{}';
-      var receivePrefs = JSON.parse(receivePrefsRaw);
+      var receivePrefs = getReceivePrefs();
       if (receivePrefs && receivePrefs.handle) shortname = '$' + String(receivePrefs.handle);
     } catch (_) {}
 
@@ -995,9 +1040,9 @@ async function loadDashboard() {
       var outputs = hasOutputsArray ? data.outputs : null;
       var fromCache = false;
       if (hasOutputsArray) {
-        try { localStorage.setItem(walletKey('txCache'), JSON.stringify(outputs)); } catch (_) {}
+        setTxCache(outputs);
       } else {
-        try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
+        outputs = getTxCache(); fromCache = true;
       }
       if (outputs) outputs = await mergeWithPending(outputs);
       if (!outputs || outputs.length === 0) {
@@ -1061,15 +1106,12 @@ var receiveHandleResolveTimer = null;
 var requestLinkMode = 'blocknet';
 
 function getReceivePrefs() {
-  try {
-    return JSON.parse(localStorage.getItem(walletKey('receivePrefs')) || '{}');
-  } catch (_) {
-    return {};
-  }
+  return udObj(userData.receivePrefs);
 }
 
 function saveReceivePrefs(prefs) {
-  localStorage.setItem(walletKey('receivePrefs'), JSON.stringify(prefs || {}));
+  userData.receivePrefs = udObj(prefs);
+  persistUserData();
 }
 
 function normalizeHandleInput(raw) {
@@ -1333,9 +1375,9 @@ async function loadHistory() {
   var outputs = hasOutputsArray ? data.outputs : null;
   var fromCache = false;
   if (hasOutputsArray) {
-    try { localStorage.setItem(walletKey('txCache'), JSON.stringify(outputs)); } catch (_) {}
+    setTxCache(outputs);
   } else {
-    try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); fromCache = true; } catch (_) {}
+    outputs = getTxCache(); fromCache = true;
   }
 
   if (outputs) outputs = await mergeWithPending(outputs);
@@ -1418,7 +1460,7 @@ async function exportHistoryCSV() {
     var hasOutputsArray = data && Array.isArray(data.outputs);
     var outputs = hasOutputsArray ? data.outputs : null;
     if (!hasOutputsArray) {
-      try { outputs = JSON.parse(localStorage.getItem(walletKey('txCache')) || 'null'); } catch (_) {}
+      outputs = getTxCache();
     }
     if (!outputs || outputs.length === 0) {
       btn.textContent = 'No data';
@@ -1975,15 +2017,12 @@ function isPublicIp(ip) {
 }
 
 function getGeoCache() {
-  try {
-    return JSON.parse(localStorage.getItem(walletKey('peerGeoCache')) || '{}');
-  } catch (_) {
-    return {};
-  }
+  return udObj(userData.peerGeoCache);
 }
 
 function saveGeoCache(cache) {
-  localStorage.setItem(walletKey('peerGeoCache'), JSON.stringify(cache));
+  userData.peerGeoCache = udObj(cache);
+  persistUserData();
 }
 
 async function geolocateIp(ip) {
@@ -2094,15 +2133,12 @@ async function loadNetwork() {
 // --- Peer Detail ---
 
 function getPeerObservationCache() {
-  try {
-    return JSON.parse(localStorage.getItem(walletKey('peerObservationCache')) || '{}');
-  } catch (_) {
-    return {};
-  }
+  return udObj(userData.peerObservationCache);
 }
 
 function savePeerObservationCache(cache) {
-  localStorage.setItem(walletKey('peerObservationCache'), JSON.stringify(cache));
+  userData.peerObservationCache = udObj(cache);
+  persistUserData();
 }
 
 function formatAge(ms) {
