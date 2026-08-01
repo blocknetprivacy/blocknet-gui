@@ -130,7 +130,7 @@ async function mergeWithPending(outputs) {
 }
 // --- Encrypted user-data store (contacts, notes, and per-wallet caches), keyed by the wallet password ---
 function emptyUserData() {
-  return { contacts: [], txNotes: {}, txCache: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {} };
+  return { contacts: [], txNotes: {}, txCache: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {}, sendLabels: {} };
 }
 function udObj(x) { return (x && typeof x === 'object' && !Array.isArray(x)) ? x : {}; }
 
@@ -155,6 +155,7 @@ async function loadUserData() {
     userData.receivePrefs = udObj(parsed.receivePrefs);
     userData.peerGeoCache = udObj(parsed.peerGeoCache);
     userData.peerObservationCache = udObj(parsed.peerObservationCache);
+    userData.sendLabels = udObj(parsed.sendLabels);
     userDataReady = true;
   } catch (e) {
     userDataReady = false;
@@ -1373,6 +1374,16 @@ async function loadHistory() {
   var chainHeight = 0;
   try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
 
+  historySendTo = {};
+  try {
+    var sd = await api('/api/wallet/sends');
+    if (sd && Array.isArray(sd.sends)) {
+      sd.sends.forEach(function (s) {
+        if (s && s.txid && s.recipients && s.recipients[0]) historySendTo[s.txid] = s.recipients[0].address;
+      });
+    }
+  } catch (_) {}
+
   var hasOutputsArray = data && Array.isArray(data.outputs);
   var outputs = hasOutputsArray ? data.outputs : null;
   var fromCache = false;
@@ -1413,6 +1424,7 @@ async function loadHistory() {
 var historyOutputs = [];
 var historyChainHeight = 0;
 var historyFromCache = false;
+var historySendTo = {};
 
 function historyRowHtml(o, allNotes, chainHeight) {
   var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
@@ -1421,6 +1433,15 @@ function historyRowHtml(o, allNotes, chainHeight) {
   if (o.block_height && chainHeight >= o.block_height) {
     var confs = chainHeight - o.block_height + 1;
     confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
+  }
+  var toHtml = '';
+  if (o.spent) {
+    var lbl = (userData.sendLabels && userData.sendLabels[o.txid]) || '';
+    if (!lbl && historySendTo[o.txid]) {
+      var ra = historySendTo[o.txid];
+      lbl = contactNameForAddress(ra) || abbrAddr(ra);
+    }
+    if (lbl) toHtml = '<span class="d">to ' + escapeHtml(lbl) + '</span>';
   }
   return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
     '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
@@ -1431,6 +1452,7 @@ function historyRowHtml(o, allNotes, chainHeight) {
         ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
         : '<span class="d">Pending</span>') +
       '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
+      toHtml +
     '</div>' +
     memoHtml(o) +
     (noteText
@@ -1467,6 +1489,8 @@ function historyMatches(o, q) {
     o.txid || '',
     o.memo_hex ? hexToUtf8(o.memo_hex) : '',
     getTxNote(o.txid),
+    (userData.sendLabels && userData.sendLabels[o.txid]) || '',
+    historySendTo[o.txid] || '',
     formatBNT(o.amount),
     o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received')
   ].join(' ').toLowerCase();
@@ -2522,6 +2546,16 @@ function saveAddressBook(book) {
   persistUserData();
 }
 
+function contactNameForAddress(addr) {
+  if (!addr) return '';
+  var target = String(addr).toLowerCase();
+  var book = getAddressBook();
+  for (var i = 0; i < book.length; i++) {
+    if (book[i] && book[i].address && String(book[i].address).toLowerCase() === target) return book[i].name || '';
+  }
+  return '';
+}
+
 function renderAddressBook() {
   var list = document.getElementById('address-book-list');
   if (!list) return;
@@ -3332,6 +3366,22 @@ function finalizeSend(result, entries, recipientsPayload) {
   if (typeof result.change === 'number' && result.change > 0) sentMsg += ' · Change: ' + formatBNT(result.change) + ' BNT';
   showSendStatus(sentMsg, 'success');
   addPendingSend(result.txid, totalAtomic + (Number(result.fee) || 0), firstRecipient.memo_hex);
+  var primary = entries[0];
+  if (primary && result.txid) {
+    var label;
+    if (primary.row && primary.row._resolved && primary.row._resolved.handle && primary.row._resolved.verified) {
+      label = '$' + primary.row._resolved.handle;
+    } else {
+      var pa = primary.address || '';
+      label = contactNameForAddress(pa) || (pa ? abbrAddr(pa) : '');
+    }
+    if (label && entries.length > 1) label += ' +' + (entries.length - 1);
+    if (label) {
+      if (!userData.sendLabels) userData.sendLabels = {};
+      userData.sendLabels[result.txid] = label;
+      persistUserData();
+    }
+  }
   entries.forEach(function (ent) {
     if (ent.row._resolved && ent.row._resolved.handle && ent.row._resolved.verified) {
       var book = getAddressBook();
