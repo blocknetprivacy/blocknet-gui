@@ -481,7 +481,8 @@ function invoke(cmd, args) {
 
 var notifyReady = false;
 var notifyEnabled = true;
-var txNotifyState = null;
+var lastPendingUnconfirmed = -1;
+var confirmedSeen = null;
 var txNotifyTimer = null;
 
 function loadNotifyPref() {
@@ -520,48 +521,42 @@ function sendDesktopNotification(title, body) {
   } catch (_) {}
 }
 
-function processTxNotifications(outputs, silent) {
-  if (!Array.isArray(outputs)) return;
-  var seeding = txNotifyState === null;
-  if (seeding) txNotifyState = {};
-  var quiet = seeding || silent;
-  for (var i = 0; i < outputs.length; i++) {
-    var o = outputs[i];
-    if (!o || o.spent || !o.txid) continue;
-    var height = Number(o.block_height) || 0;
-    var prev = txNotifyState[o.txid];
-    if (quiet) {
-      if (prev === undefined || height > prev) txNotifyState[o.txid] = height;
-      continue;
-    }
-    if (prev === undefined) {
-      txNotifyState[o.txid] = height;
-      if (height > 0) {
-        sendDesktopNotification('Payment received', '+' + formatBNTShort(o.amount) + ' BNT');
-      } else {
-        sendDesktopNotification('Incoming payment', '+' + formatBNTShort(o.amount) + ' BNT pending');
-      }
-    } else if (prev === 0 && height > 0) {
-      txNotifyState[o.txid] = height;
-      sendDesktopNotification('Payment confirmed', '+' + formatBNTShort(o.amount) + ' BNT confirmed');
-    } else if (height > prev) {
-      txNotifyState[o.txid] = height;
-    }
-  }
-}
-
 async function pollTxNotifications() {
   try {
-    var silent = false;
-    try {
-      var bal = await api('/api/wallet/balance');
-      silent = !!(bal && bal.scanning);
-    } catch (_) {
-      silent = true;
+    var bal = null;
+    try { bal = await api('/api/wallet/balance'); } catch (_) {}
+    var scanning = !!(bal && bal.scanning);
+
+    // Incoming mempool funds are only visible in the balance (pending_unconfirmed),
+    // not in wallet history, so the pending alert is driven off the balance.
+    if (bal && !scanning) {
+      var pu = Number(bal.pending_unconfirmed) || 0;
+      if (lastPendingUnconfirmed < 0) {
+        lastPendingUnconfirmed = pu;
+      } else {
+        if (pu > lastPendingUnconfirmed) {
+          sendDesktopNotification('Incoming payment', '+' + formatBNTShort(pu - lastPendingUnconfirmed) + ' BNT pending');
+        }
+        lastPendingUnconfirmed = pu;
+      }
     }
-    var data = await api('/api/wallet/history');
+
+    // Confirmed incoming payments show up in history as new non-coinbase received outputs.
+    var data = null;
+    try { data = await api('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
-      processTxNotifications(data.outputs, silent);
+      var incoming = data.outputs.filter(function (o) {
+        return o && o.txid && !o.spent && !o.is_coinbase && o.block_height;
+      });
+      var seeding = confirmedSeen === null;
+      if (seeding) confirmedSeen = {};
+      incoming.forEach(function (o) {
+        if (confirmedSeen[o.txid]) return;
+        confirmedSeen[o.txid] = true;
+        if (!seeding && !scanning) {
+          sendDesktopNotification('Payment confirmed', '+' + formatBNTShort(o.amount) + ' BNT confirmed');
+        }
+      });
     }
   } catch (_) {}
 }
@@ -4214,7 +4209,8 @@ function stopPolling() {
     clearInterval(txNotifyTimer);
     txNotifyTimer = null;
   }
-  txNotifyState = null;
+  lastPendingUnconfirmed = -1;
+  confirmedSeen = null;
 }
 
 // --- Screen transitions ---
