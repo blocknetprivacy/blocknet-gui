@@ -746,7 +746,7 @@ body.platform-windows #password-screen {
 }
 
 /* Wide screens: the switcher becomes a left column beside the unlock panel */
-@media (min-width: 1200px) {
+@media (min-width: 1000px) {
   #unlock-layout.multi {
     flex-direction: row;
     align-items: flex-start;
@@ -914,11 +914,13 @@ body.platform-windows #app {
 }
 
 /* Responsive: Collapse sidebar on smaller screens */
-@media (max-width: 1199px) {
+@media (max-width: 999px) {
   .password-container {
     max-width: 420px;
   }
+}
 
+@media (max-width: 1199px) {
   #password-logo {
     width: 96px;
     height: 96px;
