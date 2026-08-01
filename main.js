@@ -1394,6 +1394,24 @@ function dismissQROverlay() {
 
 async function loadHistory() {
   const container = document.getElementById('history-list');
+  historyPreviewShown = false;
+
+  // Chain height (for confirmation counts) is a cheap call; fetch it first so
+  // the fast-preview rows can show confirmations too.
+  var chainHeight = 0;
+  try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
+  historyChainHeight = chainHeight;
+
+  // Fast first paint: render the first page from the paginated endpoint before
+  // the (potentially large) full-history fetch. Best-effort; ignore failures.
+  try {
+    var pg = await api('/api/wallet/history/page?limit=' + HISTORY_PAGE + '&offset=0&order=desc');
+    if (pg && Array.isArray(pg.outputs) && pg.outputs.length) {
+      renderHistoryPreview(pg.outputs);
+    }
+  } catch (_) {}
+
+  // Background: load the full list so search and full infinite-scroll work.
   var data = null;
   var loadFailed = false;
   try {
@@ -1402,9 +1420,6 @@ async function loadHistory() {
     loadFailed = true;
     console.warn('history load failed:', normalizeError(e));
   }
-
-  var chainHeight = 0;
-  try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
 
   historySendTo = {};
   historySendTime = {};
@@ -1431,23 +1446,32 @@ async function loadHistory() {
   if (outputs) outputs = await mergeWithPending(outputs);
 
   if (!outputs || outputs.length === 0) {
+    stopHistoryObserver();
+    // If the paginated preview already painted the first page but the full
+    // fetch failed, keep the preview instead of blanking it.
+    if (loadFailed && historyPreviewShown) {
+      container.insertAdjacentHTML('afterbegin', '<div class="tx-cache-note d">Couldn\'t load full history ; showing the first page. Search is unavailable until it loads.</div>');
+      return;
+    }
     historyOutputs = [];
     historyChainHeight = chainHeight;
     historyFromCache = fromCache;
-    renderHistoryBalanceSparkline([]);
     container.innerHTML = loadFailed
       ? '<div class="empty">Couldn\'t reach the node — check your connection and reopen History.</div>'
       : '<div class="empty">No transactions yet</div>';
     return;
   }
 
-  renderHistoryBalanceSparkline(outputs);
-
-  // Show newest first
+  // Newest first, matching the server's deterministic page order exactly so the
+  // preview's first page lines up with this full render (no reshuffle):
+  // pending first, then block height desc, then txid, then output index.
   const sorted = outputs.slice().sort(function (a, b) {
-    if (!a.block_height && b.block_height) return -1;
-    if (a.block_height && !b.block_height) return 1;
-    return b.block_height - a.block_height;
+    var aPending = !a.block_height;
+    var bPending = !b.block_height;
+    if (aPending !== bPending) return aPending ? -1 : 1;
+    if (a.block_height !== b.block_height) return b.block_height - a.block_height;
+    if (a.txid !== b.txid) return a.txid < b.txid ? -1 : 1;
+    return (a.output_index || 0) - (b.output_index || 0);
   });
 
   historyOutputs = sorted;
@@ -1503,25 +1527,105 @@ function historyRowHtml(o, allNotes, chainHeight) {
   '</div>';
 }
 
+// Incremental render: show the first page, then lazy-load more on scroll.
+// Busy wallets can have thousands of outputs; rendering them all at once
+// froze the UI. We keep the full sorted list in memory and only build rows
+// as they are needed.
+var HISTORY_PAGE = 20;
+var historyView = [];
+var historyRendered = 0;
+var historyNotesCache = {};
+var historyObserver = null;
+var historyPreviewShown = false;
+
+function stopHistoryObserver() {
+  if (historyObserver) { historyObserver.disconnect(); historyObserver = null; }
+}
+
+// One delegated click handler for the whole list, so appended rows need no
+// per-row wiring. Reassigned each render, so it never stacks.
+function bindHistoryClicks(container) {
+  container.onclick = function (e) {
+    var blockEl = e.target.closest('[data-block]');
+    if (blockEl) { e.stopPropagation(); showBlockDetail(blockEl.dataset.block); return; }
+    if (e.target.closest('.sv-copyable')) return; // copy has its own handler
+    var row = e.target.closest('.history-row[data-txid]');
+    if (row) showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' });
+  };
+}
+
+// Fast first paint: render the first page fetched from the paginated endpoint
+// before the full history arrives. Fully clickable; the full render supersedes
+// it a moment later once the background load finishes.
+function renderHistoryPreview(outputs) {
+  var container = document.getElementById('history-list');
+  if (!container) return;
+  var notes = getTxNotes();
+  container.innerHTML = outputs.map(function (o) {
+    return historyRowHtml(o, notes, historyChainHeight);
+  }).join('');
+  bindHistoryClicks(container);
+  wireCopyable(container);
+  historyPreviewShown = true;
+}
+
 function renderHistoryList(outputs) {
   const container = document.getElementById('history-list');
   if (!container) return;
+  stopHistoryObserver();
   if (!outputs || outputs.length === 0) {
     container.innerHTML = '<div class="empty">No matching transactions</div>';
     return;
   }
-  var allNotes = getTxNotes();
-  container.innerHTML = outputs.map(function (o) { return historyRowHtml(o, allNotes, historyChainHeight); }).join('');
-  if (historyFromCache) {
-    container.insertAdjacentHTML('afterbegin', '<div class="tx-cache-note d">Showing cached history ; resyncing blockchain</div>');
+  historyView = outputs;
+  historyRendered = 0;
+  historyNotesCache = getTxNotes();
+
+  var head = historyFromCache
+    ? '<div class="tx-cache-note d">Showing cached history ; resyncing blockchain</div>'
+    : '';
+  container.innerHTML = head + '<div id="history-sentinel" aria-hidden="true"></div>';
+
+  bindHistoryClicks(container);
+
+  appendHistoryPage();
+  fillHistoryViewport();
+
+  var sentinel = document.getElementById('history-sentinel');
+  if (sentinel && window.IntersectionObserver) {
+    historyObserver = new IntersectionObserver(function (entries) {
+      if (entries[0] && entries[0].isIntersecting) {
+        appendHistoryPage();
+        fillHistoryViewport();
+      }
+    }, { rootMargin: '400px' });
+    historyObserver.observe(sentinel);
   }
+}
+
+function appendHistoryPage() {
+  var container = document.getElementById('history-list');
+  var sentinel = document.getElementById('history-sentinel');
+  if (!container || !sentinel) return;
+  if (historyRendered >= historyView.length) { stopHistoryObserver(); sentinel.remove(); return; }
+  var slice = historyView.slice(historyRendered, historyRendered + HISTORY_PAGE);
+  var html = slice.map(function (o) { return historyRowHtml(o, historyNotesCache, historyChainHeight); }).join('');
+  sentinel.insertAdjacentHTML('beforebegin', html);
+  historyRendered += slice.length;
   wireCopyable(container);
-  container.querySelectorAll('.history-row[data-txid]').forEach(function (row) {
-    row.addEventListener('click', function () { showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' }); });
-  });
-  container.querySelectorAll('[data-block]').forEach(function (el) {
-    el.addEventListener('click', function (e) { e.stopPropagation(); showBlockDetail(el.dataset.block); });
-  });
+  if (historyRendered >= historyView.length) { stopHistoryObserver(); sentinel.remove(); }
+}
+
+// If the first page is shorter than the viewport, the observer never fires;
+// keep appending until the sentinel is pushed below the fold (or list is done).
+function fillHistoryViewport() {
+  var guard = 0;
+  var sentinel = document.getElementById('history-sentinel');
+  while (sentinel && historyRendered < historyView.length && guard++ < 200) {
+    if (sentinel.getBoundingClientRect().top > window.innerHeight + 400) break;
+    appendHistoryPage();
+    sentinel = document.getElementById('history-sentinel');
+  }
 }
 
 function historyMatches(o, q) {
@@ -1635,82 +1739,6 @@ async function exportHistoryCSV() {
     btn.textContent = 'Export failed';
     setTimeout(function () { btn.disabled = false; btn.textContent = 'Export CSV'; }, 3000);
   }
-}
-
-function renderHistoryBalanceSparkline(outputs) {
-  const root = document.getElementById('history-balance-sparkline');
-  if (!root) return;
-  if (!outputs || outputs.length < 2) {
-    root.innerHTML = '';
-    return;
-  }
-
-  const sorted = outputs.slice().sort((a, b) => {
-    const ah = Number(a.block_height || 0);
-    const bh = Number(b.block_height || 0);
-    if (ah !== bh) return ah - bh;
-    return Number(a.output_index || 0) - Number(b.output_index || 0);
-  });
-
-  const series = [{ height: Number(sorted[0].block_height || 0) - 1, value: 0 }];
-  let running = 0;
-  for (const out of sorted) {
-    const amount = Number(out.amount || 0);
-    running += out.spent ? -amount : amount;
-    series.push({
-      height: Number(out.block_height || 0),
-      value: running,
-    });
-  }
-
-  if (series.length < 2) {
-    root.innerHTML = '';
-    return;
-  }
-
-  const width = 1200;
-  const height = 280;
-  const padX = 6;
-  const padTop = 20;
-  const padBottom = 12;
-  const plotWidth = width - (padX * 2);
-  const plotHeight = height - padTop - padBottom;
-  const values = series.map(item => item.value);
-  const min = Math.min(0, Math.min.apply(null, values));
-  const max = Math.max(0, Math.max.apply(null, values));
-  const span = max - min || 1;
-  const baselineY = padTop + ((max - 0) / span) * plotHeight;
-
-  const points = series.map((item, i) => {
-    const x = padX + ((plotWidth * i) / (series.length - 1));
-    const y = padTop + ((max - item.value) / span) * plotHeight;
-    return { x, y };
-  });
-
-  const linePath = points.map((p, i) => (i === 0 ? 'M' : 'L') + p.x.toFixed(2) + ',' + p.y.toFixed(2)).join(' ');
-  const areaToBaselinePath = linePath +
-    ' L' + points[points.length - 1].x.toFixed(2) + ',' + baselineY.toFixed(2) +
-    ' L' + points[0].x.toFixed(2) + ',' + baselineY.toFixed(2) + ' Z';
-
-  root.innerHTML =
-    '<svg viewBox="0 0 ' + width + ' ' + height + '" preserveAspectRatio="none" role="img" aria-label="Balance trend">' +
-      '<defs>' +
-        '<clipPath id="history-over-clip"><rect x="0" y="0" width="' + width + '" height="' + baselineY.toFixed(2) + '" /></clipPath>' +
-        '<clipPath id="history-under-clip"><rect x="0" y="' + baselineY.toFixed(2) + '" width="' + width + '" height="' + (height - baselineY).toFixed(2) + '" /></clipPath>' +
-        '<linearGradient id="history-over-fill" x1="0" y1="0" x2="0" y2="1">' +
-          '<stop offset="0%" stop-color="#AF0" stop-opacity="0.22" />' +
-          '<stop offset="100%" stop-color="#AF0" stop-opacity="0" />' +
-        '</linearGradient>' +
-        '<linearGradient id="history-under-fill" x1="0" y1="0" x2="0" y2="1">' +
-          '<stop offset="0%" stop-color="orangered" stop-opacity="0" />' +
-          '<stop offset="100%" stop-color="orangered" stop-opacity="0.22" />' +
-        '</linearGradient>' +
-      '</defs>' +
-      '<path d="' + areaToBaselinePath + '" fill="url(#history-over-fill)" clip-path="url(#history-over-clip)" />' +
-      '<path d="' + areaToBaselinePath + '" fill="url(#history-under-fill)" clip-path="url(#history-under-clip)" />' +
-      '<path d="' + linePath + '" fill="none" stroke="#AF0" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#history-over-clip)" />' +
-      '<path d="' + linePath + '" fill="none" stroke="orangered" stroke-width="2.2" stroke-linejoin="round" stroke-linecap="round" clip-path="url(#history-under-clip)" />' +
-    '</svg>';
 }
 
 // --- Mining ---

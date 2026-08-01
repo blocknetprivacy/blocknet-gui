@@ -8,7 +8,7 @@
   <style>
     html, body { margin: 0; background: #000; }
   </style>
-  <link rel="stylesheet" href="styles.css?v=6">
+  <link rel="stylesheet" href="styles.css?v=8">
 </head>
 <body>
   <!-- Custom Titlebar -->
@@ -251,7 +251,7 @@
                 </div>
               </div>
             </div>
-            <button type="button" class="btn-secondary add-recipient-btn" id="add-recipient-btn">+ Add Recipient</button>
+            <button type="button" class="add-recipient-btn" id="add-recipient-btn">+ Add Recipient</button>
             <div class="coin-control-panel" id="coin-control-panel" style="display: none;">
               <div class="cc-header">
                 <span class="cc-title">Coin control</span>
@@ -325,14 +325,13 @@
 
       <!-- History -->
       <div id="view-history" class="view">
-        <div class="history-bg" aria-hidden="true">
-          <div class="history-sparkline" id="history-balance-sparkline"></div>
-        </div>
         <div class="container">
           <div class="history-header-row">
             <h1>History</h1>
-            <input type="text" id="history-search" class="history-search" placeholder="Search amount, memo, note, txid" autocorrect="off" autocapitalize="off" spellcheck="false">
-            <button class="btn-secondary" id="export-csv-btn">Export CSV</button>
+          </div>
+          <input type="text" id="history-search" class="history-search" placeholder="Search amount, memo, note, txid" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <div class="history-toolbar">
+            <button id="export-csv-btn">Export CSV</button>
           </div>
           <div id="history-list">Loading...</div>
         </div>
@@ -904,6 +903,6 @@
   </div>
 
   <script src="qr.js"></script>
-  <script src="main.js?v=14"></script>
+  <script src="main.js?v=17"></script>
 </body>
 </html>
