@@ -746,7 +746,7 @@ body.platform-windows #password-screen {
 }
 
 /* Wide screens: the switcher becomes a left column beside the unlock panel */
-@media (min-width: 1000px) {
+@media (min-width: 900px) {
   #unlock-layout.multi {
     flex-direction: row;
     align-items: flex-start;
@@ -937,11 +937,15 @@ body.platform-windows #app {
     padding-left: 0;
     padding-top: 14px;
   }
+}
 
+/* Condense the sidebar only on genuinely narrow windows, so the default
+   1000px window shows the full sidebar. */
+@media (max-width: 899px) {
   #sidebar {
     width: 60px;
   }
-  
+
   .nav-header {
     padding: 20px 0;
     text-align: center;
@@ -957,7 +961,7 @@ body.platform-windows #app {
     display: block;
     margin: 0 auto;
   }
-  
+
   .status-dot {
     position: absolute;
     top: auto;
@@ -966,12 +970,12 @@ body.platform-windows #app {
     left: 12px;
     z-index: 1000;
   }
-  
+
   .nav-link {
     padding: 12px 18px;
     justify-content: center;
   }
-  
+
   .nav-text {
     display: none;
   }

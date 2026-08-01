@@ -31,7 +31,7 @@
     "windows": [
       {
         "title": "Blocknet",
-        "width": 1200,
+        "width": 1000,
         "height": 800,
         "backgroundColor": "#000000",
         "resizable": true,
