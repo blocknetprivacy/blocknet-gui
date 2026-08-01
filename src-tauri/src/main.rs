@@ -995,7 +995,7 @@ async fn import_wallet_file(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn backup_wallet(app: AppHandle) -> Result<String, String> {
+async fn backup_wallet(app: AppHandle, default_name: Option<String>) -> Result<String, String> {
     use tauri_plugin_dialog::DialogExt;
 
     let src = get_wallet_path(&app)?;
@@ -1006,7 +1006,9 @@ async fn backup_wallet(app: AppHandle) -> Result<String, String> {
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
         .unwrap_or_else(|| "wallet".to_string());
-    let default_name = format!("{}-backup.dat", stem);
+    let default_name = default_name
+        .filter(|n| !n.trim().is_empty())
+        .unwrap_or_else(|| format!("{}-backup.dat", stem));
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     app.dialog()

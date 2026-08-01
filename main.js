@@ -1407,11 +1407,14 @@ async function loadHistory() {
   try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
 
   historySendTo = {};
+  historySendTime = {};
   try {
     var sd = await api('/api/wallet/sends');
     if (sd && Array.isArray(sd.sends)) {
       sd.sends.forEach(function (s) {
-        if (s && s.txid && s.recipients && s.recipients[0]) historySendTo[s.txid] = s.recipients[0].address;
+        if (!s || !s.txid) return;
+        if (s.recipients && s.recipients[0]) historySendTo[s.txid] = s.recipients[0].address;
+        if (s.timestamp) historySendTime[s.txid] = Number(s.timestamp) || 0;
       });
     }
   } catch (_) {}
@@ -1457,6 +1460,7 @@ var historyOutputs = [];
 var historyChainHeight = 0;
 var historyFromCache = false;
 var historySendTo = {};
+var historySendTime = {};
 
 function historyRowHtml(o, allNotes, chainHeight) {
   var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
@@ -1475,6 +1479,10 @@ function historyRowHtml(o, allNotes, chainHeight) {
     }
     if (lbl) toHtml = '<span class="d">to ' + escapeHtml(lbl) + '</span>';
   }
+  var dateHtml = '';
+  if (o.spent && historySendTime[o.txid]) {
+    dateHtml = '<span class="d">· ' + escapeHtml(formatTxTime(historySendTime[o.txid])) + '</span>';
+  }
   return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
     '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
       (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
@@ -1485,6 +1493,7 @@ function historyRowHtml(o, allNotes, chainHeight) {
         : '<span class="d">Pending</span>') +
       '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
       toHtml +
+      dateHtml +
     '</div>' +
     memoHtml(o) +
     (noteText
@@ -4116,7 +4125,12 @@ async function handleBackupWallet() {
   btn.disabled = true;
   btn.textContent = 'Choose location...';
   try {
-    var savedPath = await invoke('backup_wallet');
+    var now = new Date();
+    var pad = function (n) { return String(n).padStart(2, '0'); };
+    var ts = now.getFullYear() + pad(now.getMonth() + 1) + pad(now.getDate()) + '-' +
+      pad(now.getHours()) + pad(now.getMinutes()) + pad(now.getSeconds());
+    var stem = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
+    var savedPath = await invoke('backup_wallet', { defaultName: stem + '-backup-' + ts + '.dat' });
     if (status) {
       status.textContent = 'Backed up to ' + savedPath;
       status.className = 'status-message success';
@@ -5931,6 +5945,7 @@ initSignVerifyTabs();
 (function () {
   var onBtn = document.getElementById('notif-enabled-on');
   var offBtn = document.getElementById('notif-enabled-off');
+  var hint = document.getElementById('notif-blocked-hint');
   if (!onBtn || !offBtn) return;
 
   loadNotifyPref();
@@ -5941,16 +5956,19 @@ initSignVerifyTabs();
   }
   paint();
 
-  onBtn.addEventListener('click', function () {
+  onBtn.addEventListener('click', async function () {
     notifyEnabled = true;
     saveNotifyPref();
     paint();
-    initNotifications();
+    if (hint) hint.style.display = 'none';
+    await initNotifications();
+    if (hint) hint.style.display = notifyReady ? 'none' : 'block';
   });
   offBtn.addEventListener('click', function () {
     notifyEnabled = false;
     saveNotifyPref();
     paint();
+    if (hint) hint.style.display = 'none';
   });
 })();
 document.getElementById('create-wallet-btn').addEventListener('click', showCreateForm);
