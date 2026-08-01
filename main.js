@@ -5259,6 +5259,19 @@ async function init() {
 
 // --- TX Detail ---
 
+function currentTimeZone() {
+  try { var tz = localStorage.getItem('tzOverride'); if (tz) return tz; } catch (_) {}
+  try { return Intl.DateTimeFormat().resolvedOptions().timeZone; } catch (_) { return undefined; }
+}
+function formatTxTime(secs) {
+  if (!secs) return '';
+  var opts = { year: 'numeric', month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' };
+  var tz = currentTimeZone();
+  if (tz) opts.timeZone = tz;
+  try { return new Date(secs * 1000).toLocaleString([], opts); }
+  catch (_) { return new Date(secs * 1000).toLocaleString(); }
+}
+
 async function showTxDetail(txid, opts) {
   navigate('tx-detail');
   var container = document.getElementById('tx-detail-content');
@@ -5275,6 +5288,12 @@ async function showTxDetail(txid, opts) {
       ? '<a class="detail-link" data-block="' + data.block_height + '">Block ' + data.block_height + '</a>'
       : 'Pending';
 
+    var blockTime = 0;
+    if (data.block_height) {
+      try { var bd = await api('/api/block/' + data.block_height); blockTime = Number(bd && bd.timestamp) || 0; } catch (_) {}
+    }
+    var dateHtml = blockTime ? escapeHtml(formatTxTime(blockTime)) : '<span class="d">Pending</span>';
+
     container.innerHTML =
       '<div class="detail-grid">' +
         '<div class="detail-label">TX Hash</div>' +
@@ -5283,6 +5302,8 @@ async function showTxDetail(txid, opts) {
         '<div class="detail-value">' + status + '</div>' +
         '<div class="detail-label">Block</div>' +
         '<div class="detail-value">' + blockLink + '</div>' +
+        '<div class="detail-label">Date</div>' +
+        '<div class="detail-value">' + dateHtml + '</div>' +
         '<div class="detail-label">Fee</div>' +
         '<div class="detail-value">' + formatBNT(tx.fee) + ' BNT</div>' +
         '<div class="detail-label">Inputs</div>' +
@@ -5730,6 +5751,24 @@ document.getElementById('lock-wallet-btn').addEventListener('click', handleLockW
     autoLockMinutes = isNaN(n) ? 0 : n;
     saveAutoLockPref();
     resetIdleTimer();
+  });
+})();
+(function () {
+  var sel = document.getElementById('tz-override-select');
+  if (!sel) return;
+  var detected = '';
+  try { detected = Intl.DateTimeFormat().resolvedOptions().timeZone || ''; } catch (_) {}
+  var zones = [];
+  try { if (typeof Intl.supportedValuesOf === 'function') zones = Intl.supportedValuesOf('timeZone'); } catch (_) {}
+  var html = ['<option value="">System' + (detected ? ' (' + detected + ')' : '') + '</option>'];
+  for (var i = 0; i < zones.length; i++) html.push('<option value="' + zones[i] + '">' + zones[i] + '</option>');
+  sel.innerHTML = html.join('');
+  try { sel.value = localStorage.getItem('tzOverride') || ''; } catch (_) {}
+  sel.addEventListener('change', function () {
+    try {
+      if (sel.value) localStorage.setItem('tzOverride', sel.value);
+      else localStorage.removeItem('tzOverride');
+    } catch (_) {}
   });
 })();
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
