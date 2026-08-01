@@ -238,6 +238,9 @@ function resetUserData() {
   userDataReady = false;
   userDataDirty = false;
   userDataWriting = false;
+  historyOutputs = [];
+  historyChainHeight = 0;
+  historyFromCache = false;
 }
 
 function getTxNotes() {
@@ -1071,6 +1074,10 @@ async function loadDashboard() {
           var blockLabel;
           if (o.block_height) {
             blockLabel = 'Block ' + o.block_height;
+            if (statusHeight >= o.block_height) {
+              var dconfs = statusHeight - o.block_height + 1;
+              blockLabel += ' · ' + dconfs + ' confirmation' + (dconfs !== 1 ? 's' : '');
+            }
           } else if (!o.spent && dashPendingEta > 0) {
             blockLabel = dashPendingEta < 60 ? 'Pending · <1 min' : 'Pending · ~' + formatEta(dashPendingEta);
           } else {
@@ -1383,6 +1390,9 @@ async function loadHistory() {
   if (outputs) outputs = await mergeWithPending(outputs);
 
   if (!outputs || outputs.length === 0) {
+    historyOutputs = [];
+    historyChainHeight = chainHeight;
+    historyFromCache = fromCache;
     renderHistoryBalanceSparkline([]);
     container.innerHTML = loadFailed
       ? '<div class="empty">Couldn\'t reach the node — check your connection and reopen History.</div>'
@@ -1399,44 +1409,80 @@ async function loadHistory() {
     return b.block_height - a.block_height;
   });
 
-  var allNotes = getTxNotes();
-  container.innerHTML = sorted.map(o => {
-    const typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
-    var noteText = allNotes[o.txid] || '';
-    var confHtml = '';
-    if (o.block_height && chainHeight >= o.block_height) {
-      var confs = chainHeight - o.block_height + 1;
-      confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
-    }
-    return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
-      '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
-        (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
-      '</div>' +
-      '<div class="history-meta">' +
-        (o.block_height
-          ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
-          : '<span class="d">Pending</span>') +
-        '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
-      '</div>' +
-      memoHtml(o) +
-      (noteText
-        ? '<div class="history-note">' + escapeHtml(noteText) + '</div>'
-        : '<div class="note-add">+ add note</div>') +
-      '<div class="history-tx d">' + copyable(o.txid, o.txid.substring(0, 24) + '...') + '</div>' +
-    '</div>';
-  }).join('');
+  historyOutputs = sorted;
+  historyChainHeight = chainHeight;
+  historyFromCache = fromCache;
+  filterHistory();
+}
 
-  if (fromCache) {
+var historyOutputs = [];
+var historyChainHeight = 0;
+var historyFromCache = false;
+
+function historyRowHtml(o, allNotes, chainHeight) {
+  var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
+  var noteText = allNotes[o.txid] || '';
+  var confHtml = '';
+  if (o.block_height && chainHeight >= o.block_height) {
+    var confs = chainHeight - o.block_height + 1;
+    confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
+  }
+  return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
+    '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
+      (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
+    '</div>' +
+    '<div class="history-meta">' +
+      (o.block_height
+        ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
+        : '<span class="d">Pending</span>') +
+      '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
+    '</div>' +
+    memoHtml(o) +
+    (noteText
+      ? '<div class="history-note">' + escapeHtml(noteText) + '</div>'
+      : '<div class="note-add">+ add note</div>') +
+    '<div class="history-tx d">' + copyable(o.txid, o.txid.substring(0, 24) + '...') + '</div>' +
+  '</div>';
+}
+
+function renderHistoryList(outputs) {
+  const container = document.getElementById('history-list');
+  if (!container) return;
+  if (!outputs || outputs.length === 0) {
+    container.innerHTML = '<div class="empty">No matching transactions</div>';
+    return;
+  }
+  var allNotes = getTxNotes();
+  container.innerHTML = outputs.map(function (o) { return historyRowHtml(o, allNotes, historyChainHeight); }).join('');
+  if (historyFromCache) {
     container.insertAdjacentHTML('afterbegin', '<div class="tx-cache-note d">Showing cached history ; resyncing blockchain</div>');
   }
-
   wireCopyable(container);
-  container.querySelectorAll('.history-row[data-txid]').forEach(row => {
+  container.querySelectorAll('.history-row[data-txid]').forEach(function (row) {
     row.addEventListener('click', function () { showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' }); });
   });
   container.querySelectorAll('[data-block]').forEach(function (el) {
     el.addEventListener('click', function (e) { e.stopPropagation(); showBlockDetail(el.dataset.block); });
   });
+}
+
+function historyMatches(o, q) {
+  if (!q) return true;
+  var hay = [
+    o.txid || '',
+    o.memo_hex ? hexToUtf8(o.memo_hex) : '',
+    getTxNote(o.txid),
+    formatBNT(o.amount),
+    o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received')
+  ].join(' ').toLowerCase();
+  return hay.indexOf(q) !== -1;
+}
+
+function filterHistory() {
+  var input = document.getElementById('history-search');
+  var q = input ? String(input.value || '').trim().toLowerCase() : '';
+  var list = q ? historyOutputs.filter(function (o) { return historyMatches(o, q); }) : historyOutputs;
+  renderHistoryList(list);
 }
 
 function csvField(s) {
@@ -3880,6 +3926,32 @@ function showSettingsStatus(msg, type) {
   el.style.display = 'block';
 }
 
+async function handleBackupWallet() {
+  var btn = document.getElementById('backup-wallet-btn');
+  var status = document.getElementById('backup-wallet-status');
+  var prev = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Choose location...';
+  try {
+    var savedPath = await invoke('backup_wallet');
+    if (status) {
+      status.textContent = 'Backed up to ' + savedPath;
+      status.className = 'status-message success';
+      status.style.display = 'block';
+    }
+  } catch (e) {
+    var msg = normalizeError(e);
+    if (msg !== 'Dialog cancelled' && msg !== 'No location selected' && status) {
+      status.textContent = msg;
+      status.className = 'status-message error';
+      status.style.display = 'block';
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
 async function handleWalletAudit() {
   var btn = document.getElementById('wallet-audit-btn');
   var el = document.getElementById('wallet-audit-result');
@@ -4028,8 +4100,53 @@ async function handleRealtimeEvent(payload) {
   } catch (_) {}
 }
 
+// --- Auto-lock on idle ---
+var autoLockMinutes = 15;
+var idleTimer = null;
+var idleActivityThrottle = false;
+
+function loadAutoLockPref() {
+  try {
+    var v = localStorage.getItem('autoLockMinutes');
+    if (v !== null) { var n = parseInt(v, 10); if (!isNaN(n)) autoLockMinutes = n; }
+  } catch (_) {}
+}
+function saveAutoLockPref() {
+  try { localStorage.setItem('autoLockMinutes', String(autoLockMinutes)); } catch (_) {}
+}
+function clearIdleTimer() {
+  if (idleTimer) { clearTimeout(idleTimer); idleTimer = null; }
+}
+function resetIdleTimer() {
+  clearIdleTimer();
+  if (!autoLockMinutes || autoLockMinutes <= 0) return;
+  if (!sessionPassword) return;
+  idleTimer = setTimeout(function () {
+    idleTimer = null;
+    if (sessionPassword) handleLockWallet();
+  }, autoLockMinutes * 60 * 1000);
+}
+function onUserActivity() {
+  if (idleActivityThrottle) return;
+  if (!autoLockMinutes || !sessionPassword) return;
+  idleActivityThrottle = true;
+  setTimeout(function () { idleActivityThrottle = false; }, 3000);
+  resetIdleTimer();
+}
+function startIdleWatch() {
+  loadAutoLockPref();
+  resetIdleTimer();
+}
+function stopIdleWatch() {
+  clearIdleTimer();
+}
+['mousemove', 'mousedown', 'keydown', 'touchstart', 'wheel', 'scroll'].forEach(function (ev) {
+  document.addEventListener(ev, onUserActivity, { passive: true });
+});
+
 function startPolling() {
   stopPolling();
+  startIdleWatch();
 
   // Start daemon SSE bridge in Rust.
   invoke('start_api_events').catch(function (e) {
@@ -4075,6 +4192,7 @@ function startPolling() {
 }
 
 function stopPolling() {
+  stopIdleWatch();
   if (realtimeUnlisten) {
     try { realtimeUnlisten(); } catch (_) {}
     realtimeUnlisten = null;
@@ -5500,6 +5618,7 @@ document.getElementById('mining-toggle').addEventListener('click', toggleMining)
 document.getElementById('threads-inc').addEventListener('click', function () { changeThreads(1); });
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
+document.getElementById('history-search').addEventListener('input', filterHistory);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
 (function () {
   var firstRow = getFirstRecipientRow();
@@ -5509,9 +5628,22 @@ document.getElementById('save-contact-btn').addEventListener('click', handleSave
   if (addBtn) addBtn.addEventListener('click', function () { addRecipientRow(); });
 })();
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
+(function () {
+  var sel = document.getElementById('auto-lock-select');
+  if (!sel) return;
+  loadAutoLockPref();
+  sel.value = String(autoLockMinutes);
+  sel.addEventListener('change', function () {
+    var n = parseInt(sel.value, 10);
+    autoLockMinutes = isNaN(n) ? 0 : n;
+    saveAutoLockPref();
+    resetIdleTimer();
+  });
+})();
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
 document.getElementById('wallet-audit-btn').addEventListener('click', handleWalletAudit);
+document.getElementById('backup-wallet-btn').addEventListener('click', handleBackupWallet);
 document.getElementById('wallet-rescan-btn').addEventListener('click', handleWalletRescan);
 document.getElementById('certify-chain-btn').addEventListener('click', handleCertifyChain);
 document.getElementById('peer-detail-back').addEventListener('click', navigateBack);

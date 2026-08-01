@@ -322,6 +322,7 @@
         <div class="container">
           <div class="history-header-row">
             <h1>History</h1>
+            <input type="text" id="history-search" class="history-search" placeholder="Search amount, memo, note, txid" autocorrect="off" autocapitalize="off" spellcheck="false">
             <button class="btn-secondary" id="export-csv-btn">Export CSV</button>
           </div>
           <div id="history-list">Loading...</div>
@@ -502,6 +503,30 @@
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
+                      <span class="settings-item-title">Auto-lock</span>
+                      <span
+                        class="settings-help"
+                        name="auto-lock-help"
+                        tabindex="0"
+                        aria-label="Automatically lock the wallet after a period of no activity."
+                        title="Automatically lock the wallet after a period of no activity."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Automatically lock the wallet after a period of no keyboard or mouse activity.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <select id="auto-lock-select" class="auto-lock-select">
+                      <option value="0">Off</option>
+                      <option value="5">5 minutes</option>
+                      <option value="15">15 minutes</option>
+                      <option value="30">30 minutes</option>
+                    </select>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
                       <span class="settings-item-title">Check Wallet Health</span>
                       <span
                         class="settings-help"
@@ -516,6 +541,26 @@
                   <div class="settings-item-control">
                     <button class="btn-primary" id="wallet-audit-btn">Check Wallet Health</button>
                     <div id="wallet-audit-result" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Backup Wallet File</span>
+                      <span
+                        class="settings-help"
+                        name="backup-wallet-help"
+                        tabindex="0"
+                        aria-label="Saves a copy of this wallet's encrypted .dat file to a location you choose."
+                        title="Saves a copy of this wallet's encrypted .dat file to a location you choose."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Save a copy of this wallet's encrypted .dat file somewhere safe. It stays encrypted; keep it offline.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <button class="btn-primary" id="backup-wallet-btn">Backup Wallet File</button>
+                    <div id="backup-wallet-status" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
               </div>
@@ -797,6 +842,6 @@
   </div>
 
   <script src="qr.js"></script>
-  <script src="main.js?v=7"></script>
+  <script src="main.js?v=8"></script>
 </body>
 </html>

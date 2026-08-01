@@ -995,6 +995,40 @@ async fn import_wallet_file(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
+async fn backup_wallet(app: AppHandle) -> Result<String, String> {
+    use tauri_plugin_dialog::DialogExt;
+
+    let src = get_wallet_path(&app)?;
+    if !src.exists() {
+        return Err("Wallet file not found".to_string());
+    }
+    let stem = src
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "wallet".to_string());
+    let default_name = format!("{}-backup.dat", stem);
+
+    let (tx, rx) = tokio::sync::oneshot::channel();
+    app.dialog()
+        .file()
+        .set_file_name(&default_name)
+        .add_filter("Wallet Files", &["dat"])
+        .save_file(move |file_path| {
+            let _ = tx.send(file_path);
+        });
+
+    let file = rx.await
+        .map_err(|_| "Dialog cancelled".to_string())?
+        .ok_or("No location selected".to_string())?;
+
+    let dest = file.as_path().ok_or("Invalid path".to_string())?.to_path_buf();
+
+    std::fs::copy(&src, &dest).map_err(|e| format!("Backup failed: {}", e))?;
+
+    Ok(dest.to_string_lossy().to_string())
+}
+
+#[tauri::command]
 async fn get_wallet_version(app: AppHandle) -> Result<String, String> {
     daemon_version_string(&app)
 }
@@ -1223,6 +1257,7 @@ async fn main() {
             rename_wallet,
             delete_wallet,
             import_wallet_file,
+            backup_wallet,
             get_wallet_version,
             get_daemon_version,
             get_app_version,

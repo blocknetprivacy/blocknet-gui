@@ -1701,6 +1701,21 @@ body.platform-windows #app {
   margin-bottom: 0;
 }
 
+.history-search {
+  flex: 1;
+  max-width: 320px;
+  margin: 0 16px;
+  background: #000;
+  border: 1px solid #333;
+  color: #eee;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 7px 10px;
+  box-sizing: border-box;
+}
+.history-search:focus { outline: none; border-color: #af0; }
+.history-search::placeholder { color: #666; }
+
 #view-history {
   position: relative;
   overflow: hidden;
@@ -2509,6 +2524,17 @@ textarea:focus {
   font-size: 12px;
   line-height: 1.5;
 }
+
+.auto-lock-select {
+  background: #000;
+  border: 1px solid #333;
+  color: #eee;
+  font-family: inherit;
+  font-size: 13px;
+  padding: 6px 10px;
+  cursor: pointer;
+}
+.auto-lock-select:focus { outline: none; border-color: #af0; }
 
 .settings-item-control {
   width: 100%;
