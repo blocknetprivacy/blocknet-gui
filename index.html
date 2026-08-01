@@ -8,7 +8,7 @@
   <style>
     html, body { margin: 0; background: #000; }
   </style>
-  <link rel="stylesheet" href="styles.css?v=4">
+  <link rel="stylesheet" href="styles.css?v=5">
 </head>
 <body>
   <!-- Custom Titlebar -->
@@ -252,6 +252,14 @@
               </div>
             </div>
             <button type="button" class="btn-secondary add-recipient-btn" id="add-recipient-btn">+ Add Recipient</button>
+            <div class="coin-control-panel" id="coin-control-panel" style="display: none;">
+              <div class="cc-header">
+                <span class="cc-title">Coin control</span>
+                <button type="button" class="btn-secondary" id="cc-refresh-btn">Choose coins</button>
+              </div>
+              <div class="cc-summary" id="cc-summary">Auto-select (no specific coins chosen)</div>
+              <div class="cc-list" id="cc-list"></div>
+            </div>
             <div class="send-total" id="send-total" style="display: none;">
               <span class="send-total-label">Total</span>
               <span class="send-total-value" id="send-total-value">0.00000000 BNT</span>
@@ -637,6 +645,33 @@
             </section>
 
             <section class="settings-category">
+              <h2>Advanced</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Coin control</span>
+                      <span
+                        class="settings-help"
+                        name="coin-control-help"
+                        tabindex="0"
+                        aria-label="Pick exactly which of your coins to spend when sending. Helps manage output fragmentation and privacy. For advanced users."
+                        title="Pick exactly which of your coins to spend when sending. Helps manage output fragmentation and privacy. For advanced users."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Pick exactly which of your coins to spend when sending. Helps manage output fragmentation and privacy. Leave off unless you know you need it.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <div class="payment-link-toggle" id="coin-control-toggle">
+                      <button type="button" class="payment-link-mode" id="coin-control-on">On</button>
+                      <button type="button" class="payment-link-mode" id="coin-control-off">Off</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
               <h2>Wallets</h2>
               <div class="wallet-active" id="wallet-active-display"></div>
               <div class="wallet-list" id="wallet-list"></div>
@@ -867,6 +902,6 @@
   </div>
 
   <script src="qr.js"></script>
-  <script src="main.js?v=13"></script>
+  <script src="main.js?v=14"></script>
 </body>
 </html>

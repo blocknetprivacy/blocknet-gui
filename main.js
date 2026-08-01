@@ -735,7 +735,7 @@ async function loadView(view, gen) {
     if (gen !== navGeneration) return;
     switch (view) {
       case 'dashboard': await loadDashboard(); break;
-      case 'send': renderAddressBook(); break;
+      case 'send': renderAddressBook(); updateCoinControlVisibility(); break;
       case 'receive': await loadReceive(); break;
       case 'history': await loadHistory(); break;
       case 'mining': await loadMining(); break;
@@ -3139,6 +3139,91 @@ function applyPaymentRequestToRow(row, raw, silent) {
   return true;
 }
 
+// --- Coin control (opt-in, off by default) ---
+var coinControlEnabled = false;
+var ccOutputs = [];
+var ccSelected = {};
+
+function loadCoinControlPref() {
+  try { coinControlEnabled = localStorage.getItem('coinControlEnabled') === 'true'; } catch (_) {}
+}
+function saveCoinControlPref() {
+  try { localStorage.setItem('coinControlEnabled', coinControlEnabled ? 'true' : 'false'); } catch (_) {}
+}
+function ccKey(o) { return o.txid + ':' + o.output_index; }
+function getSelectedInputs() {
+  return ccOutputs
+    .filter(function (o) { return ccSelected[ccKey(o)]; })
+    .map(function (o) { return { txid: o.txid, output_index: o.output_index }; });
+}
+function updateCoinControlVisibility() {
+  var panel = document.getElementById('coin-control-panel');
+  if (!panel) return;
+  if (coinControlEnabled) {
+    panel.style.display = '';
+  } else {
+    panel.style.display = 'none';
+    ccSelected = {};
+  }
+}
+function updateCcSummary() {
+  var el = document.getElementById('cc-summary');
+  if (!el) return;
+  var sel = ccOutputs.filter(function (o) { return ccSelected[ccKey(o)]; });
+  if (!sel.length) {
+    el.textContent = 'Auto-select (no specific coins chosen)';
+  } else {
+    var total = sel.reduce(function (s, o) { return s + (Number(o.amount) || 0); }, 0);
+    el.textContent = sel.length + ' coin' + (sel.length !== 1 ? 's' : '') + ' selected · ' + formatBNT(total) + ' BNT';
+  }
+}
+function renderCoinList() {
+  var list = document.getElementById('cc-list');
+  if (!list) return;
+  var spendable = ccOutputs.filter(function (o) { return o && o.status === 'unspent'; });
+  if (!spendable.length) {
+    list.innerHTML = '<div class="empty">No spendable coins right now (some may still be confirming).</div>';
+    updateCcSummary();
+    return;
+  }
+  spendable.sort(function (a, b) { return (Number(b.amount) || 0) - (Number(a.amount) || 0); });
+  list.innerHTML = spendable.map(function (o) {
+    var k = ccKey(o);
+    return '<label class="cc-row"><input type="checkbox" class="cc-check" data-k="' + escapeHtml(k) + '"' + (ccSelected[k] ? ' checked' : '') + '>' +
+      '<span class="cc-amount g">' + formatBNT(o.amount) + ' BNT</span>' +
+      '<span class="cc-meta d">' + (o.type === 'coinbase' ? 'mining · ' : '') + (Number(o.confirmations) || 0) + ' confs</span>' +
+      '<span class="cc-tx d">' + escapeHtml(String(o.txid).substring(0, 12)) + '...:' + o.output_index + '</span>' +
+    '</label>';
+  }).join('');
+  list.querySelectorAll('.cc-check').forEach(function (cb) {
+    cb.addEventListener('change', function () {
+      if (cb.checked) ccSelected[cb.dataset.k] = true; else delete ccSelected[cb.dataset.k];
+      updateCcSummary();
+    });
+  });
+  updateCcSummary();
+}
+async function loadCoinOutputs() {
+  var list = document.getElementById('cc-list');
+  if (list) list.innerHTML = '<div class="d">Loading coins...</div>';
+  try {
+    var data = await api('/api/wallet/outputs');
+    ccOutputs = (data && Array.isArray(data.outputs)) ? data.outputs : [];
+    var valid = {};
+    ccOutputs.forEach(function (o) { valid[ccKey(o)] = true; });
+    Object.keys(ccSelected).forEach(function (k) { if (!valid[k]) delete ccSelected[k]; });
+    renderCoinList();
+  } catch (e) {
+    if (list) list.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
+  }
+}
+function clearCoinSelection() {
+  ccSelected = {};
+  var list = document.getElementById('cc-list');
+  if (list) list.innerHTML = '';
+  updateCcSummary();
+}
+
 async function handleSend(e) {
   e.preventDefault();
   const btn = document.getElementById('send-submit');
@@ -3253,7 +3338,10 @@ async function handleSend(e) {
       return;
     }
   } catch (_) {}
-  var fingerprint = JSON.stringify(entries.map(function (e) { return [e.address, e.atomic, e.memo]; }));
+  var ccActive = coinControlEnabled && getSelectedInputs().length > 0;
+  var ccInputs = ccActive ? getSelectedInputs() : null;
+  var sendEndpoint = ccActive ? '/api/wallet/send/advanced' : '/api/wallet/send';
+  var fingerprint = JSON.stringify([entries.map(function (e) { return [e.address, e.atomic, e.memo]; }), ccInputs]);
   if (!sendArmed || fingerprint !== pendingSendFingerprint) {
     var dryRunRecipients = entries.map(function (e) {
       var r = { address: e.address, amount: e.atomic };
@@ -3265,9 +3353,11 @@ async function handleSend(e) {
     btn.textContent = 'Estimating fee...';
     showSendStatus('Estimating network fee...', 'info');
     try {
-      feePreview = await api('/api/wallet/send', {
+      var dryBody = { recipients: dryRunRecipients, dry_run: true };
+      if (ccActive) dryBody.inputs = ccInputs;
+      feePreview = await api(sendEndpoint, {
         method: 'POST',
-        body: { recipients: dryRunRecipients, dry_run: true },
+        body: dryBody,
       });
     } catch (err) {
       showSendStatus(normalizeError(err), 'error');
@@ -3332,6 +3422,7 @@ async function handleSend(e) {
     return r;
   });
   const sendPayload = { recipients: recipientsPayload };
+  if (ccActive) sendPayload.inputs = ccInputs;
   const payloadKey = JSON.stringify(sendPayload);
   const now = Date.now();
   let idempotencyKey = null;
@@ -3358,7 +3449,7 @@ async function handleSend(e) {
     var attempt = 0;
     while (true) {
       try {
-        const result = await api('/api/wallet/send', {
+        const result = await api(sendEndpoint, {
           method: 'POST',
           body: sendPayload,
           headers: {
@@ -3369,7 +3460,7 @@ async function handleSend(e) {
         break;
       } catch (e) {
         const msg = normalizeError(e);
-        if (isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
+        if (!ccActive && isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
           attempt++;
           // Definitive rejection — the tx was never broadcast — so it's safe to
           // rotate to a fresh idempotency key, which makes the daemon re-select
@@ -3388,7 +3479,7 @@ async function handleSend(e) {
           continue;
         }
         if (msg.toLowerCase().includes('request failed:')) {
-          var handled = await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
+          var handled = ccActive ? false : await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
           if (!handled) {
             showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
           }
@@ -3442,6 +3533,7 @@ function finalizeSend(result, entries, recipientsPayload) {
     }
   });
   pendingSendIdempotency = null;
+  clearCoinSelection();
   resetSendForm();
   dashForceRefresh = true;
 }
@@ -5770,6 +5862,22 @@ document.getElementById('lock-wallet-btn').addEventListener('click', handleLockW
       else localStorage.removeItem('tzOverride');
     } catch (_) {}
   });
+})();
+(function () {
+  var onBtn = document.getElementById('coin-control-on');
+  var offBtn = document.getElementById('coin-control-off');
+  var refresh = document.getElementById('cc-refresh-btn');
+  if (!onBtn || !offBtn) return;
+  loadCoinControlPref();
+  function paint() {
+    onBtn.classList.toggle('active', coinControlEnabled);
+    offBtn.classList.toggle('active', !coinControlEnabled);
+  }
+  paint();
+  updateCoinControlVisibility();
+  onBtn.addEventListener('click', function () { coinControlEnabled = true; saveCoinControlPref(); paint(); updateCoinControlVisibility(); });
+  offBtn.addEventListener('click', function () { coinControlEnabled = false; saveCoinControlPref(); paint(); updateCoinControlVisibility(); });
+  if (refresh) refresh.addEventListener('click', loadCoinOutputs);
 })();
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
