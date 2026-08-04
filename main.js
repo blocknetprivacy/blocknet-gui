@@ -554,9 +554,10 @@ async function pollTxNotifications() {
     var data = null;
     try { data = await api('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
-      await loadSendsMap(0);
+      // Local sends context — must not touch the shared globals the History view uses.
+      var sendsCtx = await fetchSendsCtx(0);
       var incoming = data.outputs.filter(function (o) {
-        return o && o.txid && !o.spent && !o.is_coinbase && o.block_height && !historySends[o.txid];
+        return o && o.txid && !o.spent && !o.is_coinbase && o.block_height && !sendsCtx.sends[o.txid];
       });
       var seeding = confirmedSeen === null;
       if (seeding) confirmedSeen = {};
@@ -1086,9 +1087,10 @@ async function loadDashboard() {
       }
       if (outputs) outputs = await mergeWithPending(outputs);
       // Same transaction-centric view as History: send rows from the sends
-      // record, change outputs suppressed. See loadSendsMap / buildTxRows.
-      await loadSendsMap(statusHeight);
-      var txRows = outputs ? buildTxRows(outputs) : [];
+      // record, change outputs suppressed. Uses a local sends context (never the
+      // shared globals) so it can't stomp the History view. See buildTxRows.
+      var dashSendsCtx = await fetchSendsCtx(statusHeight);
+      var txRows = outputs ? buildTxRows(outputs, dashSendsCtx) : [];
       if (!txRows.length) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
         dashLastTxCount = 0;
@@ -1416,15 +1418,22 @@ async function loadHistory() {
   // naively reads as a "received", and never carries the memo you typed (that
   // memo rides on the recipient's output, not yours). So we build send rows from
   // /api/wallet/sends (real amount + outgoing memo) and suppress the change
-  // outputs. Load the sends map before the preview so the first paint is right.
-  await loadSendsMap(chainHeight);
+  // outputs. Fetch the sends context before the preview so the first paint is
+  // right, and publish it to the globals (only this function writes them) so
+  // later filter/scroll re-renders stay consistent — no background poller can
+  // stomp the map mid-render anymore.
+  var sendsCtx = await fetchSendsCtx(chainHeight);
+  historySends = sendsCtx.sends;
+  historySendRows = sendsCtx.sendRows;
+  historySendTo = sendsCtx.sendTo;
+  historySendTime = sendsCtx.sendTime;
 
   // Fast first paint: render the first page from the paginated endpoint before
   // the (potentially large) full-history fetch. Best-effort; ignore failures.
   try {
     var pg = await api('/api/wallet/history/page?limit=' + HISTORY_PAGE + '&offset=0&order=desc');
     if (pg && Array.isArray(pg.outputs) && pg.outputs.length) {
-      renderHistoryPreview(buildTxRows(pg.outputs).slice(0, HISTORY_PAGE));
+      renderHistoryPreview(buildTxRows(pg.outputs, sendsCtx).slice(0, HISTORY_PAGE));
     }
   } catch (_) {}
 
@@ -1449,7 +1458,7 @@ async function loadHistory() {
 
   if (outputs) outputs = await mergeWithPending(outputs);
 
-  var rows = outputs ? buildTxRows(outputs) : [];
+  var rows = outputs ? buildTxRows(outputs, sendsCtx) : [];
 
   if (!rows.length) {
     stopHistoryObserver();
@@ -1474,32 +1483,31 @@ async function loadHistory() {
   filterHistory();
 }
 
-// Load /api/wallet/sends into the module-level send maps used to render history
-// transaction-centrically. Builds one display row per recorded send (real
-// recipient amount + outgoing memo), plus lookup maps for the recipient label
-// and timestamp. Best-effort; on failure the maps are simply empty.
-async function loadSendsMap(chainHeight) {
-  historySends = {};
-  historySendRows = [];
-  historySendTo = {};
-  historySendTime = {};
+// Fetch /api/wallet/sends into a LOCAL context object (never shared globals).
+// Sharing a global here caused a flicker bug: background pollers reset the map to
+// {} mid-fetch, and if a history build ran in that window the change output was no
+// longer suppressed and the row flipped back to "+received". Each caller now owns
+// its own snapshot. Builds one display row per recorded send (real recipient
+// amount + outgoing memo), plus recipient label + timestamp maps.
+async function fetchSendsCtx(chainHeight) {
+  var ctx = { sends: {}, sendRows: [], sendTo: {}, sendTime: {} };
   try {
     // limit is capped at 500 server-side; grab the max so older sends still
     // render as sends rather than falling back to a raw change output.
     var sd = await api('/api/wallet/sends?limit=500&order=desc');
-    if (!sd || !Array.isArray(sd.sends)) return;
+    if (!sd || !Array.isArray(sd.sends)) return ctx;
     sd.sends.forEach(function (s) {
       if (!s || !s.txid) return;
-      historySends[s.txid] = s;
+      ctx.sends[s.txid] = s;
       var first = (s.recipients && s.recipients[0]) || null;
-      if (first && first.address) historySendTo[s.txid] = first.address;
-      if (s.timestamp) historySendTime[s.txid] = Number(s.timestamp) || 0;
+      if (first && first.address) ctx.sendTo[s.txid] = first.address;
+      if (s.timestamp) ctx.sendTime[s.txid] = Number(s.timestamp) || 0;
       var bh = 0;
       if (!s.in_mempool) {
         bh = Number(s.recorded_height) || 0;
         if (!bh && s.confirmations && chainHeight) bh = chainHeight - Number(s.confirmations) + 1;
       }
-      historySendRows.push({
+      ctx.sendRows.push({
         txid: s.txid,
         output_index: 0,
         is_send: true,
@@ -1510,23 +1518,26 @@ async function loadSendsMap(chainHeight) {
       });
     });
   } catch (_) {}
+  return ctx;
 }
 
 // Merge recorded send rows with the wallet's own outputs into a single, sorted,
-// transaction-centric list. Change outputs of recorded sends are dropped (the
-// send row already represents that transaction); remaining outputs are receives
-// or mining rewards regardless of whether they were later spent.
-function buildTxRows(outputs) {
-  var rows = historySendRows.slice();
+// transaction-centric list, using the caller's own sends context. Change outputs
+// of recorded sends are dropped (the send row already represents that
+// transaction); remaining outputs are receives or mining rewards regardless of
+// whether they were later spent.
+function buildTxRows(outputs, ctx) {
+  var sends = (ctx && ctx.sends) || {};
+  var rows = ((ctx && ctx.sendRows) || []).slice();
   (outputs || []).forEach(function (o) {
     if (!o || !o.txid) return;
     if (o.is_send) {
       // Optimistic pending-send row: keep only until the node records the send
-      // (then historySendRows carries it, so drop the duplicate here).
-      if (!historySends[o.txid]) rows.push(o);
+      // (then the sends context carries it, so drop the duplicate here).
+      if (!sends[o.txid]) rows.push(o);
       return;
     }
-    if (historySends[o.txid]) return; // change output of a recorded send
+    if (sends[o.txid]) return; // change output of a recorded send
     rows.push(o);
   });
   return rows.sort(historySortCmp);
@@ -4412,8 +4423,9 @@ async function checkInboundTx() {
     }
     // Count received transactions the same way the dashboard does (send rows and
     // mining rewards excluded), so the two share dashLastTxCount without thrash.
-    await loadSendsMap(0);
-    var inboundCount = buildTxRows(outputs).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
+    // Local sends context — must not touch the shared globals the History view uses.
+    var ctx = await fetchSendsCtx(0);
+    var inboundCount = buildTxRows(outputs, ctx).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
     if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
       playTada();
     }
