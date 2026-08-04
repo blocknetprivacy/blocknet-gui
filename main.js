@@ -84,7 +84,7 @@ function savePendingSends(list) {
 function addPendingSend(txid, amount, memo) {
   var list = getPendingSends();
   if (list.some(function (p) { return p.txid === txid; })) return;
-  list.push({ txid: txid, amount: amount, block_height: 0, spent: true, is_coinbase: false, memo_hex: memo || undefined });
+  list.push({ txid: txid, amount: amount, block_height: 0, spent: true, is_send: true, is_coinbase: false, memo_hex: memo || undefined });
   savePendingSends(list);
 }
 function prunePendingSends(confirmedOutputs) {
@@ -107,6 +107,7 @@ async function getDaemonPending() {
         amount: (Number(s.total_amount) || 0) + (Number(s.fee) || 0),
         block_height: 0,
         spent: true,
+        is_send: true,
         is_coinbase: false,
         memo_hex: memo
       };
@@ -242,6 +243,10 @@ function resetUserData() {
   historyOutputs = [];
   historyChainHeight = 0;
   historyFromCache = false;
+  historySends = {};
+  historySendRows = [];
+  historySendTo = {};
+  historySendTime = {};
 }
 
 function getTxNotes() {
@@ -542,12 +547,16 @@ async function pollTxNotifications() {
       }
     }
 
-    // Confirmed incoming payments show up in history as new non-coinbase received outputs.
+    // Confirmed incoming payments show up in history as new non-coinbase received
+    // outputs. The change output of your own send also looks like this, so load
+    // the sends map and skip recorded-send txids — otherwise sending would ping a
+    // false "Payment confirmed" when the change confirms.
     var data = null;
     try { data = await api('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
+      await loadSendsMap(0);
       var incoming = data.outputs.filter(function (o) {
-        return o && o.txid && !o.spent && !o.is_coinbase && o.block_height;
+        return o && o.txid && !o.spent && !o.is_coinbase && o.block_height && !historySends[o.txid];
       });
       var seeding = confirmedSeen === null;
       if (seeding) confirmedSeen = {};
@@ -1076,28 +1085,28 @@ async function loadDashboard() {
         outputs = getTxCache(); fromCache = true;
       }
       if (outputs) outputs = await mergeWithPending(outputs);
-      if (!outputs || outputs.length === 0) {
+      // Same transaction-centric view as History: send rows from the sends
+      // record, change outputs suppressed. See loadSendsMap / buildTxRows.
+      await loadSendsMap(statusHeight);
+      var txRows = outputs ? buildTxRows(outputs) : [];
+      if (!txRows.length) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
         dashLastTxCount = 0;
       } else {
-        // Detect new inbound transactions
+        // Detect new inbound transactions (received rows, not sends/rewards).
         if (!fromCache) {
-          var inboundCount = outputs.filter(function (o) { return !o.spent; }).length;
+          var inboundCount = txRows.filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
           if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
             playTada();
           }
           dashLastTxCount = inboundCount;
         }
 
-        var sorted = outputs.slice().sort(function (a, b) {
-          if (!a.block_height && b.block_height) return -1;
-          if (a.block_height && !b.block_height) return 1;
-          return b.block_height - a.block_height;
-        });
         var limit = window.innerHeight < 720 ? 3 : 5;
-        var recent = sorted.slice(0, limit);
+        var recent = txRows.slice(0, limit);
         container.innerHTML = recent.map(function (o) {
-          var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
+          var isSend = !!o.is_send;
+          var typeLabel = o.is_coinbase ? 'mining reward' : (isSend ? 'sent' : 'received');
           var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
           var blockLabel;
           if (o.block_height) {
@@ -1106,16 +1115,16 @@ async function loadDashboard() {
               var dconfs = statusHeight - o.block_height + 1;
               blockLabel += ' · ' + dconfs + ' confirmation' + (dconfs !== 1 ? 's' : '');
             }
-          } else if (!o.spent && dashPendingEta > 0) {
+          } else if (!isSend && dashPendingEta > 0) {
             blockLabel = dashPendingEta < 60 ? 'Pending · <1 min' : 'Pending · ~' + formatEta(dashPendingEta);
           } else {
             blockLabel = 'Pending';
           }
-          return '<div class="recent-tx-row' + (o.spent ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
-            '<span class="recent-tx-amount ' + (o.spent ? 'r' : 'g') + '">' +
-              (o.spent ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
+          return '<div class="recent-tx-row' + (isSend ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
+            '<span class="recent-tx-amount ' + (isSend ? 'r' : 'g') + '">' +
+              (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
-            '<span class="recent-tx-type ' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
+            '<span class="recent-tx-type ' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>' +
             (memoText ? '<span class="recent-tx-memo d">"' + escapeHtml(memoText) + '"</span>' : '') +
             '<span class="recent-tx-block d">' + blockLabel + '</span>' +
           '</div>';
@@ -1402,12 +1411,20 @@ async function loadHistory() {
   try { var st = await api('/api/status'); chainHeight = Number(st && st.chain_height) || 0; } catch (_) {}
   historyChainHeight = chainHeight;
 
+  // History is transaction-centric, not UTXO-centric. A send you make shows up
+  // in your own wallet only as its change output (unspent, self-owned) — which
+  // naively reads as a "received", and never carries the memo you typed (that
+  // memo rides on the recipient's output, not yours). So we build send rows from
+  // /api/wallet/sends (real amount + outgoing memo) and suppress the change
+  // outputs. Load the sends map before the preview so the first paint is right.
+  await loadSendsMap(chainHeight);
+
   // Fast first paint: render the first page from the paginated endpoint before
   // the (potentially large) full-history fetch. Best-effort; ignore failures.
   try {
     var pg = await api('/api/wallet/history/page?limit=' + HISTORY_PAGE + '&offset=0&order=desc');
     if (pg && Array.isArray(pg.outputs) && pg.outputs.length) {
-      renderHistoryPreview(pg.outputs);
+      renderHistoryPreview(buildTxRows(pg.outputs).slice(0, HISTORY_PAGE));
     }
   } catch (_) {}
 
@@ -1421,19 +1438,6 @@ async function loadHistory() {
     console.warn('history load failed:', normalizeError(e));
   }
 
-  historySendTo = {};
-  historySendTime = {};
-  try {
-    var sd = await api('/api/wallet/sends');
-    if (sd && Array.isArray(sd.sends)) {
-      sd.sends.forEach(function (s) {
-        if (!s || !s.txid) return;
-        if (s.recipients && s.recipients[0]) historySendTo[s.txid] = s.recipients[0].address;
-        if (s.timestamp) historySendTime[s.txid] = Number(s.timestamp) || 0;
-      });
-    }
-  } catch (_) {}
-
   var hasOutputsArray = data && Array.isArray(data.outputs);
   var outputs = hasOutputsArray ? data.outputs : null;
   var fromCache = false;
@@ -1445,7 +1449,9 @@ async function loadHistory() {
 
   if (outputs) outputs = await mergeWithPending(outputs);
 
-  if (!outputs || outputs.length === 0) {
+  var rows = outputs ? buildTxRows(outputs) : [];
+
+  if (!rows.length) {
     stopHistoryObserver();
     // If the paginated preview already painted the first page but the full
     // fetch failed, keep the preview instead of blanking it.
@@ -1462,22 +1468,78 @@ async function loadHistory() {
     return;
   }
 
-  // Newest first, matching the server's deterministic page order exactly so the
-  // preview's first page lines up with this full render (no reshuffle):
-  // pending first, then block height desc, then txid, then output index.
-  const sorted = outputs.slice().sort(function (a, b) {
-    var aPending = !a.block_height;
-    var bPending = !b.block_height;
-    if (aPending !== bPending) return aPending ? -1 : 1;
-    if (a.block_height !== b.block_height) return b.block_height - a.block_height;
-    if (a.txid !== b.txid) return a.txid < b.txid ? -1 : 1;
-    return (a.output_index || 0) - (b.output_index || 0);
-  });
-
-  historyOutputs = sorted;
+  historyOutputs = rows;
   historyChainHeight = chainHeight;
   historyFromCache = fromCache;
   filterHistory();
+}
+
+// Load /api/wallet/sends into the module-level send maps used to render history
+// transaction-centrically. Builds one display row per recorded send (real
+// recipient amount + outgoing memo), plus lookup maps for the recipient label
+// and timestamp. Best-effort; on failure the maps are simply empty.
+async function loadSendsMap(chainHeight) {
+  historySends = {};
+  historySendRows = [];
+  historySendTo = {};
+  historySendTime = {};
+  try {
+    // limit is capped at 500 server-side; grab the max so older sends still
+    // render as sends rather than falling back to a raw change output.
+    var sd = await api('/api/wallet/sends?limit=500&order=desc');
+    if (!sd || !Array.isArray(sd.sends)) return;
+    sd.sends.forEach(function (s) {
+      if (!s || !s.txid) return;
+      historySends[s.txid] = s;
+      var first = (s.recipients && s.recipients[0]) || null;
+      if (first && first.address) historySendTo[s.txid] = first.address;
+      if (s.timestamp) historySendTime[s.txid] = Number(s.timestamp) || 0;
+      var bh = 0;
+      if (!s.in_mempool) {
+        bh = Number(s.recorded_height) || 0;
+        if (!bh && s.confirmations && chainHeight) bh = chainHeight - Number(s.confirmations) + 1;
+      }
+      historySendRows.push({
+        txid: s.txid,
+        output_index: 0,
+        is_send: true,
+        is_coinbase: false,
+        amount: Number(s.total_amount) || 0,
+        block_height: bh,
+        memo_hex: (first && first.memo_hex) || undefined
+      });
+    });
+  } catch (_) {}
+}
+
+// Merge recorded send rows with the wallet's own outputs into a single, sorted,
+// transaction-centric list. Change outputs of recorded sends are dropped (the
+// send row already represents that transaction); remaining outputs are receives
+// or mining rewards regardless of whether they were later spent.
+function buildTxRows(outputs) {
+  var rows = historySendRows.slice();
+  (outputs || []).forEach(function (o) {
+    if (!o || !o.txid) return;
+    if (o.is_send) {
+      // Optimistic pending-send row: keep only until the node records the send
+      // (then historySendRows carries it, so drop the duplicate here).
+      if (!historySends[o.txid]) rows.push(o);
+      return;
+    }
+    if (historySends[o.txid]) return; // change output of a recorded send
+    rows.push(o);
+  });
+  return rows.sort(historySortCmp);
+}
+
+// Newest first: pending first, then block height desc, then txid, then index.
+function historySortCmp(a, b) {
+  var aPending = !a.block_height;
+  var bPending = !b.block_height;
+  if (aPending !== bPending) return aPending ? -1 : 1;
+  if (a.block_height !== b.block_height) return b.block_height - a.block_height;
+  if (a.txid !== b.txid) return a.txid < b.txid ? -1 : 1;
+  return (a.output_index || 0) - (b.output_index || 0);
 }
 
 var historyOutputs = [];
@@ -1485,9 +1547,12 @@ var historyChainHeight = 0;
 var historyFromCache = false;
 var historySendTo = {};
 var historySendTime = {};
+var historySends = {};      // txid -> raw send entry from /api/wallet/sends
+var historySendRows = [];   // one display row per recorded send
 
 function historyRowHtml(o, allNotes, chainHeight) {
-  var typeLabel = o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received');
+  var isSend = !!o.is_send;
+  var typeLabel = o.is_coinbase ? 'mining reward' : (isSend ? 'sent' : 'received');
   var noteText = allNotes[o.txid] || '';
   var confHtml = '';
   if (o.block_height && chainHeight >= o.block_height) {
@@ -1495,7 +1560,7 @@ function historyRowHtml(o, allNotes, chainHeight) {
     confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
   }
   var toHtml = '';
-  if (o.spent) {
+  if (isSend) {
     var lbl = (userData.sendLabels && userData.sendLabels[o.txid]) || '';
     if (!lbl && historySendTo[o.txid]) {
       var ra = historySendTo[o.txid];
@@ -1504,18 +1569,18 @@ function historyRowHtml(o, allNotes, chainHeight) {
     if (lbl) toHtml = '<span class="d">to ' + escapeHtml(lbl) + '</span>';
   }
   var dateHtml = '';
-  if (o.spent && historySendTime[o.txid]) {
+  if (isSend && historySendTime[o.txid]) {
     dateHtml = '<span class="d">· ' + escapeHtml(formatTxTime(historySendTime[o.txid])) + '</span>';
   }
-  return '<div class="history-row' + (o.spent ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (o.spent ? '1' : '0') + '">' +
-    '<div class="history-amount ' + (o.spent ? 'r' : 'g') + '">' +
-      (o.spent ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
+  return '<div class="history-row' + (isSend ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
+    '<div class="history-amount ' + (isSend ? 'r' : 'g') + '">' +
+      (isSend ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
     '</div>' +
     '<div class="history-meta">' +
       (o.block_height
         ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
         : '<span class="d">Pending</span>') +
-      '<span class="' + (o.spent ? 'r' : 'g') + '">' + typeLabel + '</span>' +
+      '<span class="' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>' +
       toHtml +
       dateHtml +
     '</div>' +
@@ -1637,7 +1702,7 @@ function historyMatches(o, q) {
     (userData.sendLabels && userData.sendLabels[o.txid]) || '',
     historySendTo[o.txid] || '',
     formatBNT(o.amount),
-    o.is_coinbase ? 'mining reward' : (o.spent ? 'sent' : 'received')
+    o.is_coinbase ? 'mining reward' : (o.is_send ? 'sent' : 'received')
   ].join(' ').toLowerCase();
   return hay.indexOf(q) !== -1;
 }
@@ -3264,6 +3329,9 @@ function clearCoinSelection() {
 async function handleSend(e) {
   e.preventDefault();
   const btn = document.getElementById('send-submit');
+  // Reset the banner up front so a repeat press (even one that fails the same
+  // way) visibly transitions instead of appearing frozen on the old message.
+  clearSendStatus();
   const rows = getRecipientRows();
   if (!rows.length) {
     showSendStatus('Add at least one recipient', 'error');
@@ -3398,6 +3466,9 @@ async function handleSend(e) {
       });
     } catch (err) {
       showSendStatus(normalizeError(err), 'error');
+      // A coin-control estimate most often fails because a chosen coin is no
+      // longer spendable; refresh the picker so spent/pending coins drop out.
+      if (coinControlEnabled) loadCoinOutputs();
       sendArmed = false;
       pendingSendFingerprint = null;
       btn.disabled = false;
@@ -3507,6 +3578,21 @@ async function handleSend(e) {
           showSendStatus('A coin was already spent — reselecting inputs and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
           continue;
         }
+        if (ccActive && isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
+          attempt++;
+          // A specifically-chosen coin was already spent — most often the change
+          // from a just-sent transaction that hasn't confirmed. Refresh the picker
+          // (drops the now-spent coins), then fall back to automatic selection so
+          // this payment still goes through using other outputs.
+          try { await loadCoinOutputs(); } catch (_) {}
+          ccActive = false;
+          sendEndpoint = '/api/wallet/send';
+          delete sendPayload.inputs;
+          idempotencyKey = freshIdempotencyKey();
+          if (pendingSendIdempotency) pendingSendIdempotency.key = idempotencyKey;
+          showSendStatus('A chosen coin was already used — switching to automatic coin selection and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
+          continue;
+        }
         if (isTransientSendError(msg) && attempt < SEND_MAX_RETRIES) {
           attempt++;
           // Rejected before build — keep the same idempotency key so an accepted-but-
@@ -3571,6 +3657,9 @@ function finalizeSend(result, entries, recipientsPayload) {
   });
   pendingSendIdempotency = null;
   clearCoinSelection();
+  // Reflect the just-spent coins (and the new unconfirmed change) in the picker,
+  // so a follow-up send sees only coins it can actually use.
+  if (coinControlEnabled) loadCoinOutputs();
   resetSendForm();
   dashForceRefresh = true;
 }
@@ -3605,6 +3694,28 @@ function showSendStatus(msg, type) {
   el.textContent = msg || 'Request failed';
   el.className = 'status-message ' + type;
   el.style.display = 'block';
+}
+
+function clearSendStatus() {
+  const el = document.getElementById('send-status');
+  if (!el) return;
+  el.textContent = '';
+  el.className = 'status-message';
+  el.style.display = 'none';
+}
+
+// A fresh edit to any recipient field invalidates the banner from the previous
+// attempt (its error or "Sent!" no longer describes what's on screen) and any
+// armed confirm. Clearing here is what makes a repeat Send unambiguous: the user
+// always sees the status change, even when the new attempt fails the same way.
+function onSendInputEdited() {
+  clearSendStatus();
+  if (sendArmed) {
+    sendArmed = false;
+    pendingSendFingerprint = null;
+    var btn = document.getElementById('send-submit');
+    if (btn) { btn.textContent = 'Send'; btn.classList.remove('armed'); }
+  }
 }
 
 // --- Wallet Management ---
@@ -4294,11 +4405,15 @@ function showSeedStatus(msg, type) {
 async function checkInboundTx() {
   try {
     var data = await api('/api/wallet/history');
-    if (!data.outputs || data.outputs.length === 0) {
+    var outputs = (data && Array.isArray(data.outputs)) ? data.outputs : [];
+    if (!outputs.length) {
       dashLastTxCount = 0;
       return;
     }
-    var inboundCount = data.outputs.filter(function (o) { return !o.spent; }).length;
+    // Count received transactions the same way the dashboard does (send rows and
+    // mining rewards excluded), so the two share dashLastTxCount without thrash.
+    await loadSendsMap(0);
+    var inboundCount = buildTxRows(outputs).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
     if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
       playTada();
     }
@@ -5850,6 +5965,12 @@ async function pullCurrentDeepLinkWithRetries(attempts, delayMs) {
 
 document.getElementById('password-form').addEventListener('submit', handlePasswordSubmit);
 document.getElementById('send-form').addEventListener('submit', handleSend);
+// Delegated so it also covers recipient rows added later; clears a stale send
+// banner and disarms the moment the user edits any address/amount/memo field.
+(function () {
+  var sr = document.getElementById('send-recipients');
+  if (sr) sr.addEventListener('input', onSendInputEdited);
+})();
 wireCopyable();
 document.getElementById('qr-container').addEventListener('click', showQROverlay);
 document.getElementById('qr-overlay').addEventListener('click', dismissQROverlay);
