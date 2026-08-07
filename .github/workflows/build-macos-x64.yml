@@ -6,10 +6,6 @@ on:
 
 jobs:
   build-macos-x64:
-    # Built on an arm64 runner and cross-compiled, NOT on an Intel runner.
-    # GitHub retired macos-13 in Dec 2025 and macos-15-intel ends Aug 2027, so
-    # native Intel runners are a moving target. Only the Rust side needs
-    # cross-compiling: the daemon sidecar is committed to the repo already.
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v4

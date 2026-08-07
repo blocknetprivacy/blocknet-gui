@@ -44,8 +44,7 @@ ui/
 builds/*
 !builds/.gitkeep
 
-# Core daemon sidecars. Never commit these — they are fetched at build time from
-# the blocknet/core releases by scripts/update-core-binaries.sh, pinned to VERSION.
+# Core daemon sidecars
 src-tauri/binaries/*
 !src-tauri/binaries/.gitkeep
 

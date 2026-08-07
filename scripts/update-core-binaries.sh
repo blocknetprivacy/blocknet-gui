@@ -66,7 +66,6 @@ if [[ -z "$MAC_URL" || -z "$MAC_X64_URL" || -z "$LINUX_URL" || -z "$WIN_URL" ]];
   exit 1
 fi
 
-# Git Bash on the Windows CI runners has no unzip, so fall back to 7z or PowerShell.
 extract_zip() {
   local zip_path="$1"
   local dest_dir="$2"
