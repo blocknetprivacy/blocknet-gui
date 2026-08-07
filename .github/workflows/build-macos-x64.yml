@@ -6,7 +6,11 @@ on:
 
 jobs:
   build-macos-x64:
-    runs-on: macos-13
+    # Native Intel runner. macos-13 was retired 2025-12; macos-15-intel replaces
+    # it and is supported until Aug 2027. After that, switch to an arm64 runner
+    # and cross-compile with --target x86_64-apple-darwin (the daemon sidecar is
+    # already committed, so only the Rust side needs cross-compiling).
+    runs-on: macos-15-intel
     steps:
       - uses: actions/checkout@v4
       - uses: actions-rust-lang/setup-rust-toolchain@v1
