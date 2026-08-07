@@ -46,7 +46,11 @@ impl Drop for DaemonState {
 
 fn get_binary_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     let binary_name = if cfg!(target_os = "macos") {
-        "blocknet-aarch64-apple-darwin"
+        if cfg!(target_arch = "x86_64") {
+            "blocknet-x86_64-apple-darwin"
+        } else {
+            "blocknet-aarch64-apple-darwin"
+        }
     } else if cfg!(target_os = "linux") {
         "blocknet-amd64-linux"
     } else {
@@ -167,7 +171,11 @@ fn get_paths(app: &AppHandle) -> Result<(std::path::PathBuf, std::path::PathBuf)
 fn kill_listeners_in_gui_port_range() {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
-        let binary_names = ["blocknet-aarch64-apple-darwin", "blocknet-amd64-linux"];
+        let binary_names = [
+            "blocknet-aarch64-apple-darwin",
+            "blocknet-x86_64-apple-darwin",
+            "blocknet-amd64-linux",
+        ];
         for name in binary_names {
             let cmd = format!("pkill -9 -f '{}' 2>/dev/null || true", name);
             let _ = std::process::Command::new("sh")
