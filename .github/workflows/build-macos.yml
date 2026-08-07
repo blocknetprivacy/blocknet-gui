@@ -17,6 +17,9 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
+      - name: Fetch core sidecar binaries
+        run: bash scripts/update-core-binaries.sh
+
       - name: Validate version sync from daemon
         run: |
           chmod +x src-tauri/binaries/blocknet-aarch64-apple-darwin

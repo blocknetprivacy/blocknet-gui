@@ -52,17 +52,38 @@ else
 fi
 
 MAC_ASSET="blocknet-core-arm64-macos-${VERSION}.zip"
+MAC_X64_ASSET="blocknet-core-amd64-macos-${VERSION}.zip"
 LINUX_ASSET="blocknet-core-amd64-linux-${VERSION}.zip"
 WIN_ASSET="blocknet-core-amd64-windows-${VERSION}.zip"
 
 MAC_URL="$(extract_asset_url "$MAC_ASSET")"
+MAC_X64_URL="$(extract_asset_url "$MAC_X64_ASSET")"
 LINUX_URL="$(extract_asset_url "$LINUX_ASSET")"
 WIN_URL="$(extract_asset_url "$WIN_ASSET")"
 
-if [[ -z "$MAC_URL" || -z "$LINUX_URL" || -z "$WIN_URL" ]]; then
+if [[ -z "$MAC_URL" || -z "$MAC_X64_URL" || -z "$LINUX_URL" || -z "$WIN_URL" ]]; then
   echo "Missing required release assets for version ${VERSION}"
   exit 1
 fi
+
+# Git Bash on the Windows CI runners has no unzip, so fall back to 7z or PowerShell.
+extract_zip() {
+  local zip_path="$1"
+  local dest_dir="$2"
+
+  mkdir -p "$dest_dir"
+  if command -v unzip >/dev/null 2>&1; then
+    unzip -q -o "$zip_path" -d "$dest_dir"
+  elif command -v 7z >/dev/null 2>&1; then
+    7z x -y -o"$dest_dir" "$zip_path" >/dev/null
+  elif command -v powershell >/dev/null 2>&1; then
+    powershell -NoProfile -Command \
+      "Expand-Archive -Force -LiteralPath '$(cygpath -w "$zip_path")' -DestinationPath '$(cygpath -w "$dest_dir")'"
+  else
+    echo "No unzip, 7z, or powershell available to extract $zip_path"
+    exit 1
+  fi
+}
 
 download_and_install() {
   local url="$1"
@@ -74,7 +95,7 @@ download_and_install() {
   echo "Downloading $zip_name..."
   curl -fsSL "$url" -o "$TMP_DIR/$zip_name"
 
-  unzip -q -o "$TMP_DIR/$zip_name" -d "$TMP_DIR/$zip_name.dir"
+  extract_zip "$TMP_DIR/$zip_name" "$TMP_DIR/$zip_name.dir"
   local source_path="$TMP_DIR/$zip_name.dir/$extracted_name"
   if [[ ! -f "$source_path" ]]; then
     echo "Expected $extracted_name not found in $zip_name"
@@ -87,6 +108,7 @@ download_and_install() {
 }
 
 download_and_install "$MAC_URL" "$MAC_ASSET" "blocknet-core-arm64-macos" "blocknet-aarch64-apple-darwin"
+download_and_install "$MAC_X64_URL" "$MAC_X64_ASSET" "blocknet-core-amd64-macos" "blocknet-x86_64-apple-darwin"
 download_and_install "$LINUX_URL" "$LINUX_ASSET" "blocknet-core-amd64-linux" "blocknet-amd64-linux"
 download_and_install "$WIN_URL" "$WIN_ASSET" "blocknet-core-amd64-windows.exe" "blocknet-amd64-windows.exe"
 
