@@ -5,6 +5,10 @@ let realtimeUnlisten = null;
 let isNewWallet = false;
 let daemonStartPromise = null;
 let sessionPassword = '';
+// Which wallet file this app told the daemon to load. The daemon holds one
+// wallet at a time and has no endpoint that names it, so the GUI tracks it to
+// know whether a password unlocks the loaded wallet or selects a different one.
+let loadedWalletName = '';
 let resetChainArmed = false;
 let resetChainArmTimer = null;
 let viewSeedArmed = false;
@@ -596,24 +600,62 @@ function normalizeError(error) {
   return raw;
 }
 
-async function loadOrUnlockWallet(password) {
+// Puts the daemon on the wallet the user picked, without restarting it. Every
+// wallet file lives in one directory, so the daemon takes any of them by name:
+// drop the one it holds, load the requested one. Restarting instead would
+// reopen the chain db and redial peers for a change the API already covers.
+async function loadOrUnlockWallet(password, walletName) {
+  const target = walletName || activeWalletName || '';
+
+  if (loadedWalletName && target && loadedWalletName !== target) {
+    await unloadWallet();
+  }
+
   try {
-    await api('/api/wallet/load', {
-      method: 'POST',
-      body: { password },
-    });
+    await loadWalletFile(password, target);
     return;
   } catch (e) {
     const msg = normalizeError(e).toLowerCase();
-    if (msg.includes('wallet already loaded')) {
-      await api('/api/wallet/unlock', {
-        method: 'POST',
-        body: { password },
-      });
-      return;
+    if (!msg.includes('wallet already loaded')) {
+      throw e;
     }
-    throw e;
   }
+
+  // Already loaded: the password unlocks it. A load that is still in flight
+  // answers the same way while holding no wallet yet, so treat that as a
+  // not-ready daemon and let the load finish.
+  try {
+    await api('/api/wallet/unlock', { method: 'POST', body: { password } });
+    if (target) loadedWalletName = target;
+    return;
+  } catch (e) {
+    if (!normalizeError(e).toLowerCase().includes('no wallet loaded')) {
+      throw e;
+    }
+  }
+
+  await new Promise(function (r) { setTimeout(r, 1000); });
+  await loadWalletFile(password, target);
+}
+
+async function loadWalletFile(password, walletName) {
+  const body = { password };
+  if (walletName) body.filepath = walletName;
+  await api('/api/wallet/load', { method: 'POST', body: body });
+  loadedWalletName = walletName || '';
+}
+
+// Drops the daemon's wallet so another one can take its place. A daemon with no
+// wallet loaded is already in the wanted state, so that error is not a failure.
+async function unloadWallet() {
+  try {
+    await api('/api/wallet/unload', { method: 'POST' });
+  } catch (e) {
+    if (!normalizeError(e).toLowerCase().includes('no wallet loaded')) {
+      throw e;
+    }
+  }
+  loadedWalletName = '';
 }
 
 // --- Formatting ---
@@ -3778,6 +3820,9 @@ async function handleSwitchWallet(name) {
   try {
     stopPolling();
     await invoke('switch_wallet', { name: name });
+    // The daemon stays up, so the wallet being left has to be dropped here.
+    // Nothing else does it now, and it would otherwise sit loaded and unlocked.
+    await unloadWallet();
     setActiveWalletName(name);
     sessionPassword = '';
     dashLastHeight = -1;
@@ -3955,12 +4000,14 @@ async function handleCreateWallet() {
   btn.textContent = 'Creating...';
   showCreateStatus('Generating your wallet…', 'info', true);
   var previousPassword = sessionPassword;
+  var previousWallet = activeWalletName;
   try {
     stopPolling();
-    try { await api('/api/wallet/unload', { method: 'POST' }); } catch (_) {}
+    await unloadWallet();
 
     var result = await api('/api/wallet/create', { method: 'POST', body: { password: password, filename: name } });
     var createdName = result.filename || name;
+    loadedWalletName = createdName;
     await invoke('set_active_wallet', { name: createdName });
     sessionPassword = password;
     setActiveWalletName(createdName);
@@ -3978,7 +4025,7 @@ async function handleCreateWallet() {
       showCreateStatus(msg, 'error');
     }
     try {
-      if (previousPassword) { await loadOrUnlockWallet(previousPassword); startPolling(); }
+      if (previousPassword) { await loadOrUnlockWallet(previousPassword, previousWallet); startPolling(); }
     } catch (_) {}
   } finally {
     btn.disabled = false;
@@ -4015,16 +4062,13 @@ async function handleImportSeed() {
 
   btn.disabled = true;
   btn.textContent = 'Importing...';
-  showImportStatus('Stopping daemon...', 'info');
+  showImportStatus('Preparing wallet...', 'info');
 
   try {
-    // Need a fresh daemon with no wallet loaded
+    // Import needs a daemon holding no wallet, which unload gives directly.
     stopPolling();
-    await invoke('stop_daemon');
-    await new Promise(function (r) { setTimeout(r, 500); });
-
-    showImportStatus('Starting daemon...', 'info');
     await ensureDaemonReady();
+    await unloadWallet();
 
     showImportStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
     var body = { mnemonic: words.join(' '), password: password };
@@ -4033,13 +4077,8 @@ async function handleImportSeed() {
 
     // Update active wallet to the imported file
     var importedName = result.filename || filename || 'wallet.dat';
+    loadedWalletName = importedName;
     await invoke('switch_wallet', { name: importedName });
-
-    // Restart daemon pointed at new wallet
-    await invoke('stop_daemon');
-    await new Promise(function (r) { setTimeout(r, 500); });
-    await ensureDaemonReady();
-    await loadOrUnlockWallet(password);
     sessionPassword = password;
 
     hideImportForm();
@@ -4051,7 +4090,7 @@ async function handleImportSeed() {
     try {
       await ensureDaemonReady();
       if (sessionPassword) {
-        await loadOrUnlockWallet(sessionPassword);
+        await loadOrUnlockWallet(sessionPassword, activeWalletName);
         startPolling();
       } else {
         showUnlockScreen();
@@ -4091,6 +4130,7 @@ async function handlePasswordScreenImportSubmit() {
 
   try {
     await ensureDaemonReady();
+    await unloadWallet();
 
     showPsStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
     var body = { mnemonic: words.join(' '), password: password };
@@ -4098,6 +4138,7 @@ async function handlePasswordScreenImportSubmit() {
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
 
     var importedName = result.filename || filename || 'wallet.dat';
+    loadedWalletName = importedName;
     // Persist the imported wallet as active so next launch prompts for this wallet.
     try {
       await invoke('switch_wallet', { name: importedName });
@@ -4112,7 +4153,7 @@ async function handlePasswordScreenImportSubmit() {
     if (msg.toLowerCase().includes('wallet file already exists')) {
       try {
         showPsStatus('Wallet file exists; attempting to load it now...', 'info');
-        await loadOrUnlockWallet(password);
+        await loadOrUnlockWallet(password, filename || activeWalletName);
         sessionPassword = password;
         showApp();
         return;
@@ -4250,7 +4291,7 @@ async function handleResetChainData() {
     await ensureDaemonReady();
     if (sessionPassword) {
       showSettingsStatus('Loading wallet...', 'info');
-      await loadOrUnlockWallet(sessionPassword);
+      await loadOrUnlockWallet(sessionPassword, activeWalletName);
     }
     showSettingsStatus('Blockchain reset complete. Resync started from 0.', 'success');
     if (currentView === 'dashboard') {
@@ -4987,13 +5028,13 @@ async function handleUnlockWalletPick(btn) {
     return;
   }
 
-  // Switching to a different wallet restarts the daemon for that wallet;
-  // the unlock submit then brings it up with the entered password.
+  // The daemon keeps running: the unlock submit swaps it onto this wallet.
   var rows = document.querySelectorAll('.unlock-wallet-row');
   rows.forEach(function (r) { r.disabled = true; });
   showStatus('Switching to ' + selected.replace(/\.dat$/i, '') + '…', 'info');
   try {
     await invoke('switch_wallet', { name: selected });
+    await unloadWallet();
     setActiveWalletName(selected);
     isNewWallet = false;
     await populateWalletIdentity(selected);
@@ -5013,6 +5054,7 @@ async function handleUnlockOpenFile() {
   try {
     var filename = await invoke('import_wallet_file');
     await invoke('switch_wallet', { name: filename });
+    await unloadWallet();
     setActiveWalletName(filename);
     isNewWallet = false;
     await populateWalletIdentity(filename);
@@ -5086,9 +5128,10 @@ async function handlePasswordSubmit(e) {
     if (isNewWallet) {
       showStatus('Creating wallet...', 'info');
       await api('/api/wallet/create', { method: 'POST', body: { password: password1 } });
+      loadedWalletName = activeWalletName || '';
     } else {
       showStatus('Loading wallet...', 'info');
-      await loadOrUnlockWallet(password1);
+      await loadOrUnlockWallet(password1, activeWalletName);
     }
     sessionPassword = password1;
     if (isNewWallet) {
@@ -5102,17 +5145,21 @@ async function handlePasswordSubmit(e) {
       showSecurityBlockedModal();
       return;
     }
-    const msg = normalizeError(error).toLowerCase();
+    const raw = normalizeError(error);
+    const msg = raw.toLowerCase();
     if (msg.includes('incorrect password') || msg.includes('wrong password') || msg.includes('decrypt') || msg.includes('cipher')) {
       showStatus('Check your password and try again', 'error');
-    } else if (msg.includes('wallet already loaded')) {
-      showStatus('Wallet is already loaded', 'error');
+    } else if (msg.includes('too many unlock attempts') || msg.includes('unlock backoff')) {
+      showStatus('Too many attempts. Wait a moment, then try again.', 'error');
     } else if (msg.includes('api port 8332 is already in use')) {
       showStatus('API port 8332 is already in use. Stop other blocknet daemons and try again.', 'error');
     } else if (msg.includes('unauthorized') || msg.includes('auth cookie') || msg.includes('daemon not started')) {
-      showStatus('Couldn\'t reach the wallet daemon — wait a moment and try again.', 'error');
+      showStatus('Couldn\'t reach the wallet daemon. Wait a moment and try again.', 'error');
     } else {
-      showStatus('Couldn\'t unlock the wallet — please try again.', 'error');
+      // Anything else is a daemon-side failure the user cannot guess at: a core
+      // that cannot read the chain db, a port clash, a crash during startup.
+      // Show what actually happened and where the detail lives.
+      showStatus(raw + ' (details in daemon.log)', 'error');
     }
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
@@ -5267,8 +5314,18 @@ async function ensureDaemonReady() {
   const alreadyReady = await invoke('check_daemon_ready');
   if (alreadyReady) return;
 
+  // A live daemon that is merely busy must not be restarted: start_daemon kills
+  // every running core, so answering a slow reply with a restart throws away a
+  // healthy node, its open chain db, and its peers.
+  if (!daemonStartPromise && await daemonIsAlive()) {
+    await waitForDaemon();
+    return;
+  }
+
   if (!daemonStartPromise) {
     daemonStartPromise = (async () => {
+      // A fresh process holds no wallet, whatever the last one held.
+      loadedWalletName = '';
       await invoke('start_daemon');
       await waitForDaemon();
     })().finally(() => {
@@ -5277,6 +5334,14 @@ async function ensureDaemonReady() {
   }
 
   await daemonStartPromise;
+}
+
+async function daemonIsAlive() {
+  try {
+    return await invoke('daemon_alive');
+  } catch (_) {
+    return false;
+  }
 }
 
 function showSecurityBlockedModal() {

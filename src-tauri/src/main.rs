@@ -491,6 +491,29 @@ async fn refresh_checkpoints(app: &AppHandle, data_dir: &std::path::Path) {
     }
 }
 
+// The daemon's own output is the only place its startup failures are spelled
+// out: an unreadable chain db, a port already taken, a core too old for the
+// stored block format. Discarding it leaves the UI with nothing to report but
+// a guess, so keep it next to the data it describes.
+fn open_daemon_log(data_dir: &std::path::Path) -> Option<(std::fs::File, std::fs::File)> {
+    const MAX_LOG_BYTES: u64 = 2 * 1024 * 1024;
+
+    let path = data_dir.join("daemon.log");
+    if let Ok(meta) = std::fs::metadata(&path) {
+        if meta.len() > MAX_LOG_BYTES {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&path)
+        .ok()?;
+    let stderr = file.try_clone().ok()?;
+    Some((file, stderr))
+}
+
 #[tauri::command]
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
     // Kill any existing daemon before starting a new one
@@ -533,9 +556,16 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
 
     let _ = app.emit("daemon-phase", "Starting core\u{2026}");
     let mut cmd = std::process::Command::new(&binary_path);
-    cmd.args(&args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+    cmd.args(&args);
+    match open_daemon_log(&data_dir) {
+        Some((out, err)) => {
+            cmd.stdout(out).stderr(err);
+        }
+        None => {
+            cmd.stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null());
+        }
+    }
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -596,8 +626,11 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
         .map(|s| s.trim().to_string())
         .unwrap_or_default();
 
+    // A busy daemon (chain catch-up, a big db flush) can take a while to answer
+    // even a cheap request. Too tight a timeout reads as "not ready", and the
+    // caller answers that by killing a perfectly healthy node and starting over.
     let client = reqwest::Client::builder()
-        .timeout(std::time::Duration::from_millis(500))
+        .timeout(std::time::Duration::from_secs(3))
         .build()
         .map_err(|e| format!("HTTP client error: {}", e))?;
 
@@ -885,7 +918,7 @@ async fn get_wallet_path_cmd(app: AppHandle) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn switch_wallet(app: AppHandle, state: State<'_, DaemonState>, name: String) -> Result<(), String> {
+async fn switch_wallet(app: AppHandle, name: String) -> Result<(), String> {
     // Validate: no path separators, must end in .dat
     if name.contains('/') || name.contains('\\') || name.contains("..") || !name.ends_with(".dat") {
         return Err("Invalid wallet name".to_string());
@@ -895,11 +928,9 @@ async fn switch_wallet(app: AppHandle, state: State<'_, DaemonState>, name: Stri
     if !wallet_path.exists() {
         return Err(format!("Wallet file not found: {}", name));
     }
-    // Stop current daemon
-    stop_daemon_inner(&state);
-    kill_listeners_in_gui_port_range();
-    std::thread::sleep(std::time::Duration::from_millis(500));
-    // Update active wallet
+    // The daemon keeps running: every wallet lives in one directory, so the
+    // caller swaps wallets over the API (unload, then load by filename). A
+    // restart here would reopen the chain db and resync for nothing.
     set_active_wallet_name(&app, &name)?;
     Ok(())
 }
