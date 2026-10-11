@@ -539,7 +539,14 @@ function sendDesktopNotification(title, body) {
   } catch (_) {}
 }
 
+// The full history and sends lists are heavy on a big wallet. Outputs only
+// change when the wallet's output count or synced height moves, so the balance
+// (cheap) decides whether they are fetched at all.
+var txPollBusy = false;
+var txPollKey = '';
 async function pollTxNotifications() {
+  if (txPollBusy) return;
+  txPollBusy = true;
   try {
     var bal = null;
     try { bal = await api('/api/wallet/balance'); } catch (_) {}
@@ -563,11 +570,15 @@ async function pollTxNotifications() {
     // outputs. The change output of your own send also looks like this, so load
     // the sends map and skip recorded-send txids — otherwise sending would ping a
     // false "Payment confirmed" when the change confirms.
+    var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.synced_height].join(':') : '';
+    if (!key || key === txPollKey) return;
     var data = null;
     try { data = await api('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
+      txPollKey = key;
       // Local sends context — must not touch the shared globals the History view uses.
       var sendsCtx = await fetchSendsCtx(0);
+      if (currentView !== 'dashboard') playTadaOnNewInbound(data.outputs, sendsCtx);
       var incoming = data.outputs.filter(function (o) {
         return o && o.txid && !o.spent && !o.is_coinbase && o.block_height && !sendsCtx.sends[o.txid];
       });
@@ -581,7 +592,10 @@ async function pollTxNotifications() {
         }
       });
     }
-  } catch (_) {}
+  } catch (_) {
+  } finally {
+    txPollBusy = false;
+  }
 }
 
 // --- API Client (proxied through Rust, no CORS) ---
@@ -4525,24 +4539,14 @@ function showSeedStatus(msg, type) {
 
 // --- Polling ---
 
-async function checkInboundTx() {
-  try {
-    var data = await api('/api/wallet/history');
-    var outputs = (data && Array.isArray(data.outputs)) ? data.outputs : [];
-    if (!outputs.length) {
-      dashLastTxCount = 0;
-      return;
-    }
-    // Count received transactions the same way the dashboard does (send rows and
-    // mining rewards excluded), so the two share dashLastTxCount without thrash.
-    // Local sends context — must not touch the shared globals the History view uses.
-    var ctx = await fetchSendsCtx(0);
-    var inboundCount = buildTxRows(outputs, ctx).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
-    if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
-      playTada();
-    }
-    dashLastTxCount = inboundCount;
-  } catch (_) {}
+// Count received transactions the same way the dashboard does (send rows and
+// mining rewards excluded), so the two share dashLastTxCount without thrash.
+function playTadaOnNewInbound(outputs, ctx) {
+  var inboundCount = buildTxRows(outputs, ctx).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
+  if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
+    playTada();
+  }
+  dashLastTxCount = inboundCount;
 }
 
 async function handleRealtimeEvent(payload) {
@@ -4560,7 +4564,7 @@ async function handleRealtimeEvent(payload) {
     if (currentView === 'history') await loadHistory({ quiet: true });
     if (currentView === 'mining') await loadMining();
     if (currentView === 'network') await loadNetwork();
-    if (currentView !== 'dashboard') await checkInboundTx();
+    if (currentView !== 'dashboard') await pollTxNotifications();
   } catch (_) {}
 }
 
@@ -4680,6 +4684,7 @@ function stopPolling() {
   }
   lastPendingUnconfirmed = -1;
   confirmedSeen = null;
+  txPollKey = '';
 }
 
 // --- Screen transitions ---
