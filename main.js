@@ -2375,6 +2375,30 @@ async function geolocateIp(ip) {
   }
 }
 
+// Public addresses first: those are the ones another node can usually reach.
+function isPrivateMultiaddr(a) {
+  return /\/ip4\/(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)|\/ip6\/(::1|fe80:|f[cd])/i.test(a);
+}
+
+async function renderSelfAddrs() {
+  var wrap = document.getElementById('network-self-wrap');
+  var list = document.getElementById('network-self');
+  if (!wrap || !list) return;
+  var addrs = [];
+  try {
+    var st = await api('/api/status');
+    addrs = Array.isArray(st && st.peer_addrs) ? st.peer_addrs.slice() : [];
+  } catch (_) {}
+  if (!addrs.length) { wrap.style.display = 'none'; return; }
+  addrs.sort(function (a, b) { return isPrivateMultiaddr(a) - isPrivateMultiaddr(b); });
+  list.innerHTML = addrs.map(function (a) {
+    return '<div class="peer-row"><div class="mono">' + copyable(a) + '</div>' +
+      (isPrivateMultiaddr(a) ? '<div class="d">local network only</div>' : '') + '</div>';
+  }).join('');
+  wireCopyable(list);
+  wrap.style.display = '';
+}
+
 async function loadNetwork() {
   let peers, banned;
   try {
@@ -2390,6 +2414,8 @@ async function loadNetwork() {
     if (bl) bl.innerHTML = '<div class="empty">Node unavailable</div>';
     return;
   }
+
+  renderSelfAddrs();
 
   document.getElementById('network-peer-count').textContent = peers.count;
   const peerList = document.getElementById('network-peers');
