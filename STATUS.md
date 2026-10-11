@@ -28,7 +28,7 @@
 
 4. **Daemon Management**
    - Binary copied from `/Users/dh/Projects/blocknet/blocknet`
-   - Spawns with args: `--daemon --wallet wallet.dat --data ./data`
+   - Spawns with args: `--api 127.0.0.1:<port> --data <data dir>`, then sets `wallet_file` via `PATCH /api/settings`
    - Frontend polls for `api.cookie` file every 500ms
    - Max timeout: 30 seconds
    - On success: triggers splash fade

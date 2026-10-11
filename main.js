@@ -949,6 +949,12 @@ async function refreshDashStatus() {
     if (mempoolBytesEl) mempoolBytesEl.textContent = formatBytes(status.mempool_bytes);
     var identityAgeEl = document.getElementById('dash-identity-age');
     if (identityAgeEl) identityAgeEl.textContent = status.identity_age || '--';
+    var upgradeEl = document.getElementById('dash-upgrade-notice');
+    if (upgradeEl) {
+      var upgradeNotice = String((status.network_upgrade && status.network_upgrade.notice) || '');
+      upgradeEl.textContent = upgradeNotice;
+      upgradeEl.style.display = upgradeNotice ? 'block' : 'none';
+    }
     const syncLabel = status.syncing
       ? 'Syncing' + (status.sync_percent ? ' ' + status.sync_percent : '')
       : 'Synced';
@@ -3567,6 +3573,9 @@ async function handleSend(e) {
     } else {
       confirmMsg += '  A network fee will be added on top.';
     }
+    if (pendingSendIdempotency && pendingSendIdempotency.interrupted) {
+      confirmMsg = '⚠ Your last send was interrupted and may have gone out. Sending again can pay twice. ' + confirmMsg;
+    }
     confirmMsg += '  Press again within 10s to confirm.';
     showSendStatus(confirmMsg, 'info');
     return;
@@ -3589,6 +3598,7 @@ async function handleSend(e) {
   let idempotencyKey = null;
   if (
     pendingSendIdempotency &&
+    !pendingSendIdempotency.interrupted &&
     pendingSendIdempotency.payloadKey === payloadKey &&
     (now - pendingSendIdempotency.createdAt) < SEND_IDEMPOTENCY_WINDOW_MS
   ) {
@@ -3654,6 +3664,10 @@ async function handleSend(e) {
           await new Promise(function (resolve) { setTimeout(resolve, 600 * attempt); });
           continue;
         }
+        if (msg.toLowerCase().includes('interrupted') && pendingSendIdempotency) {
+          await resolveInterruptedSend(recipientsPayload);
+          break;
+        }
         if (msg.toLowerCase().includes('request failed:')) {
           var handled = ccActive ? false : await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
           if (!handled) {
@@ -3715,6 +3729,30 @@ function finalizeSend(result, entries, recipientsPayload) {
   if (coinControlEnabled) loadCoinOutputs();
   resetSendForm();
   dashForceRefresh = true;
+}
+
+// The node stopped mid-send, so the tx may or may not be on the network. A
+// recorded send to the same recipients settles it; otherwise the next Send uses a
+// fresh key and the confirm step warns that it can pay twice.
+async function resolveInterruptedSend(recipientsPayload) {
+  var since = Math.floor(pendingSendIdempotency.createdAt / 1000) - 60;
+  var want = recipientsPayload.map(function (r) { return r.address + ':' + r.amount; }).sort().join('|');
+  var match = null;
+  try {
+    var data = await api('/api/wallet/sends?limit=50&order=desc');
+    match = (data.sends || []).find(function (sd) {
+      if (Number(sd.timestamp) < since) return false;
+      var got = (sd.recipients || []).map(function (r) { return r.address + ':' + r.amount; }).sort().join('|');
+      return got === want;
+    }) || null;
+  } catch (_) {}
+  if (match) {
+    pendingSendIdempotency = null;
+    showSendStatus('The node stopped during this send, but it went out. TX: ' + String(match.txid).substring(0, 24) + '... Check History for its status.', 'success');
+    return;
+  }
+  pendingSendIdempotency.interrupted = true;
+  showSendStatus('The node stopped during this send. It may have gone out. Wait for the wallet to sync, then check History and your balance. Send again only if the payment is not there.', 'error');
 }
 
 async function resolveTimedOutSend(idempotencyKey, entries, recipientsPayload) {
@@ -5328,12 +5366,20 @@ async function ensureDaemonReady() {
       loadedWalletName = '';
       await invoke('start_daemon');
       await waitForDaemon();
+      await pointDaemonAtWalletDir();
     })().finally(() => {
       daemonStartPromise = null;
     });
   }
 
   await daemonStartPromise;
+}
+
+// Wallet names in create, import and load resolve against the folder of
+// wallet_file, so the daemon must know where this app keeps its wallets.
+async function pointDaemonAtWalletDir() {
+  const walletPath = await invoke('get_wallet_path_cmd');
+  await api('/api/settings', { method: 'PATCH', body: { wallet_file: walletPath } });
 }
 
 async function daemonIsAlive() {

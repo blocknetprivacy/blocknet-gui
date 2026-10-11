@@ -163,11 +163,6 @@ fn get_wallet_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(get_app_dir(app)?.join(&name))
 }
 
-// Compat shim used by commands that need (data_dir, wallet_path)
-fn get_paths(app: &AppHandle) -> Result<(std::path::PathBuf, std::path::PathBuf), String> {
-    Ok((get_data_dir(app)?, get_wallet_path(app)?))
-}
-
 fn kill_listeners_in_gui_port_range() {
     #[cfg(any(target_os = "macos", target_os = "linux"))]
     {
@@ -404,46 +399,6 @@ async fn wallet_exists(app: AppHandle) -> Result<bool, String> {
     Ok(wallet_path.exists())
 }
 
-#[tauri::command]
-async fn create_wallet(app: AppHandle, password: String) -> Result<(), String> {
-    use std::io::Write;
-
-    let (data_dir, wallet_path) = get_paths(&app)?;
-    std::fs::create_dir_all(&data_dir)
-        .map_err(|e| format!("Failed to create data dir: {}", e))?;
-    let binary_path = get_binary_path(&app)?;
-
-    let mut cmd = std::process::Command::new(&binary_path);
-    cmd.arg("--wallet").arg(wallet_path.to_str().unwrap())
-        .arg("--data").arg(data_dir.to_str().unwrap())
-        .stdin(std::process::Stdio::piped())
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::piped());
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        cmd.creation_flags(0x0800_0000);
-    }
-    let mut child = cmd.spawn()
-        .map_err(|e| {
-            if check_security_blocked(&binary_path) {
-                return "SECURITY_BLOCKED".to_string();
-            }
-            format!("Failed to spawn: {}", e)
-        })?;
-
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(format!("{}\n{}\n", password, password).as_bytes())
-            .map_err(|e| format!("Failed to write password: {}", e))?;
-        stdin.flush().map_err(|e| format!("Failed to flush: {}", e))?;
-    }
-
-    std::thread::sleep(std::time::Duration::from_secs(3));
-    let _ = child.kill();
-    let _ = child.wait();
-    Ok(())
-}
-
 // Best-effort fetch of the latest checkpoints file from bntpool.com, written
 // atomically into the daemon's data dir. Keeps fast-sync evergreen by replacing
 // any stale local copy on every launch. Any failure (offline, timeout, bad
@@ -528,7 +483,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
         *guard = api_port;
     }
 
-    let (data_dir, wallet_path) = get_paths(&app)?;
+    let data_dir = get_data_dir(&app)?;
     std::fs::create_dir_all(&data_dir)
         .map_err(|e| format!("Failed to create data dir: {}", e))?;
     let binary_path = get_binary_path(&app)?;
@@ -543,16 +498,12 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
     // existing file in place as a fallback.
     refresh_checkpoints(&app, &data_dir).await;
 
-    let mut args = vec![
-        "--daemon".to_string(),
+    // Core takes only --api and --data; the wallet location is set over
+    // PATCH /api/settings once the API is up.
+    let args = vec![
         "--api".to_string(), format!("127.0.0.1:{}", api_port),
         "--data".to_string(), data_dir.to_str().unwrap().to_string(),
     ];
-
-    // Pass --wallet so the daemon knows where wallet files live
-    // (needed for /api/wallet/import filename resolution)
-    args.push("--wallet".to_string());
-    args.push(wallet_path.to_str().unwrap().to_string());
 
     let _ = app.emit("daemon-phase", "Starting core\u{2026}");
     let mut cmd = std::process::Command::new(&binary_path);
@@ -676,6 +627,7 @@ async fn api_call(
     let mut req = match method.as_str() {
         "POST" => client.post(&url),
         "PUT" => client.put(&url),
+        "PATCH" => client.patch(&url),
         "DELETE" => client.delete(&url),
         _ => client.get(&url),
     };
@@ -1282,7 +1234,6 @@ async fn main() {
         })
         .invoke_handler(tauri::generate_handler![
             wallet_exists,
-            create_wallet,
             start_daemon,
             check_daemon_ready,
             api_call,

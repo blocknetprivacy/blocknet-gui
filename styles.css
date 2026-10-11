@@ -1092,6 +1092,17 @@ body.platform-windows #app {
 }
 
 /* Balance Card */
+.upgrade-notice {
+  border: 1px solid #530;
+  border-radius: 10px;
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #000;
+  color: #fa0;
+  font-size: 13px;
+  line-height: 1.4;
+}
+
 .balance-card {
   border: 1px solid #111;
   padding: 24px;
