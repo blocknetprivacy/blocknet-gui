@@ -747,12 +747,6 @@ async fn fetch_url(url: String) -> Result<String, String> {
 }
 
 #[tauri::command]
-async fn stop_daemon(state: State<'_, DaemonState>) -> Result<(), String> {
-    stop_daemon_inner(&state);
-    Ok(())
-}
-
-#[tauri::command]
 async fn reset_blockchain_data(app: AppHandle, state: State<'_, DaemonState>) -> Result<(), String> {
     stop_daemon_inner(&state);
     stop_orphan_daemon(&get_data_dir(&app)?);
@@ -1204,7 +1198,6 @@ async fn main() {
         .manage(EventsState { worker: Mutex::new(None) })
         .manage(ApiPortState { port: Mutex::new(0) })
         .plugin(tauri_plugin_shell::init())
-        .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::new()
             .with_state_flags(
@@ -1320,7 +1313,6 @@ async fn main() {
             start_daemon,
             check_daemon_ready,
             api_call,
-            stop_daemon,
             reset_blockchain_data,
             save_file,
             open_file,

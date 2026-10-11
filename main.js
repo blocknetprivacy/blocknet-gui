@@ -79,11 +79,13 @@ let geoLookupRequested = {};
 let peerDetailLiveTimer = null;
 let navGeneration = 0;
 
+// Pending sends carry amounts and memos, so they live in the encrypted store.
 function getPendingSends() {
-  try { return JSON.parse(localStorage.getItem(walletKey('pendingSends')) || '[]'); } catch (_) { return []; }
+  return Array.isArray(userData.pendingSends) ? userData.pendingSends.slice() : [];
 }
 function savePendingSends(list) {
-  localStorage.setItem(walletKey('pendingSends'), JSON.stringify(list));
+  userData.pendingSends = list;
+  persistUserData();
 }
 function addPendingSend(txid, amount, memo) {
   var list = getPendingSends();
@@ -135,7 +137,7 @@ async function mergeWithPending(outputs) {
 }
 // --- Encrypted user-data store (contacts, notes, and per-wallet caches), keyed by the wallet password ---
 function emptyUserData() {
-  return { contacts: [], txNotes: {}, txCache: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {}, sendLabels: {} };
+  return { contacts: [], txNotes: {}, txCache: [], pendingSends: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {}, sendLabels: {} };
 }
 function udObj(x) { return (x && typeof x === 'object' && !Array.isArray(x)) ? x : {}; }
 
@@ -157,6 +159,7 @@ async function loadUserData() {
     userData.contacts = Array.isArray(parsed.contacts) ? parsed.contacts : [];
     userData.txNotes = udObj(parsed.txNotes);
     userData.txCache = Array.isArray(parsed.txCache) ? parsed.txCache : [];
+    userData.pendingSends = Array.isArray(parsed.pendingSends) ? parsed.pendingSends : [];
     userData.receivePrefs = udObj(parsed.receivePrefs);
     userData.peerGeoCache = udObj(parsed.peerGeoCache);
     userData.peerObservationCache = udObj(parsed.peerObservationCache);
@@ -191,7 +194,7 @@ async function migrateLegacyUserData() {
       });
     }
   } catch (_) {}
-  ['txCache'].forEach(function (k) {
+  ['txCache', 'pendingSends'].forEach(function (k) {
     try {
       var raw = localStorage.getItem(walletKey(k));
       if (!raw) return;
@@ -210,7 +213,7 @@ async function migrateLegacyUserData() {
   if (!changed) return;
   try {
     await invoke('write_user_data', { wallet: userDataWallet, password: sessionPassword, contents: JSON.stringify(userData) });
-    ['addressBook', 'txCache', 'receivePrefs', 'peerGeoCache', 'peerObservationCache'].forEach(function (k) {
+    ['addressBook', 'txCache', 'pendingSends', 'receivePrefs', 'peerGeoCache', 'peerObservationCache'].forEach(function (k) {
       try { localStorage.removeItem(walletKey(k)); } catch (_) {}
     });
     try { localStorage.removeItem('txNotes'); } catch (_) {}
@@ -244,6 +247,7 @@ function resetUserData() {
   userDataReady = false;
   userDataDirty = false;
   userDataWriting = false;
+  txCacheSig = '';
   historyOutputs = [];
   historyChainHeight = 0;
   historyFromCache = false;
@@ -6081,10 +6085,6 @@ function parsePaymentRequestUri(raw) {
   };
 }
 
-function applyPaymentRequestToSend(raw, silent) {
-  return applyPaymentRequestToRow(getFirstRecipientRow(), raw, silent);
-}
-
 function handleDeepLinkUrls(urls) {
   if (!urls) return;
   var first = Array.isArray(urls) ? urls[0] : urls;
@@ -6345,7 +6345,8 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 
 // --- Keyboard Shortcuts ---
 
-var navKeys = ['dashboard', 'send', 'receive', 'history', 'mining', 'network', 'signverify', 'settings'];
+// Number keys follow the sidebar order, whatever it holds.
+var navKeys = Array.prototype.map.call(document.querySelectorAll('.nav-link[data-view]'), function (b) { return b.dataset.view; });
 
 document.addEventListener('keydown', function (e) {
   // Ignore when typing in inputs/textareas
@@ -6372,7 +6373,7 @@ document.addEventListener('keydown', function (e) {
     return;
   }
 
-  // 1-7 for nav pages
+  // Number keys for nav pages
   var idx = parseInt(e.key) - 1;
   if (idx >= 0 && idx < navKeys.length && !e.metaKey && !e.ctrlKey && !e.altKey) {
     navigate(navKeys[idx]);
