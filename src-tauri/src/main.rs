@@ -37,10 +37,88 @@ impl Drop for DaemonState {
     fn drop(&mut self) {
         if let Ok(mut guard) = self.child.lock() {
             if let Some(mut child) = guard.take() {
-                let _ = child.kill();
-                let _ = child.wait();
+                terminate_child(&mut child);
             }
         }
+    }
+}
+
+const DAEMON_STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
+
+// The core flushes its chain db and wallet on SIGTERM, so ask first and only
+// force it after the grace period. Windows has no such signal for a windowless
+// process, so it stops hard there.
+fn terminate_child(child: &mut std::process::Child) {
+    #[cfg(unix)]
+    {
+        unsafe { libc::kill(child.id() as libc::pid_t, libc::SIGTERM); }
+        let deadline = std::time::Instant::now() + DAEMON_STOP_GRACE;
+        while std::time::Instant::now() < deadline {
+            if let Ok(Some(_)) = child.try_wait() {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+    }
+    let _ = child.kill();
+    let _ = child.wait();
+}
+
+fn daemon_pid_path(data_dir: &std::path::Path) -> std::path::PathBuf {
+    data_dir.join("gui-daemon.pid")
+}
+
+// A core left over from a crashed GUI still holds the chain db lock. Its pid is
+// on disk, and it is stopped only if that pid is still a core started on this
+// data dir, so a node the user runs by hand is never touched.
+fn stop_orphan_daemon(data_dir: &std::path::Path) {
+    let pid_path = daemon_pid_path(data_dir);
+    let pid: u32 = match std::fs::read_to_string(&pid_path).ok().and_then(|s| s.trim().parse().ok()) {
+        Some(p) => p,
+        None => return,
+    };
+    let _ = std::fs::remove_file(&pid_path);
+    #[cfg(unix)]
+    {
+        let out = std::process::Command::new("ps")
+            .args(["-ww", "-p", &pid.to_string(), "-o", "command="])
+            .output();
+        let cmdline = match out {
+            Ok(o) => String::from_utf8_lossy(&o.stdout).to_string(),
+            Err(_) => return,
+        };
+        if !cmdline.contains("blocknet-") || !cmdline.contains(&*data_dir.to_string_lossy()) {
+            return;
+        }
+        let pid = pid as libc::pid_t;
+        unsafe { libc::kill(pid, libc::SIGTERM); }
+        let deadline = std::time::Instant::now() + DAEMON_STOP_GRACE;
+        while std::time::Instant::now() < deadline {
+            if unsafe { libc::kill(pid, 0) } != 0 {
+                return;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
+        unsafe { libc::kill(pid, libc::SIGKILL); }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
+        let out = std::process::Command::new("tasklist")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/FI", &format!("PID eq {}", pid), "/FO", "CSV", "/NH"])
+            .output();
+        let listed = out.map(|o| String::from_utf8_lossy(&o.stdout).to_string()).unwrap_or_default();
+        if !listed.contains("blocknet-amd64-windows.exe") {
+            return;
+        }
+        let _ = std::process::Command::new("taskkill")
+            .creation_flags(CREATE_NO_WINDOW)
+            .args(["/f", "/pid", &pid.to_string()])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status();
     }
 }
 
@@ -163,35 +241,6 @@ fn get_wallet_path(app: &AppHandle) -> Result<std::path::PathBuf, String> {
     Ok(get_app_dir(app)?.join(&name))
 }
 
-fn kill_listeners_in_gui_port_range() {
-    #[cfg(any(target_os = "macos", target_os = "linux"))]
-    {
-        let binary_names = [
-            "blocknet-aarch64-apple-darwin",
-            "blocknet-x86_64-apple-darwin",
-            "blocknet-amd64-linux",
-        ];
-        for name in binary_names {
-            let cmd = format!("pkill -9 -f '{}' 2>/dev/null || true", name);
-            let _ = std::process::Command::new("sh")
-                .arg("-c")
-                .arg(cmd)
-                .status();
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
-        const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-        let _ = std::process::Command::new("taskkill")
-            .creation_flags(CREATE_NO_WINDOW)
-            .args(["/f", "/im", "blocknet-amd64-windows.exe"])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .status();
-    }
-}
-
 fn is_port_in_use(port: u16) -> bool {
     let addr = format!("127.0.0.1:{}", port);
     std::net::TcpStream::connect_timeout(
@@ -239,11 +288,9 @@ fn current_api_port(state: &ApiPortState) -> Option<u16> {
 }
 
 fn stop_daemon_inner(state: &DaemonState) {
-    if let Ok(mut guard) = state.child.lock() {
-        if let Some(mut child) = guard.take() {
-            let _ = child.kill();
-            let _ = child.wait();
-        }
+    let child = state.child.lock().ok().and_then(|mut guard| guard.take());
+    if let Some(mut child) = child {
+        terminate_child(&mut child);
     }
 }
 
@@ -473,9 +520,7 @@ fn open_daemon_log(data_dir: &std::path::Path) -> Option<(std::fs::File, std::fs
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
     // Kill any existing daemon before starting a new one
     stop_daemon_inner(&state);
-
-    kill_listeners_in_gui_port_range();
-    std::thread::sleep(std::time::Duration::from_millis(100));
+    stop_orphan_daemon(&get_data_dir(&app)?);
 
     let api_port = pick_gui_api_port()?;
     {
@@ -549,6 +594,7 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
         Ok(Some(_)) => Err("Daemon exited during startup".to_string()),
         Ok(None) => {
             let mut guard = state.child.lock().map_err(|e| format!("Lock error: {}", e))?;
+            let _ = std::fs::write(daemon_pid_path(&data_dir), child.id().to_string());
             *guard = Some(child);
             Ok(())
         },
@@ -709,8 +755,7 @@ async fn stop_daemon(state: State<'_, DaemonState>) -> Result<(), String> {
 #[tauri::command]
 async fn reset_blockchain_data(app: AppHandle, state: State<'_, DaemonState>) -> Result<(), String> {
     stop_daemon_inner(&state);
-    kill_listeners_in_gui_port_range();
-    std::thread::sleep(std::time::Duration::from_millis(500));
+    stop_orphan_daemon(&get_data_dir(&app)?);
 
     let data_dir = get_data_dir(&app)?;
     if data_dir.exists() {
