@@ -3199,3 +3199,7 @@ body.wallet-view-only .seed-item,
 body.wallet-no-seed .seed-item {
   display: none !important;
 }
+
+#node-restart {
+  margin-top: 8px;
+}

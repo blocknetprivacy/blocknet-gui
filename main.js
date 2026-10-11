@@ -4264,7 +4264,7 @@ async function handleImportSeed() {
     sessionPassword = password;
 
     hideImportForm();
-    showSettingsStatus((result.view_only ? 'Watch-only wallet imported' : 'Wallet imported') + (result.address ? ' — address ' + abbrAddr(result.address) : '') + '. Scanning blockchain for your outputs...', 'success');
+    showSettingsStatus((result.view_only ? 'Watch-only wallet imported' : 'Wallet imported') + (result.address ? ', address ' + abbrAddr(result.address) : '') + '. Scanning blockchain for your outputs...', 'success');
     await loadWalletList();
     showApp();
   } catch (e) {
@@ -6404,7 +6404,10 @@ async function saveNodeSettings() {
       showNodeStatus('Saved.', 'success');
     }
   } catch (e) {
-    showNodeStatus(normalizeError(e), 'error');
+    var msg = normalizeError(e);
+    var bad = /^extra_peers\[(\d+)\]/.exec(msg);
+    if (bad) msg = 'Extra peer ' + (Number(bad[1]) + 1) + ' is not a valid address. Copy the full address, starting with /ip4/, /ip6/ or /dns/.';
+    showNodeStatus(msg, 'error');
   } finally {
     btn.disabled = false;
   }
@@ -6546,8 +6549,12 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 
 // --- Keyboard Shortcuts ---
 
-// Number keys follow the sidebar order, whatever it holds.
-var navKeys = Array.prototype.map.call(document.querySelectorAll('.nav-link[data-view]'), function (b) { return b.dataset.view; });
+// Number keys follow the visible sidebar, so a hidden page never takes a number.
+function navKeys() {
+  return Array.prototype.filter.call(document.querySelectorAll('.nav-link[data-view]'), function (b) {
+    return b.offsetParent !== null;
+  }).map(function (b) { return b.dataset.view; });
+}
 
 document.addEventListener('keydown', function (e) {
   // Ignore when typing in inputs/textareas
@@ -6576,8 +6583,9 @@ document.addEventListener('keydown', function (e) {
 
   // Number keys for nav pages
   var idx = parseInt(e.key) - 1;
-  if (idx >= 0 && idx < navKeys.length && !e.metaKey && !e.ctrlKey && !e.altKey) {
-    navigate(navKeys[idx]);
+  var keys = navKeys();
+  if (idx >= 0 && idx < keys.length && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    navigate(keys[idx]);
   }
 });
 
