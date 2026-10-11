@@ -11,8 +11,7 @@ let sessionPassword = '';
 let loadedWalletName = '';
 let resetChainArmed = false;
 let resetChainArmTimer = null;
-let viewSeedArmed = false;
-let viewSeedArmTimer = null;
+let seedHideTimer = null;
 let isMining = false;
 let threadDebounce = null;
 let threadUpdatePending = false;
@@ -4244,45 +4243,33 @@ async function handleLockWallet() {
   }
 }
 
+const SEED_SHOW_MS = 120000;
+
+// Anyone at an unlocked app could otherwise read the seed, so it takes the
+// password every time, and it leaves the page when hidden or on lock.
 async function handleViewSeed() {
   const globalSettingsStatus = document.getElementById('settings-status');
   if (globalSettingsStatus) globalSettingsStatus.style.display = 'none';
   const seedDisplayEl = document.getElementById('seed-display');
-  const seedStatusEl = document.getElementById('seed-status');
+  const pwEl = document.getElementById('seed-password');
 
-  // If seed is already shown, clicking again hides it.
-  if (seedDisplayEl && seedDisplayEl.style.display !== 'none') {
-    seedDisplayEl.style.display = 'none';
-    if (seedStatusEl) seedStatusEl.style.display = 'none';
-    viewSeedArmed = false;
-    if (viewSeedArmTimer) {
-      clearTimeout(viewSeedArmTimer);
-      viewSeedArmTimer = null;
-    }
+  if (seedDisplayEl.style.display !== 'none') {
+    hideSeed();
     return;
   }
 
-  if (!viewSeedArmed) {
-    viewSeedArmed = true;
-    if (viewSeedArmTimer) clearTimeout(viewSeedArmTimer);
-    viewSeedArmTimer = setTimeout(() => {
-      viewSeedArmed = false;
-      viewSeedArmTimer = null;
-      document.getElementById('seed-status').style.display = 'none';
-    }, 10000);
-    showSeedStatus('Click "View Recovery Seed" again within 10s to confirm.', 'info');
+  if (pwEl.style.display === 'none') {
+    pwEl.value = '';
+    pwEl.style.display = 'block';
+    pwEl.focus();
+    showSeedStatus('Enter your wallet password, then press View Recovery Seed.', 'info');
     return;
   }
-  
-  viewSeedArmed = false;
-  if (viewSeedArmTimer) {
-    clearTimeout(viewSeedArmTimer);
-    viewSeedArmTimer = null;
-  }
-  document.getElementById('seed-status').style.display = 'none';
 
-  if (!sessionPassword) {
-    showSeedStatus('No session password. Lock and re-unlock wallet first.', 'error');
+  const password = pwEl.value;
+  if (!password) {
+    showSeedStatus('Enter your wallet password.', 'error');
+    pwEl.focus();
     return;
   }
 
@@ -4290,17 +4277,30 @@ async function handleViewSeed() {
     showSeedStatus('Loading seed...', 'info');
     const data = await api('/api/wallet/seed', {
       method: 'POST',
-      body: { password: sessionPassword },
+      body: { password: password },
     });
-    document.getElementById('seed-status').style.display = 'none';
-    const el = document.getElementById('seed-display');
-    el.textContent = data.mnemonic;
-    el.style.display = 'block';
-    showSeedStatus('Recovery seed displayed. Keep this safe!', 'success');
+    pwEl.value = '';
+    pwEl.style.display = 'none';
+    seedDisplayEl.textContent = data.mnemonic;
+    seedDisplayEl.style.display = 'block';
+    showSeedStatus('Recovery seed displayed. It hides itself in 2 minutes. Keep this safe!', 'success');
+    if (seedHideTimer) clearTimeout(seedHideTimer);
+    seedHideTimer = setTimeout(hideSeed, SEED_SHOW_MS);
   } catch (e) {
-    document.getElementById('seed-display').style.display = 'none';
+    pwEl.value = '';
+    pwEl.focus();
     showSeedStatus(normalizeError(e), 'error');
   }
+}
+
+function hideSeed() {
+  if (seedHideTimer) { clearTimeout(seedHideTimer); seedHideTimer = null; }
+  const seedDisplayEl = document.getElementById('seed-display');
+  const pwEl = document.getElementById('seed-password');
+  const seedStatusEl = document.getElementById('seed-status');
+  if (seedDisplayEl) { seedDisplayEl.textContent = ''; seedDisplayEl.style.display = 'none'; }
+  if (pwEl) { pwEl.value = ''; pwEl.style.display = 'none'; }
+  if (seedStatusEl) seedStatusEl.style.display = 'none';
 }
 
 async function handleResetChainData() {
@@ -4798,8 +4798,6 @@ function showUnlockScreen() {
   const password1 = document.getElementById('password1');
   const password2 = document.getElementById('password2');
   const submitBtn = document.getElementById('password-submit');
-  const seedDisplay = document.getElementById('seed-display');
-  const seedStatus = document.getElementById('seed-status');
   const settingsStatus = document.getElementById('settings-status');
 
   if (passwordTitle) passwordTitle.textContent = 'Welcome to Blocknet';
@@ -4818,8 +4816,7 @@ function showUnlockScreen() {
     submitBtn.disabled = false;
     submitBtn.textContent = 'Continue';
   }
-  if (seedDisplay) seedDisplay.style.display = 'none';
-  if (seedStatus) seedStatus.style.display = 'none';
+  hideSeed();
   if (settingsStatus) settingsStatus.style.display = 'none';
 
   hideStatus();
@@ -6187,6 +6184,7 @@ document.getElementById('lock-wallet-btn').addEventListener('click', handleLockW
   if (refresh) refresh.addEventListener('click', loadCoinOutputs);
 })();
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
+document.getElementById('seed-password').addEventListener('keydown', function (e) { if (e.key === 'Enter') handleViewSeed(); });
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
 document.getElementById('wallet-audit-btn').addEventListener('click', handleWalletAudit);
 document.getElementById('backup-wallet-btn').addEventListener('click', handleBackupWallet);

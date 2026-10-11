@@ -477,13 +477,14 @@
                         class="settings-help"
                         name="view-recovery-seed-help"
                         tabindex="0"
-                        aria-label="Shows your 12-word recovery seed after confirmation."
-                        title="Shows your 12-word recovery seed after confirmation."
+                        aria-label="Shows your 12-word recovery seed after you enter your password."
+                        title="Shows your 12-word recovery seed after you enter your password."
                       >?</span>
                     </div>
-                    <p class="settings-item-desc">Displays your wallet phrase after a confirmation click. Keep it offline and private.</p>
+                    <p class="settings-item-desc">Displays your wallet phrase after you enter your password. Keep it offline and private.</p>
                   </div>
                   <div class="settings-item-control">
+                    <input type="password" id="seed-password" class="seed-pw-input" placeholder="Wallet password" autocomplete="current-password" style="display: none;">
                     <button class="btn-primary" id="view-seed-btn">View Recovery Seed</button>
                     <div id="seed-status" class="status-message" style="display: none;"></div>
                     <div id="seed-display" class="seed-display" style="display: none;"></div>
