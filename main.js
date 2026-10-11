@@ -3973,6 +3973,7 @@ function showImportForm() {
   document.getElementById('import-seed-btn').style.display = 'none';
   document.getElementById('import-seed-input').value = '';
   document.getElementById('import-seed-password').value = '';
+  document.getElementById('import-seed-password2').value = '';
   document.getElementById('import-seed-filename').value = '';
   document.getElementById('import-seed-status').style.display = 'none';
   document.getElementById('import-seed-input').focus();
@@ -4077,6 +4078,23 @@ async function handleCreateWallet() {
   }
 }
 
+// A restored wallet always gets its own file. Without a name the daemon would
+// fall back to the active wallet's file and refuse, or worse, open it.
+async function pickImportWalletName(requested) {
+  var existing = [];
+  try { existing = await invoke('list_wallets'); } catch (_) {}
+  if (requested) {
+    if (/[\\/]|\.\./.test(requested)) throw new Error("Names can't contain / \\ or ..");
+    var name = requested.endsWith('.dat') ? requested : requested + '.dat';
+    if (existing.indexOf(name) >= 0) throw new Error('A wallet with that name already exists. Choose another name.');
+    return name;
+  }
+  for (var i = 1; ; i++) {
+    var candidate = i === 1 ? 'restored.dat' : 'restored-' + i + '.dat';
+    if (existing.indexOf(candidate) < 0) return candidate;
+  }
+}
+
 async function handleImportSeed() {
   var mnemonic = document.getElementById('import-seed-input').value.trim();
   var password = document.getElementById('import-seed-password').value;
@@ -4096,12 +4114,15 @@ async function handleImportSeed() {
     showImportStatus('Password must be at least 8 characters', 'error');
     return;
   }
-  if (!filename) {
-    showImportStatus('Enter a filename for the imported wallet (e.g. restored.dat)', 'error');
+  if (password !== document.getElementById('import-seed-password2').value) {
+    showImportStatus('Passwords do not match', 'error');
     return;
   }
-  if (!filename.endsWith('.dat')) {
-    filename = filename + '.dat';
+  try {
+    filename = await pickImportWalletName(filename);
+  } catch (e) {
+    showImportStatus(normalizeError(e), 'error');
+    return;
   }
 
   btn.disabled = true;
@@ -4115,12 +4136,10 @@ async function handleImportSeed() {
     await unloadWallet();
 
     showImportStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
-    var body = { mnemonic: words.join(' '), password: password };
-    if (filename) body.filename = filename;
+    var body = { mnemonic: words.join(' '), password: password, filename: filename };
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
 
-    // Update active wallet to the imported file
-    var importedName = result.filename || filename || 'wallet.dat';
+    var importedName = result.filename || filename;
     loadedWalletName = importedName;
     await invoke('switch_wallet', { name: importedName });
     sessionPassword = password;
@@ -4166,7 +4185,13 @@ async function handlePasswordScreenImportSubmit() {
   var words = mnemonic.split(/\s+/);
   if (words.length !== 12) { showPsStatus('Recovery phrase must be exactly 12 words', 'error'); return; }
   if (password.length < 8) { showPsStatus('Password must be at least 8 characters', 'error'); return; }
-  if (filename && !filename.endsWith('.dat')) filename = filename + '.dat';
+  if (password !== document.getElementById('ps-import-password2').value) { showPsStatus('Passwords do not match', 'error'); return; }
+  try {
+    filename = await pickImportWalletName(filename);
+  } catch (e) {
+    showPsStatus(normalizeError(e), 'error');
+    return;
+  }
 
   btn.disabled = true;
   btn.textContent = 'Importing...';
@@ -4177,11 +4202,10 @@ async function handlePasswordScreenImportSubmit() {
     await unloadWallet();
 
     showPsStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
-    var body = { mnemonic: words.join(' '), password: password };
-    if (filename) body.filename = filename;
+    var body = { mnemonic: words.join(' '), password: password, filename: filename };
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
 
-    var importedName = result.filename || filename || 'wallet.dat';
+    var importedName = result.filename || filename;
     loadedWalletName = importedName;
     // Persist the imported wallet as active so next launch prompts for this wallet.
     try {
@@ -4192,21 +4216,7 @@ async function handlePasswordScreenImportSubmit() {
     sessionPassword = password;
     showApp();
   } catch (e) {
-    var msg = normalizeError(e);
-    // Recovery path: if prior import already created the file, try loading it now.
-    if (msg.toLowerCase().includes('wallet file already exists')) {
-      try {
-        showPsStatus('Wallet file exists; attempting to load it now...', 'info');
-        await loadOrUnlockWallet(password, filename || activeWalletName);
-        sessionPassword = password;
-        showApp();
-        return;
-      } catch (loadErr) {
-        showPsStatus(normalizeError(loadErr), 'error');
-      }
-    } else {
-      showPsStatus(msg, 'error');
-    }
+    showPsStatus(normalizeError(e), 'error');
     btn.disabled = false;
     btn.textContent = 'Import';
   }
@@ -4738,6 +4748,7 @@ function showOnboardImport() {
   div.innerHTML =
     '<textarea id="ps-import-seed" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>' +
     '<input type="password" id="ps-import-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">' +
+    '<input type="password" id="ps-import-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">' +
     '<input type="text" id="ps-import-filename" class="seed-pw-input" placeholder="Filename (optional, e.g. restored.dat)">' +
     '<button type="button" class="btn-primary" id="ps-import-submit" style="width:100%">Import</button>' +
     '<div id="ps-import-status" class="status-message" style="display:none"></div>';
