@@ -21,6 +21,8 @@ jobs:
 
       - name: Fetch core sidecar binaries
         run: bash scripts/update-core-binaries.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Install Rosetta
         run: softwareupdate --install-rosetta --agree-to-license

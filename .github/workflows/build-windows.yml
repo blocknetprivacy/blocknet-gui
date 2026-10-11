@@ -20,6 +20,8 @@ jobs:
       - name: Fetch core sidecar binaries
         shell: bash
         run: bash scripts/update-core-binaries.sh
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Validate version sync from daemon
         shell: bash

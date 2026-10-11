@@ -24,7 +24,11 @@ mkdir -p "$BIN_DIR"
 
 echo "Fetching Blocknet core release metadata..."
 RELEASE_JSON="$TMP_DIR/release.json"
-curl -fsSL "$API_URL" -o "$RELEASE_JSON"
+AUTH=()
+if [[ -n "${GITHUB_TOKEN:-}" ]]; then
+  AUTH=(-H "Authorization: Bearer $GITHUB_TOKEN")
+fi
+curl -fsSL --retry 3 ${AUTH[@]+"${AUTH[@]}"} "$API_URL" -o "$RELEASE_JSON"
 
 extract_asset_url() {
   local asset_name="$1"
