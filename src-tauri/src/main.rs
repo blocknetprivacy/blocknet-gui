@@ -45,9 +45,6 @@ impl Drop for DaemonState {
 
 const DAEMON_STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
-// The core flushes its chain db and wallet on SIGTERM, so ask first and only
-// force it after the grace period. Windows has no such signal for a windowless
-// process, so it stops hard there.
 fn terminate_child(child: &mut std::process::Child) {
     #[cfg(unix)]
     {
@@ -68,9 +65,6 @@ fn daemon_pid_path(data_dir: &std::path::Path) -> std::path::PathBuf {
     data_dir.join("gui-daemon.pid")
 }
 
-// A core left over from a crashed GUI still holds the chain db lock. Its pid is
-// on disk, and it is stopped only if that pid is still a core started on this
-// data dir, so a node the user runs by hand is never touched.
 fn stop_orphan_daemon(data_dir: &std::path::Path) {
     let pid_path = daemon_pid_path(data_dir);
     let pid: u32 = match std::fs::read_to_string(&pid_path).ok().and_then(|s| s.trim().parse().ok()) {
@@ -543,8 +537,6 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
     // existing file in place as a fallback.
     refresh_checkpoints(&app, &data_dir).await;
 
-    // Core takes only --api and --data; the wallet location is set over
-    // PATCH /api/settings once the API is up.
     let args = vec![
         "--api".to_string(), format!("127.0.0.1:{}", api_port),
         "--data".to_string(), data_dir.to_str().unwrap().to_string(),
@@ -651,8 +643,6 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
     }
 }
 
-// One client for every short request, so a dead daemon or web host fails the
-// call instead of leaving the UI waiting forever.
 static HTTP: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
     reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(5))
@@ -660,8 +650,6 @@ static HTTP: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| 
         .expect("HTTP client")
 });
 
-// Building a send or restoring a wallet can take a while on a busy node; every
-// other route answers fast.
 fn api_timeout(method: &str, path: &str) -> std::time::Duration {
     let slow = method != "GET" && (
         path.starts_with("/api/wallet/send")
@@ -968,7 +956,6 @@ async fn rename_wallet(app: AppHandle, old_name: String, new_name: String) -> Re
             return Err("Invalid wallet name".to_string());
         }
     }
-    // The daemon keeps the active wallet open and saves it by path.
     if get_active_wallet_name(&app)? == old_name {
         return Err("Switch to another wallet before renaming this one".to_string());
     }
@@ -983,9 +970,6 @@ async fn rename_wallet(app: AppHandle, old_name: String, new_name: String) -> Re
     }
     std::fs::rename(&old_path, &new_path)
         .map_err(|e| format!("Rename failed: {}", e))?;
-    // Contacts and notes live beside the wallet under its name, so they move
-    // with it. A stale file left under the new name by a deleted wallet would
-    // fail to decrypt, so the wallet's own data replaces it.
     let old_data = userdata_path(&app, &old_name)?;
     let new_data = userdata_path(&app, &new_name)?;
     if old_data.exists() {

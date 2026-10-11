@@ -79,7 +79,6 @@ let geoLookupRequested = {};
 let peerDetailLiveTimer = null;
 let navGeneration = 0;
 
-// Pending sends carry amounts and memos, so they live in the encrypted store.
 function getPendingSends() {
   return Array.isArray(userData.pendingSends) ? userData.pendingSends.slice() : [];
 }
@@ -272,7 +271,6 @@ function setTxNote(txid, note) {
 function getTxCache() {
   return Array.isArray(userData.txCache) ? userData.txCache : [];
 }
-// Each write re-encrypts the whole store, so skip it when no output changed.
 var txCacheSig = '';
 function setTxCache(outputs) {
   var list = Array.isArray(outputs) ? outputs : [];
@@ -543,9 +541,6 @@ function sendDesktopNotification(title, body) {
   } catch (_) {}
 }
 
-// The full history and sends lists are heavy on a big wallet. Outputs only
-// change when the wallet's output count or synced height moves, so the balance
-// (cheap) decides whether they are fetched at all.
 var txPollBusy = false;
 var txPollKey = '';
 async function pollTxNotifications() {
@@ -779,8 +774,6 @@ function identiconSvg(seedStr, dim) {
 
 var viewStack = [];
 
-// Watch-only wallets cannot send or sign, and wallets made from keys have no
-// seed to show; the body classes hide those controls.
 var walletViewOnly = false;
 function applyWalletCaps(w) {
   if (!w || typeof w !== 'object') return;
@@ -1502,8 +1495,6 @@ function dismissQROverlay() {
 
 // --- History ---
 
-// quiet: a refresh while History is open (new block). It skips the first-page
-// preview and keeps the rows already shown and the scroll position.
 async function loadHistory(opts) {
   var quiet = !!(opts && opts.quiet);
   const container = document.getElementById('history-list');
@@ -1605,8 +1596,7 @@ async function fetchSendsCtx(chainHeight, allPages) {
   var ctx = { sends: {}, sendRows: [], sendTo: {}, sendTime: {} };
   try {
     // limit is capped at 500 server-side; grab the max so older sends still
-    // render as sends rather than falling back to a raw change output. An
-    // export pages through every send.
+    // render as sends rather than falling back to a raw change output.
     var list = [];
     for (var offset = 0; ; offset += 500) {
       var sd = await api('/api/wallet/sends?limit=500&order=desc&offset=' + offset);
@@ -1843,16 +1833,12 @@ function filterHistory() {
   renderHistoryList(list);
 }
 
-// Memos come from whoever paid, so a leading = + - @ must not reach a
-// spreadsheet as a formula.
 function csvField(s) {
   s = String(s == null ? '' : s);
   if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-// One row per transaction, the same rows the History view shows: real sends
-// with their amount, fee and recipient; receives and mining rewards as received.
 async function exportHistoryCSV() {
   var btn = document.getElementById('export-csv-btn');
   if (btn.dataset.openPath) {
@@ -2404,7 +2390,6 @@ async function geolocateIp(ip) {
   }
 }
 
-// Public addresses first: those are the ones another node can usually reach.
 function isPrivateMultiaddr(a) {
   return /\/ip4\/(10\.|127\.|192\.168\.|172\.(1[6-9]|2\d|3[01])\.|169\.254\.)|\/ip6\/(::1|fe80:|f[cd])/i.test(a);
 }
@@ -3728,9 +3713,6 @@ async function handleSend(e) {
           continue;
         }
         if (ccActive && isStaleInputError(msg)) {
-          // A picked coin is gone, most often change from a send that has not
-          // confirmed yet. The user chose these coins and confirmed their fee,
-          // so never swap in other coins without asking.
           try { await loadCoinOutputs(); } catch (_) {}
           pendingSendIdempotency = null;
           showSendStatus('A coin you picked was already spent. The coin list is updated. Pick coins again, or turn off coin control, then press Send.', 'error');
@@ -3811,9 +3793,6 @@ function finalizeSend(result, entries, recipientsPayload) {
   dashForceRefresh = true;
 }
 
-// The node stopped mid-send, so the tx may or may not be on the network. A
-// recorded send to the same recipients settles it; otherwise the next Send uses a
-// fresh key and the confirm step warns that it can pay twice.
 async function resolveInterruptedSend(recipientsPayload) {
   var since = Math.floor(pendingSendIdempotency.createdAt / 1000) - 60;
   var want = recipientsPayload.map(function (r) { return r.address + ':' + r.amount; }).sort().join('|');
@@ -3995,8 +3974,6 @@ function startWalletRename(name) {
   });
 }
 
-// Per-wallet localStorage entries are keyed by file name; carry them over on
-// rename and drop them on delete so a later wallet with the old name starts clean.
 function moveWalletLocalKeys(oldName, newName) {
   ['pendingSends', 'txCache', 'addressBook'].forEach(function (base) {
     try {
@@ -4166,8 +4143,6 @@ async function handleCreateWallet() {
   }
 }
 
-// A restored wallet always gets its own file. Without a name the daemon would
-// fall back to the active wallet's file and refuse, or worse, open it.
 async function pickImportWalletName(requested) {
   var existing = [];
   try { existing = await invoke('list_wallets'); } catch (_) {}
@@ -4199,8 +4174,6 @@ function setImportMode(mode) {
     : 'Spend private key (64 hex characters)';
 }
 
-// The import body for the chosen mode: a seed, both private keys, or the
-// public spend key with the private view key for a watch-only wallet.
 function readImportSecret() {
   if (importMode === 'seed') {
     var mnemonic = document.getElementById('import-seed-input').value.trim();
@@ -4365,8 +4338,6 @@ async function handleLockWallet() {
 
 const SEED_SHOW_MS = 120000;
 
-// Anyone at an unlocked app could otherwise read the seed, so it takes the
-// password every time, and it leaves the page when hidden or on lock.
 async function handleViewSeed() {
   const globalSettingsStatus = document.getElementById('settings-status');
   if (globalSettingsStatus) globalSettingsStatus.style.display = 'none';
@@ -4628,8 +4599,6 @@ function showSeedStatus(msg, type) {
 
 // --- Polling ---
 
-// Count received transactions the same way the dashboard does (send rows and
-// mining rewards excluded), so the two share dashLastTxCount without thrash.
 function playTadaOnNewInbound(outputs, ctx) {
   var inboundCount = buildTxRows(outputs, ctx).filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
   if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
@@ -4952,8 +4921,6 @@ async function showAppFromSplash() {
   });
 }
 
-// A payment link that opened the app while it was locked waits in
-// pendingDeepLink, so every way into the app has to apply it.
 async function enterApp(hideEntryScreen) {
   stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
@@ -4970,8 +4937,6 @@ async function enterApp(hideEntryScreen) {
     applyPendingDeepLink();
     return;
   }
-  // The launch link stays readable for the whole process, so read it once or
-  // every later unlock would prefill Send with it again.
   if (!launchDeepLinkPulled) {
     launchDeepLinkPulled = true;
     pullCurrentDeepLinkWithRetries(24, 500);
@@ -5505,14 +5470,11 @@ async function ensureDaemonReady() {
   await daemonStartPromise;
 }
 
-// Wallet names in create, import and load resolve against the folder of
-// wallet_file, so the daemon must know where this app keeps its wallets.
 async function pointDaemonAtWalletDir() {
   const walletPath = await invoke('get_wallet_path_cmd');
   await api('/api/settings', { method: 'PATCH', body: { wallet_file: walletPath } });
 }
 
-// A fresh start of our own core, for settings that apply only after a restart.
 async function restartDaemon() {
   if (daemonStartPromise) await daemonStartPromise;
   daemonStartPromise = (async () => {
@@ -6341,7 +6303,6 @@ document.querySelectorAll('#import-mode .payment-link-mode').forEach(function (b
   b.addEventListener('click', function () { setImportMode(b.dataset.mode); });
 });
 
-// --- Node settings (core /api/settings) ---
 var nodeFullSync = false;
 
 function showNodeStatus(msg, type) {
@@ -6549,7 +6510,6 @@ document.querySelectorAll('.nav-link').forEach(btn => {
 
 // --- Keyboard Shortcuts ---
 
-// Number keys follow the visible sidebar, so a hidden page never takes a number.
 function navKeys() {
   return Array.prototype.filter.call(document.querySelectorAll('.nav-link[data-view]'), function (b) {
     return b.offsetParent !== null;
