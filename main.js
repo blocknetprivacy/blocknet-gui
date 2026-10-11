@@ -559,7 +559,7 @@ async function pollTxNotifications() {
     // outputs. The change output of your own send also looks like this, so load
     // the sends map and skip recorded-send txids: otherwise sending would ping a
     // false "Payment confirmed" when the change confirms.
-    var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.synced_height].join(':') : '';
+    var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.spendable, bal.pending].join(':') : '';
     if (!key || key === txPollKey) return;
     var data = null;
     try { data = await sharedGet('/api/wallet/history'); } catch (_) {}
@@ -567,7 +567,7 @@ async function pollTxNotifications() {
       txPollKey = key;
       // Local sends context: must not touch the shared globals the History view uses.
       var sendsCtx = await fetchSendsCtx(0);
-      if (currentView !== 'dashboard') playTadaOnNewInbound(data.outputs, sendsCtx);
+      playTadaOnNewInbound(data.outputs, sendsCtx);
       var incoming = data.outputs.filter(function (o) {
         return o && o.txid && !o.spent && !o.is_coinbase && o.block_height && !sendsCtx.sends[o.txid];
       });
@@ -1194,16 +1194,12 @@ async function loadDashboard() {
     if (statusHeight !== dashLastHeight || dashForceRefresh) {
       dashLastHeight = statusHeight;
       dashForceRefresh = false;
-      var data = await sharedGet('/api/wallet/history');
+      var data = null;
+      try { data = await api('/api/wallet/history/page?limit=20&offset=0&order=desc'); } catch (_) {}
       var container = document.getElementById('dash-recent-tx');
       var hasOutputsArray = data && Array.isArray(data.outputs);
-      var outputs = hasOutputsArray ? data.outputs : null;
-      var fromCache = false;
-      if (hasOutputsArray) {
-        setTxCache(outputs);
-      } else {
-        outputs = getTxCache(); fromCache = true;
-      }
+      var outputs = hasOutputsArray ? data.outputs : getTxCache();
+      var fromCache = !hasOutputsArray;
       if (outputs) outputs = await mergeWithPending(outputs);
       // Same transaction-centric view as History: send rows from the sends
       // record, change outputs suppressed. Uses a local sends context (never the
@@ -1212,17 +1208,7 @@ async function loadDashboard() {
       var txRows = outputs ? buildTxRows(outputs, dashSendsCtx) : [];
       if (!txRows.length) {
         container.innerHTML = '<div class="empty">No transactions yet</div>';
-        dashLastTxCount = 0;
       } else {
-        // Detect new inbound transactions (received rows, not sends/rewards).
-        if (!fromCache) {
-          var inboundCount = txRows.filter(function (o) { return !o.is_send && !o.is_coinbase; }).length;
-          if (dashLastTxCount >= 0 && inboundCount > dashLastTxCount) {
-            playTada();
-          }
-          dashLastTxCount = inboundCount;
-        }
-
         var limit = window.innerHeight < 720 ? 3 : 5;
         var recent = txRows.slice(0, limit);
         container.innerHTML = recent.map(function (o) {
