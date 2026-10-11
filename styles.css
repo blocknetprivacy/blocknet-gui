@@ -677,7 +677,7 @@ body.platform-windows #password-screen {
   cursor: pointer;
   font: 14px ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   /* Fixed tracks: dot | name+meta (this one truncates) | tag. A long name can
-     never push the tag or resize the column — minmax(0,1fr) lets it ellipsize. */
+     never push the tag or resize the column: minmax(0,1fr) lets it ellipsize. */
   display: grid;
   grid-template-columns: auto minmax(0, 1fr) auto;
   align-items: center;

@@ -608,7 +608,7 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
     let cookie_path = data_dir.join("api.cookie");
 
     // Only probe the daemon we started ourselves. Without our own port there is
-    // nothing ready — do not fall back to a shared default and risk latching onto
+    // nothing ready: do not fall back to a shared default and risk latching onto
     // an unrelated node (see current_api_port).
     let api_port = match current_api_port(&api_state) {
         Some(p) => p,
@@ -634,7 +634,7 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
     // Probe an AUTHENTICATED endpoint, not /api/status: /api/status requires no
     // token and answers 200 for anyone, so it cannot tell "our daemon accepts our
     // cookie" from "some other node is listening here". A 401 means the token was
-    // rejected (stale cookie or a foreign daemon) — treat that as not-ready so the
+    // rejected (stale cookie or a foreign daemon): treat that as not-ready so the
     // caller (re)starts our own daemon instead of sending passwords to a node that
     // will reject them with "unauthorized". Any non-401 response means the token
     // was accepted, i.e. the daemon is ours and up (a wallet-not-loaded error is

@@ -32,14 +32,14 @@ const SEND_MAX_RETRIES = 2;
 // The daemon auto-selects UTXOs for /api/wallet/send. Under rapid sends (spending
 // change that hasn't confirmed yet), across a reorg, or when another process shares
 // the wallet, it can pick an output the network then rejects as already spent. That
-// rejection is definitive — nothing was broadcast — so retrying with a fresh
+// rejection is definitive (nothing was broadcast), so retrying with a fresh
 // idempotency key lets the daemon re-select fresh inputs. Mirrors the exclude-and-retry
 // posture of the predict payout service's coin-control path.
 //
 // Note: the auto-select endpoint does not document a distinct stale-input string (it
 // surfaces as a generic build failure); these matchers are a safety net in case the
 // daemon bubbles the underlying reason up. Genuine broadcast failures like "not enough
-// ring members available" are deliberately NOT matched — retrying wouldn't help.
+// ring members available" are deliberately NOT matched: retrying wouldn't help.
 function isStaleInputError(msg) {
   var m = String(msg || '').toLowerCase();
   return (
@@ -572,7 +572,7 @@ async function pollTxNotifications() {
 
     // Confirmed incoming payments show up in history as new non-coinbase received
     // outputs. The change output of your own send also looks like this, so load
-    // the sends map and skip recorded-send txids — otherwise sending would ping a
+    // the sends map and skip recorded-send txids: otherwise sending would ping a
     // false "Payment confirmed" when the change confirms.
     var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.synced_height].join(':') : '';
     if (!key || key === txPollKey) return;
@@ -580,7 +580,7 @@ async function pollTxNotifications() {
     try { data = await api('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
       txPollKey = key;
-      // Local sends context — must not touch the shared globals the History view uses.
+      // Local sends context: must not touch the shared globals the History view uses.
       var sendsCtx = await fetchSendsCtx(0);
       if (currentView !== 'dashboard') playTadaOnNewInbound(data.outputs, sendsCtx);
       var incoming = data.outputs.filter(function (o) {
@@ -1023,7 +1023,7 @@ async function refreshDashStatus() {
       if (status.syncing) {
         const pctPart = status.sync_percent ? ' (' + status.sync_percent + ')' : '';
         syncNotice.textContent = 'Syncing blockchain' + pctPart
-          + ' — your balance may be incomplete until sync finishes.';
+          + '. Your balance may be incomplete until sync finishes.';
         syncNotice.style.display = 'block';
       } else {
         syncNotice.style.display = 'none';
@@ -1376,7 +1376,7 @@ async function loadReceive() {
   } catch (e) {
     console.warn('receive address load failed:', normalizeError(e));
     var addrEl = document.getElementById('receive-address');
-    if (addrEl) addrEl.textContent = 'Could not load address — reopen Receive to retry.';
+    if (addrEl) addrEl.textContent = 'Could not load address. Reopen Receive to retry.';
     return;
   }
   receiveAddress = data.address;
@@ -1516,13 +1516,13 @@ async function loadHistory(opts) {
   historyChainHeight = chainHeight;
 
   // History is transaction-centric, not UTXO-centric. A send you make shows up
-  // in your own wallet only as its change output (unspent, self-owned) — which
+  // in your own wallet only as its change output (unspent, self-owned): which
   // naively reads as a "received", and never carries the memo you typed (that
   // memo rides on the recipient's output, not yours). So we build send rows from
   // /api/wallet/sends (real amount + outgoing memo) and suppress the change
   // outputs. Fetch the sends context before the preview so the first paint is
   // right, and publish it to the globals (only this function writes them) so
-  // later filter/scroll re-renders stay consistent — no background poller can
+  // later filter/scroll re-renders stay consistent: no background poller can
   // stomp the map mid-render anymore.
   var sendsCtx = await fetchSendsCtx(chainHeight);
   historySends = sendsCtx.sends;
@@ -1575,7 +1575,7 @@ async function loadHistory(opts) {
     historyChainHeight = chainHeight;
     historyFromCache = fromCache;
     container.innerHTML = loadFailed
-      ? '<div class="empty">Couldn\'t reach the node — check your connection and reopen History.</div>'
+      ? '<div class="empty">Couldn\'t reach the node. Check your connection and reopen History.</div>'
       : '<div class="empty">No transactions yet</div>';
     return;
   }
@@ -2172,7 +2172,7 @@ function updateStepperState(count) {
     var estGb = count * 2;
     var devMem = navigator.deviceMemory;
     if (devMem && estGb >= devMem) {
-      hint.textContent = '~' + estGb + ' GB RAM — exceeds this machine\'s memory';
+      hint.textContent = '~' + estGb + ' GB RAM, more than this machine has';
       hint.style.color = '#fa0';
     } else {
       hint.textContent = '~' + estGb + ' GB RAM';
@@ -2439,7 +2439,7 @@ async function loadNetwork() {
     console.warn('network load failed:', normalizeError(e));
     var pl = document.getElementById('network-peers');
     var bl = document.getElementById('network-banned');
-    if (pl) pl.innerHTML = '<div class="empty">Node unavailable — reopen Network to retry.</div>';
+    if (pl) pl.innerHTML = '<div class="empty">Node unavailable. Reopen Network to retry.</div>';
     if (bl) bl.innerHTML = '<div class="empty">Node unavailable</div>';
     return;
   }
@@ -2500,7 +2500,7 @@ function savePeerObservationCache(cache) {
 }
 
 function formatAge(ms) {
-  if (!ms) return '—';
+  if (!ms) return '--';
   var diff = Math.max(0, Date.now() - ms);
   var s = Math.floor(diff / 1000);
   if (s < 60) return s + 's ago';
@@ -2658,7 +2658,7 @@ async function showPeerDetail(peerId) {
       if (v === null || v === undefined) return false;
       var s = String(v).trim().toLowerCase();
       if (!s) return false;
-      if (s === 'unknown' || s === 'none' || s === '—') return false;
+      if (s === 'unknown' || s === 'none' || s === '--') return false;
       return true;
     }
     function detailRow(label, value, mono) {
@@ -2704,7 +2704,7 @@ async function showPeerDetail(peerId) {
     var expiresAtMs = banEntry && banEntry.expires_at ? Date.parse(banEntry.expires_at) : NaN;
     var unbanIn = banEntry
       ? (banEntry.permanent ? 'never (permanent)' : (isNaN(expiresAtMs) ? 'unknown' : formatRemaining(expiresAtMs - Date.now())))
-      : '—';
+      : '--';
     var observation = updatePeerObservation(peerId, connected, !!banEntry);
     var statusHtml = connected
       ? '<span class="g">Connected</span>'
@@ -3580,7 +3580,7 @@ async function handleSend(e) {
   try {
     var bal = await api('/api/wallet/balance');
     if (bal && !bal.scanning && typeof bal.spendable === 'number' && balCheckTotal > bal.spendable) {
-      showSendStatus('Insufficient funds — you have ' + formatBNT(bal.spendable) + ' BNT spendable (before the network fee).', 'error');
+      showSendStatus('Insufficient funds. You have ' + formatBNT(bal.spendable) + ' BNT spendable (before the network fee).', 'error');
       sendArmed = false;
       pendingSendFingerprint = null;
       btn.textContent = 'Send';
@@ -3634,7 +3634,7 @@ async function handleSend(e) {
       btn.classList.remove('armed');
       var st = document.getElementById('send-status');
       if (st && st.textContent.indexOf('Press again within 10s') >= 0) {
-        showSendStatus('Confirmation expired — press Send again.', 'info');
+        showSendStatus('Confirmation expired. Press Send again.', 'info');
       }
     }, 10000);
     btn.textContent = 'Confirm Send';
@@ -3648,7 +3648,7 @@ async function handleSend(e) {
       confirmMsg = 'Send ' + formatBNT(totalAtomic) + ' BNT total to ' + entries.length + ' recipients?';
     }
     if (entries.some(function (e) { return e.verified === false; })) {
-      confirmMsg = '⚠ UNVERIFIED handle — the shown address could not be cryptographically verified. ' + confirmMsg;
+      confirmMsg = '⚠ UNVERIFIED handle: the shown address could not be cryptographically verified. ' + confirmMsg;
     }
     if (feePreview && typeof feePreview.fee === 'number') {
       confirmMsg += '  Fee: ' + formatBNT(feePreview.fee) + ' BNT · Total ' + formatBNT(totalAtomic + feePreview.fee) + ' BNT';
@@ -3719,12 +3719,12 @@ async function handleSend(e) {
         const msg = normalizeError(e);
         if (!ccActive && isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
           attempt++;
-          // Definitive rejection — the tx was never broadcast — so it's safe to
+          // Definitive rejection: the tx was never broadcast, so it's safe to
           // rotate to a fresh idempotency key, which makes the daemon re-select
           // inputs rather than replay the cached failure.
           idempotencyKey = freshIdempotencyKey();
           if (pendingSendIdempotency) pendingSendIdempotency.key = idempotencyKey;
-          showSendStatus('A coin was already spent — reselecting inputs and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
+          showSendStatus('A coin was already spent. Reselecting inputs and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
           continue;
         }
         if (ccActive && isStaleInputError(msg)) {
@@ -3738,9 +3738,9 @@ async function handleSend(e) {
         }
         if (isTransientSendError(msg) && attempt < SEND_MAX_RETRIES) {
           attempt++;
-          // Rejected before build — keep the same idempotency key so an accepted-but-
+          // Rejected before build: keep the same idempotency key so an accepted-but-
           // slow prior attempt would dedupe rather than double-send. Brief backoff.
-          showSendStatus('Node is busy — retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
+          showSendStatus('Node is busy. Retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
           await new Promise(function (resolve) { setTimeout(resolve, 600 * attempt); });
           continue;
         }
@@ -3751,7 +3751,7 @@ async function handleSend(e) {
         if (msg.toLowerCase().includes('request failed:')) {
           var handled = await resolveTimedOutSend(sendEndpoint + '/status', idempotencyKey, entries, recipientsPayload);
           if (!handled) {
-            showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
+            showSendStatus('Couldn’t confirm whether your send went through. Press Send again. It is retry-safe and will not double-send.', 'error');
           }
         } else {
           showSendStatus(msg, 'error');
@@ -3848,15 +3848,15 @@ async function resolveTimedOutSend(statusPath, idempotencyKey, entries, recipien
     return true;
   }
   if (state === 'failed') {
-    showSendStatus('Your send was rejected: ' + (status.error || 'the network did not accept it') + '. Nothing was spent — adjust and try again.', 'error');
+    showSendStatus('Your send was rejected: ' + (status.error || 'the network did not accept it') + '. Nothing was spent. Adjust and try again.', 'error');
     pendingSendIdempotency = null;
     return true;
   }
   if (state === 'not_found') {
-    showSendStatus('The send never reached the network — nothing was spent. Press Send again to retry.', 'error');
+    showSendStatus('The send never reached the network. Nothing was spent. Press Send again to retry.', 'error');
     return true;
   }
-  showSendStatus('Your send is still processing on the node — press Send again in a moment to check whether it completed.', 'info');
+  showSendStatus('Your send is still processing on the node. Press Send again in a moment to check whether it completed.', 'info');
   return true;
 }
 
@@ -4357,7 +4357,7 @@ async function handleLockWallet() {
   resetUserData();
   showUnlockScreen();
   if (lockFailed) {
-    showStatus('Wallet UI locked. Warning: daemon lock may have failed — restart app if concerned.', 'warning');
+    showStatus('Wallet UI locked. Warning: daemon lock may have failed. Restart the app if concerned.', 'warning');
   } else {
     showStatus('Wallet locked. Enter password to unlock.', 'info');
   }
@@ -4532,10 +4532,10 @@ async function handleWalletAudit() {
     var failed = Number(data.failed_key_images) || 0;
     if (groups === 0 && burned === 0 && burnedOutputs === 0) {
       el.className = 'status-message success';
-      el.innerHTML = '✓ Healthy — no duplicate key images across ' + totalOutputs + ' output' + (totalOutputs === 1 ? '' : 's') + '.';
+      el.innerHTML = '✓ Healthy: no duplicate key images across ' + totalOutputs + ' output' + (totalOutputs === 1 ? '' : 's') + '.';
     } else {
       el.className = 'status-message warning';
-      el.innerHTML = '⚠ ' + groups + ' duplicate group' + (groups === 1 ? '' : 's') + ' — ' +
+      el.innerHTML = '⚠ ' + groups + ' duplicate group' + (groups === 1 ? '' : 's') + ': ' +
         formatBNT(burned) + ' BNT burned (permanently unspendable) across ' +
         burnedOutputs + ' output' + (burnedOutputs === 1 ? '' : 's') +
         '. This comes from a historical self-send bug and cannot be reversed.';
@@ -5233,7 +5233,7 @@ async function handleUnlockOpenFile() {
   } catch (e) {
     var msg = normalizeError(e);
     if (msg.indexOf('already exists') !== -1) {
-      showStatus('That wallet is already in your list — pick it from Your wallets.', 'info');
+      showStatus('That wallet is already in your list. Pick it from Your wallets.', 'info');
     } else if (msg !== 'No file selected' && msg !== 'Dialog cancelled') {
       showStatus(msg, 'error');
     }
@@ -5692,16 +5692,16 @@ async function updateDaemonSyncStatus() {
       var pct = Math.min(100, (m / n) * 100);
       var pctStr = status.sync_percent || (Math.floor(pct * 10) / 10) + '%';
       setDaemonSyncStatus(
-        'Syncing blockchain — block ' + m.toLocaleString() + ' of ' + n.toLocaleString() + ' (' + pctStr + ')',
+        'Syncing blockchain: block ' + m.toLocaleString() + ' of ' + n.toLocaleString() + ' (' + pctStr + ')',
         { percent: pct }
       );
     } else {
-      setDaemonSyncStatus('Syncing blockchain — block ' + m.toLocaleString());
+      setDaemonSyncStatus('Syncing blockchain: block ' + m.toLocaleString());
     }
   } else if (peers === 0) {
     setDaemonSyncStatus('Connecting to the network…');
   } else {
-    setDaemonSyncStatus('Blockchain synced — height ' + Number(status.chain_height || 0).toLocaleString(), { percent: 100 });
+    setDaemonSyncStatus('Blockchain synced: height ' + Number(status.chain_height || 0).toLocaleString(), { percent: 100 });
   }
 }
 
@@ -5887,8 +5887,8 @@ function wireProveButton(txid) {
       proofEl.innerHTML =
         '<h2>Payment proof</h2>' +
         '<p class="d">Share both values with the recipient. They can confirm you sent this ' +
-        'payment — in this wallet under Sign / Verify → Verify Payment, or on the explorer’s ' +
-        'Prove-Send page — without exposing your wallet.</p>' +
+        'payment, in this wallet under Sign / Verify → Verify Payment, or on the explorer’s ' +
+        'Prove-Send page, without exposing your wallet.</p>' +
         '<div class="detail-grid">' +
           '<div class="detail-label">TX Hash</div>' +
           '<div class="detail-value mono">' + copyable(proof.txid || txid) + '</div>' +
@@ -6024,15 +6024,15 @@ async function handleVerifyProof() {
       body: { txid: txid, tx_key: txKey, address: address }
     });
     if (!data.valid) {
-      resultEl.innerHTML = '<span class="r">✗ Invalid proof — the tx key does not match this transaction.</span>';
+      resultEl.innerHTML = '<span class="r">✗ Invalid proof: the tx key does not match this transaction.</span>';
     } else if (Number(data.total_matched) > 0) {
       var rows = (data.outputs || []).filter(function (o) { return o.match; }).map(function (o) {
         return '<div class="detail-label">Output #' + o.index + '</div>' +
           '<div class="detail-value">' + formatBNT(o.amount) + ' BNT' +
-          (o.memo ? ' <span class="d">— "' + escapeHtml(String(o.memo)) + '"</span>' : '') + '</div>';
+          (o.memo ? ' <span class="d">: "' + escapeHtml(String(o.memo)) + '"</span>' : '') + '</div>';
       }).join('');
       resultEl.innerHTML =
-        '<div class="resolve-ok">✓ Valid — this address received ' + formatBNT(data.total_matched) + ' BNT</div>' +
+        '<div class="resolve-ok">✓ Valid: this address received ' + formatBNT(data.total_matched) + ' BNT</div>' +
         '<div class="detail-grid sv-proof-outputs">' + rows + '</div>';
     } else {
       resultEl.innerHTML = '<span class="resolve-ok">✓ Proof valid, but this address received nothing in this transaction.</span>';
