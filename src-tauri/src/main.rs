@@ -605,6 +605,29 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
     }
 }
 
+// One client for every short request, so a dead daemon or web host fails the
+// call instead of leaving the UI waiting forever.
+static HTTP: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
+    reqwest::Client::builder()
+        .connect_timeout(std::time::Duration::from_secs(5))
+        .build()
+        .expect("HTTP client")
+});
+
+// Building a send or restoring a wallet can take a while on a busy node; every
+// other route answers fast.
+fn api_timeout(method: &str, path: &str) -> std::time::Duration {
+    let slow = method != "GET" && (
+        path.starts_with("/api/wallet/send")
+            || path.starts_with("/api/wallet/import")
+            || path.starts_with("/api/wallet/create")
+            || path.starts_with("/api/wallet/load")
+            || path.starts_with("/api/wallet/viewkeys")
+            || path.starts_with("/api/purge")
+    );
+    std::time::Duration::from_secs(if slow { 180 } else { 30 })
+}
+
 #[tauri::command]
 async fn api_call(
     app: AppHandle,
@@ -619,7 +642,7 @@ async fn api_call(
         .map(|s| s.trim().to_string())
         .map_err(|e| format!("Failed to read auth cookie: {}", e))?;
 
-    let client = reqwest::Client::new();
+    let client = &*HTTP;
     let api_port = current_api_port(&api_state)
         .ok_or_else(|| "Daemon not started".to_string())?;
     let url = api_base_url(api_port, &path);
@@ -631,7 +654,9 @@ async fn api_call(
         "DELETE" => client.delete(&url),
         _ => client.get(&url),
     };
-    req = req.header("Authorization", format!("Bearer {}", token));
+    req = req
+        .header("Authorization", format!("Bearer {}", token))
+        .timeout(api_timeout(&method, &path));
 
     if let Some(b) = body {
         req = req.header("Content-Type", "application/json").body(b);
@@ -664,7 +689,9 @@ async fn fetch_url(url: String) -> Result<String, String> {
     if !url.starts_with("https://") {
         return Err("only https URLs allowed".into());
     }
-    let res = reqwest::get(&url)
+    let res = HTTP.get(&url)
+        .timeout(std::time::Duration::from_secs(15))
+        .send()
         .await
         .map_err(|e| format!("fetch failed: {}", e))?;
     if !res.status().is_success() {
