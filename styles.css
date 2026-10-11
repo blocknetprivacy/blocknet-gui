@@ -3203,3 +3203,28 @@ body.wallet-no-seed .seed-item {
 #node-restart {
   margin-top: 8px;
 }
+
+#import-mode {
+  grid-template-columns: repeat(3, 1fr);
+}
+
+@media (max-width: 560px) {
+  .history-meta {
+    flex-wrap: wrap;
+    gap: 2px 10px;
+  }
+
+  .recent-tx-row {
+    flex-wrap: wrap;
+    gap: 4px 12px;
+  }
+
+  .recent-tx-amount {
+    min-width: 0;
+  }
+
+  .recent-tx-block {
+    flex-basis: 100%;
+    text-align: left;
+  }
+}
