@@ -2141,9 +2141,7 @@ textarea:focus {
 }
 
 .mining-panel {
-  background: transparent;
-  border: 1px solid var(--line);
-  border-radius: var(--radius);
+  background: #000;
   padding: 32px;
   margin-bottom: 24px;
   display: flex;
