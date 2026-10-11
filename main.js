@@ -247,6 +247,7 @@ function resetUserData() {
   userDataDirty = false;
   userDataWriting = false;
   txCacheSig = '';
+  sharedGets = {};
   historyOutputs = [];
   historyChainHeight = 0;
   historyFromCache = false;
@@ -572,7 +573,7 @@ async function pollTxNotifications() {
     var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.synced_height].join(':') : '';
     if (!key || key === txPollKey) return;
     var data = null;
-    try { data = await api('/api/wallet/history'); } catch (_) {}
+    try { data = await sharedGet('/api/wallet/history'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
       txPollKey = key;
       // Local sends context: must not touch the shared globals the History view uses.
@@ -607,6 +608,18 @@ async function api(path, opts = {}) {
     headers: opts.headers || null,
   });
   return JSON.parse(result);
+}
+
+var sharedGets = {};
+function sharedGet(path) {
+  var now = Date.now();
+  var hit = sharedGets[path];
+  if (!hit || now - hit.at > 3000) {
+    var p = api(path);
+    hit = sharedGets[path] = { at: now, p: p };
+    p.catch(function () { if (sharedGets[path] === hit) delete sharedGets[path]; });
+  }
+  return hit.p.then(function (v) { return structuredClone(v); });
 }
 
 function normalizeError(error) {
@@ -1167,7 +1180,7 @@ async function loadDashboard() {
     if (statusHeight !== dashLastHeight || dashForceRefresh) {
       dashLastHeight = statusHeight;
       dashForceRefresh = false;
-      var data = await api('/api/wallet/history');
+      var data = await sharedGet('/api/wallet/history');
       var container = document.getElementById('dash-recent-tx');
       var hasOutputsArray = data && Array.isArray(data.outputs);
       var outputs = hasOutputsArray ? data.outputs : null;
@@ -1534,7 +1547,7 @@ async function loadHistory(opts) {
   var data = null;
   var loadFailed = false;
   try {
-    data = await api('/api/wallet/history');
+    data = await sharedGet('/api/wallet/history');
   } catch (e) {
     loadFailed = true;
     console.warn('history load failed:', normalizeError(e));
@@ -1599,7 +1612,7 @@ async function fetchSendsCtx(chainHeight, allPages) {
     // render as sends rather than falling back to a raw change output.
     var list = [];
     for (var offset = 0; ; offset += 500) {
-      var sd = await api('/api/wallet/sends?limit=500&order=desc&offset=' + offset);
+      var sd = await sharedGet('/api/wallet/sends?limit=500&order=desc&offset=' + offset);
       if (!sd || !Array.isArray(sd.sends)) break;
       list = list.concat(sd.sends);
       if (!allPages || sd.sends.length < 500) break;
@@ -3749,6 +3762,7 @@ async function handleSend(e) {
 }
 
 function finalizeSend(result, entries, recipientsPayload) {
+  sharedGets = {};
   var totalAtomic = recipientsPayload.reduce(function (s, r) { return s + r.amount; }, 0);
   var firstRecipient = (result.recipients && result.recipients[0]) || {};
   var sentMsg = 'Sent! TX: ' + String(result.txid).substring(0, 24) + '... Fee: ' + formatBNT(result.fee) + ' BNT';
@@ -4743,6 +4757,7 @@ function stopPolling() {
   lastPendingUnconfirmed = -1;
   confirmedSeen = null;
   txPollKey = '';
+  sharedGets = {};
 }
 
 // --- Screen transitions ---
