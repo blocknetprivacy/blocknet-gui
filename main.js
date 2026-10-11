@@ -290,27 +290,16 @@ function updateHistoryRowNote(txid, note) {
   if (!row) return;
   note = String(note || '').trim();
   var noteEl = row.querySelector('.history-note');
-  var addEl = row.querySelector('.note-add');
-  if (note) {
-    if (noteEl) {
-      noteEl.textContent = note;
-    } else {
-      var el = document.createElement('div');
-      el.className = 'history-note';
-      el.textContent = note;
-      if (addEl) {
-        addEl.replaceWith(el);
-      } else {
-        var txEl = row.querySelector('.history-tx');
-        if (txEl) row.insertBefore(el, txEl); else row.appendChild(el);
-      }
-    }
-  } else if (noteEl) {
-    var add = document.createElement('div');
-    add.className = 'note-add';
-    add.textContent = '+ add note';
-    noteEl.replaceWith(add);
+  if (!note) {
+    if (noteEl) noteEl.remove();
+    return;
   }
+  if (!noteEl) {
+    noteEl = document.createElement('div');
+    noteEl.className = 'history-note';
+    row.appendChild(noteEl);
+  }
+  noteEl.textContent = note;
 }
 let activeWalletName = 'wallet.dat';
 
@@ -694,6 +683,11 @@ async function unloadWallet() {
 
 // --- Formatting ---
 
+function fmtInt(n) {
+  var v = Number(n);
+  return isFinite(v) ? v.toLocaleString('en-US') : '--';
+}
+
 function formatBNTRaw(atomic) {
   const n = Number(atomic);
   if (!isFinite(n)) return '--';
@@ -798,6 +792,8 @@ function applyWalletCaps(w) {
   if (!w || typeof w !== 'object') return;
   walletViewOnly = !!w.view_only;
   document.body.classList.toggle('wallet-view-only', walletViewOnly);
+  var balLabel = document.getElementById('dash-balance-label');
+  if (balLabel) balLabel.textContent = walletViewOnly ? 'Watched Balance' : 'Spendable Balance';
   document.body.classList.toggle('wallet-no-seed', w.has_mnemonic === false);
   if (walletViewOnly) {
     var verifyTab = document.querySelector('.sv-tab[data-tab="verify"]');
@@ -849,7 +845,7 @@ async function loadView(view, gen) {
     if (gen !== navGeneration) return;
     switch (view) {
       case 'dashboard': await loadDashboard(); break;
-      case 'send': renderAddressBook(); updateCoinControlVisibility(); break;
+      case 'send': renderAddressBook(); updateCoinControlVisibility(); refreshSendAvailable(); break;
       case 'receive': await loadReceive(); break;
       case 'history': await loadHistory(); break;
       case 'mining': await loadMining(); break;
@@ -930,23 +926,35 @@ async function loadEconomics() {
   if (fill) fill.style.width = Math.max(0, Math.min(100, pct)).toFixed(2) + '%';
   set('econ-emitted', econBnt(emitted) + ' BNT');
   set('econ-remaining', econBnt(remaining) + ' BNT');
-  set('econ-target', econBnt(target));
+  set('econ-target', econBnt(target) + ' BNT');
   set('econ-months-to-tail', String(Number(data.months_to_tail) || ECON_MONTHS_TO_TAIL));
   set('econ-tail', econBnt(Number(data.tail_emission) || ECON_TAIL_EMISSION));
   set('econ-reward', econBnt(data.block_reward) + ' BNT');
   set('econ-hashrate', formatHashrate(data.network_hashrate));
   set('econ-blocktime', (Number(data.avg_block_time) || 0).toFixed(0) + 's');
-  set('econ-difficulty', (Number(data.difficulty) || 0).toLocaleString());
-  set('econ-height', height.toLocaleString());
-  set('econ-blocks-month', blocksPerMonth.toLocaleString());
+  set('econ-difficulty', (Number(data.difficulty) || 0).toLocaleString('en-US'));
+  set('econ-height', height.toLocaleString('en-US'));
+  set('econ-blocks-month', blocksPerMonth.toLocaleString('en-US'));
 
   var currentMonth = blocksPerMonth > 0 ? (height / blocksPerMonth) : 0;
-  var chart = document.getElementById('econ-chart');
-  if (chart) chart.innerHTML = buildEmissionCurve(currentMonth);
+  econCurrentMonth = currentMonth;
+  drawEmissionCurve();
 }
 
-function buildEmissionCurve(currentMonth) {
-  var W = 640, H = 240, padL = 52, padR = 16, padT = 22, padB = 28;
+var econCurrentMonth = 0;
+function drawEmissionCurve() {
+  var chart = document.getElementById('econ-chart');
+  if (!chart) return;
+  var inner = chart.clientWidth - 24;
+  chart.innerHTML = buildEmissionCurve(econCurrentMonth, inner > 0 ? inner : 640);
+}
+
+window.addEventListener('resize', function () {
+  if (currentView === 'economics') drawEmissionCurve();
+});
+
+function buildEmissionCurve(currentMonth, width) {
+  var W = Math.max(280, Math.round(width)), H = W < 480 ? 200 : 240, padL = 44, padR = 16, padT = 22, padB = 28;
   var plotW = W - padL - padR, plotH = H - padT - padB;
   var maxMonth = ECON_MONTHS_TO_TAIL + 12;
   var maxR = ECON_INITIAL_REWARD / 100000000;
@@ -995,7 +1003,7 @@ function buildEmissionCurve(currentMonth) {
 async function refreshDashStatus() {
   try {
     const status = await api('/api/status');
-    const heightLabel = status.chain_height.toLocaleString();
+    const heightLabel = status.chain_height.toLocaleString('en-US');
     document.getElementById('dash-height').textContent = heightLabel;
     document.getElementById('dash-peers').textContent = status.peers;
     document.getElementById('dash-mempool').textContent = status.mempool_size;
@@ -1006,7 +1014,7 @@ async function refreshDashStatus() {
       bestHashEl.title = bestHash;
     }
     var totalWorkEl = document.getElementById('dash-total-work');
-    if (totalWorkEl) totalWorkEl.textContent = (Number(status.total_work) || 0).toLocaleString();
+    if (totalWorkEl) totalWorkEl.textContent = (Number(status.total_work) || 0).toLocaleString('en-US');
     var mempoolBytesEl = document.getElementById('dash-mempool-bytes');
     if (mempoolBytesEl) mempoolBytesEl.textContent = formatBytes(status.mempool_bytes);
     applyWalletCaps(status.wallet);
@@ -1026,7 +1034,7 @@ async function refreshDashStatus() {
     if (dot) {
       dot.className = 'status-dot' + (status.syncing ? ' syncing' : '');
       var dotTitle = 'height: ' + heightLabel
-        + (status.syncing && status.sync_target ? ' / ' + Number(status.sync_target).toLocaleString() : '');
+        + (status.syncing && status.sync_target ? ' / ' + Number(status.sync_target).toLocaleString('en-US') : '');
       dot.title = dotTitle;
       dot.setAttribute('name', dotTitle);
     }
@@ -1112,7 +1120,7 @@ function showDashScan(synced, chain) {
   if (sub) sub.style.display = 'none';
   document.getElementById('dash-scan-fill').style.width = pct + '%';
   document.getElementById('dash-scan-blocks').textContent =
-    'Reading wallet outputs · block ' + s.toLocaleString() + ' / ' + c.toLocaleString();
+    'Reading wallet outputs · block ' + s.toLocaleString('en-US') + ' / ' + c.toLocaleString('en-US');
   document.getElementById('dash-scan').style.display = 'block';
   var unconf = document.getElementById('dash-unconfirmed');
   if (unconf) unconf.style.display = 'none';
@@ -1219,14 +1227,14 @@ async function loadDashboard() {
         var recent = txRows.slice(0, limit);
         container.innerHTML = recent.map(function (o) {
           var isSend = !!o.is_send;
-          var typeLabel = o.is_coinbase ? 'mining reward' : (isSend ? 'sent' : 'received');
+          var typeLabel = o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received');
           var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
           var blockLabel;
           if (o.block_height) {
-            blockLabel = 'Block ' + o.block_height;
+            blockLabel = 'Block ' + fmtInt(o.block_height);
             if (statusHeight >= o.block_height) {
               var dconfs = statusHeight - o.block_height + 1;
-              blockLabel += ' · ' + dconfs + ' confirmation' + (dconfs !== 1 ? 's' : '');
+              blockLabel += ' · ' + fmtInt(dconfs) + ' confirmation' + (dconfs !== 1 ? 's' : '');
             }
           } else if (!isSend && dashPendingEta > 0) {
             blockLabel = dashPendingEta < 60 ? 'Pending · <1 min' : 'Pending · ~' + formatEta(dashPendingEta);
@@ -1240,6 +1248,7 @@ async function loadDashboard() {
             '<span class="recent-tx-type ' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>' +
             (memoText ? '<span class="recent-tx-memo d">"' + escapeHtml(memoText) + '"</span>' : '') +
             '<span class="recent-tx-block d">' + blockLabel + '</span>' +
+            '<span class="recent-tx-chevron" aria-hidden="true">›</span>' +
           '</div>';
         }).join('');
         container.querySelectorAll('.recent-tx-row[data-txid]').forEach(function (row) {
@@ -1324,11 +1333,15 @@ function renderReceiveAddressAndQr() {
     delete addrEl.dataset.copyWired;
     wireCopyable();
   }
-  if (target && typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(target);
-    document.getElementById('qr-container').innerHTML = svgHtml;
-    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
-  }
+  if (target) showReceiveQR(target);
+}
+
+function showReceiveQR(text) {
+  if (typeof qrcode !== 'function') return;
+  var svgHtml = renderQRSvg(text);
+  document.getElementById('qr-container').innerHTML = svgHtml;
+  document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
+  document.getElementById('qr-overlay-text').textContent = text;
 }
 
 async function verifyReceiveShortname(handle, persist) {
@@ -1435,11 +1448,7 @@ function generatePaymentLink() {
 
   wireCopyable();
 
-  if (typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(shownUri);
-    document.getElementById('qr-container').innerHTML = svgHtml;
-    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
-  }
+  showReceiveQR(shownUri);
 }
 
 function clearPaymentLink() {
@@ -1447,11 +1456,7 @@ function clearPaymentLink() {
   if (group) group.style.display = 'none';
   var target = getReceiveHandleUriTarget();
   if (!target) return;
-  if (typeof qrcode === 'function') {
-    var svgHtml = renderQRSvg(target);
-    document.getElementById('qr-container').innerHTML = svgHtml;
-    document.getElementById('qr-overlay-inner').innerHTML = svgHtml;
-  }
+  showReceiveQR(target);
 }
 
 async function saveReceiveShortname() {
@@ -1690,44 +1695,62 @@ var historySendRows = [];   // one display row per recorded send
 
 function historyRowHtml(o, allNotes, chainHeight) {
   var isSend = !!o.is_send;
-  var typeLabel = o.is_coinbase ? 'mining reward' : (isSend ? 'sent' : 'received');
+  var typeLabel = o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received');
   var noteText = allNotes[o.txid] || '';
-  var confHtml = '';
-  if (o.block_height && chainHeight >= o.block_height) {
-    var confs = chainHeight - o.block_height + 1;
-    confHtml = '<span class="d">· ' + confs + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
-  }
-  var toHtml = '';
+  var meta = ['<span class="' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>'];
   if (isSend) {
     var lbl = (userData.sendLabels && userData.sendLabels[o.txid]) || '';
     if (!lbl && historySendTo[o.txid]) {
       var ra = historySendTo[o.txid];
       lbl = contactNameForAddress(ra) || abbrAddr(ra);
     }
-    if (lbl) toHtml = '<span class="d">to ' + escapeHtml(lbl) + '</span>';
+    if (lbl) meta.push('<span>to ' + escapeHtml(lbl) + '</span>');
   }
-  var dateHtml = '';
-  if (isSend && historySendTime[o.txid]) {
-    dateHtml = '<span class="d">· ' + escapeHtml(formatTxTime(historySendTime[o.txid])) + '</span>';
+  if (o.block_height) {
+    meta.push('<a class="detail-link" data-block="' + o.block_height + '">Block ' + fmtInt(o.block_height) + '</a>');
+    if (chainHeight >= o.block_height) {
+      var confs = chainHeight - o.block_height + 1;
+      meta.push('<span>' + fmtInt(confs) + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>');
+    }
+  } else {
+    meta.push('<span>Pending</span>');
   }
+  meta.push('<span class="history-tx">' + copyable(o.txid, o.txid.substring(0, 12) + '…') + '</span>');
+  var sentAt = isSend ? historySendTime[o.txid] : 0;
+  var cachedTs = o.block_height ? blockTimeCache[o.block_height] : 0;
+  var dateText = sentAt ? formatTxTime(sentAt) : (cachedTs ? formatTxTime(cachedTs) : '');
   return '<div class="history-row' + (isSend ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
-    '<div class="history-amount ' + (isSend ? 'r' : 'g') + '">' +
-      (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
+    '<div class="history-line">' +
+      '<span class="history-amount ' + (isSend ? 'r' : 'g') + '">' + (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT</span>' +
+      '<span class="history-date"' + (!dateText && o.block_height ? ' data-date-height="' + o.block_height + '"' : '') + '>' + escapeHtml(dateText) + '</span>' +
     '</div>' +
-    '<div class="history-meta">' +
-      (o.block_height
-        ? '<a class="detail-link d" data-block="' + o.block_height + '">Block ' + o.block_height + '</a>' + confHtml
-        : '<span class="d">Pending</span>') +
-      '<span class="' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>' +
-      toHtml +
-      dateHtml +
-    '</div>' +
+    '<div class="history-meta">' + meta.join('<span class="sep">·</span>') + '</div>' +
     memoHtml(o) +
-    (noteText
-      ? '<div class="history-note">' + escapeHtml(noteText) + '</div>'
-      : '<div class="note-add">+ add note</div>') +
-    '<div class="history-tx d">' + copyable(o.txid, o.txid.substring(0, 24) + '...') + '</div>' +
+    (noteText ? '<div class="history-note">' + escapeHtml(noteText) + '</div>' : '') +
   '</div>';
+}
+
+var blockTimeCache = {};
+var blockTimeQueue = Promise.resolve();
+function fillHistoryDates(container) {
+  var byHeight = {};
+  container.querySelectorAll('.history-date[data-date-height]').forEach(function (el) {
+    var h = el.dataset.dateHeight;
+    el.removeAttribute('data-date-height');
+    (byHeight[h] = byHeight[h] || []).push(el);
+  });
+  Object.keys(byHeight).forEach(function (h) {
+    blockTimeQueue = blockTimeQueue.then(async function () {
+      if (!blockTimeCache[h]) {
+        try {
+          var bd = await api('/api/block/' + h);
+          blockTimeCache[h] = Number(bd && bd.timestamp) || 0;
+        } catch (_) { return; }
+      }
+      if (!blockTimeCache[h]) return;
+      byHeight[h].forEach(function (el) { el.textContent = formatTxTime(blockTimeCache[h]); });
+    });
+  });
 }
 
 // Incremental render: show the first page, then lazy-load more on scroll.
@@ -1769,6 +1792,7 @@ function renderHistoryPreview(outputs) {
   }).join('');
   bindHistoryClicks(container);
   wireCopyable(container);
+  fillHistoryDates(container);
   historyPreviewShown = true;
 }
 
@@ -1816,6 +1840,7 @@ function appendHistoryPage() {
   sentinel.insertAdjacentHTML('beforebegin', html);
   historyRendered += slice.length;
   wireCopyable(container);
+  fillHistoryDates(container);
   if (historyRendered >= historyView.length) { stopHistoryObserver(); sentinel.remove(); }
 }
 
@@ -1963,7 +1988,7 @@ async function loadMining() {
   document.getElementById('mining-blocks').textContent = data.running
     ? (data.blocks_found || 0) : '--';
   document.getElementById('mining-hashcount').textContent = data.running
-    ? (Number(data.hash_count) || 0).toLocaleString() : '--';
+    ? (Number(data.hash_count) || 0).toLocaleString('en-US') : '--';
   var startedMs = data.running && data.started_at ? Date.parse(data.started_at) : NaN;
   document.getElementById('mining-uptime').textContent = isNaN(startedMs) ? '--' : formatDuration(Date.now() - startedMs);
 
@@ -2082,7 +2107,8 @@ async function refreshMiningDifficultySparkline() {
     if (nextSeries.length > 1) {
       miningDifficultySeries = nextSeries;
       var diffEl = document.getElementById('mining-difficulty');
-      if (diffEl && nextSeries.length) diffEl.textContent = Math.round(nextSeries[nextSeries.length - 1]).toLocaleString();
+      var lastDiff = nextSeries.length ? Number(nextSeries[nextSeries.length - 1]) : NaN;
+      if (diffEl) diffEl.textContent = isFinite(lastDiff) ? Math.round(lastDiff).toLocaleString('en-US') : '--';
       miningDifficultyTipHeight = tip;
       miningDifficultyLastRefresh = now;
       renderMiningDifficultySparkline(miningDifficultySeries);
@@ -2114,13 +2140,13 @@ async function loadMiningMempool() {
   const maxFee = Number(stats.max_fee || 0);
   const avgFee = Number(stats.avg_fee || 0);
 
-  metaEl.textContent = count.toLocaleString() + ' tx • ' + formatBytes(sizeBytes);
+  metaEl.textContent = count.toLocaleString('en-US') + ' tx • ' + formatBytes(sizeBytes);
 
   const nextBlockClass = count === 0 ? 'mempool-next-block zero' : 'mempool-next-block';
   listEl.innerHTML =
     '<div class="' + nextBlockClass + '">' +
       '<span class="label">Next block candidate</span>' +
-      '<span class="value">' + count.toLocaleString() + ' pending tx</span>' +
+      '<span class="value">' + count.toLocaleString('en-US') + ' pending tx</span>' +
     '</div>' +
     '<div class="mempool-stats-grid">' +
       '<div class="mempool-stat-item"><span class="label">Total Size</span><span class="value">' + formatBytes(sizeBytes) + '</span></div>' +
@@ -2449,6 +2475,7 @@ async function loadNetwork() {
   }
 
   renderSelfAddrs();
+  refreshDashStatus();
 
   document.getElementById('network-peer-count').textContent = peers.count;
   const peerList = document.getElementById('network-peers');
@@ -2871,7 +2898,7 @@ function renderAddressBook() {
       '<div class="ab-actions">' +
         '<button class="ab-use-btn" data-idx="' + i + '">Use</button>' +
         '<button class="ab-edit-btn" data-idx="' + i + '">Edit</button>' +
-        '<button class="ab-del-btn" data-idx="' + i + '">Del</button>' +
+        '<button class="ab-del-btn" data-idx="' + i + '">Delete</button>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -2952,7 +2979,8 @@ function handleSaveContact() {
       '<input type="text" id="save-contact-name" class="ab-edit-input" placeholder="Contact name">' +
       '<button type="button" class="ab-save-btn" id="save-contact-confirm">Save</button>' +
       '<button type="button" class="ab-cancel-btn" id="save-contact-cancel">Cancel</button>';
-    saveBtn.parentNode.insertBefore(wrapper, saveBtn.nextSibling);
+    var addrInput = document.getElementById('send-address');
+    addrInput.parentNode.insertBefore(wrapper, addrInput.nextSibling);
     saveBtn.style.display = 'none';
     var inp = document.getElementById('save-contact-name');
     inp.focus();
@@ -3584,11 +3612,8 @@ async function handleSend(e) {
   try {
     var bal = await api('/api/wallet/balance');
     if (bal && !bal.scanning && typeof bal.spendable === 'number' && balCheckTotal > bal.spendable) {
+      disarmSend();
       showSendStatus('Insufficient funds. You have ' + formatBNT(bal.spendable) + ' BNT spendable (before the network fee).', 'error');
-      sendArmed = false;
-      pendingSendFingerprint = null;
-      btn.textContent = 'Send';
-      btn.classList.remove('armed');
       return;
     }
   } catch (_) {}
@@ -3618,63 +3643,22 @@ async function handleSend(e) {
       // A coin-control estimate most often fails because a chosen coin is no
       // longer spendable; refresh the picker so spent/pending coins drop out.
       if (coinControlEnabled) loadCoinOutputs();
-      sendArmed = false;
-      pendingSendFingerprint = null;
+      disarmSend();
       btn.disabled = false;
-      btn.textContent = 'Send';
-      btn.classList.remove('armed');
       return;
     }
     btn.disabled = false;
 
     sendArmed = true;
     pendingSendFingerprint = fingerprint;
-    if (sendArmTimer) clearTimeout(sendArmTimer);
-    sendArmTimer = setTimeout(() => {
-      sendArmed = false;
-      pendingSendFingerprint = null;
-      sendArmTimer = null;
-      btn.textContent = 'Send';
-      btn.classList.remove('armed');
-      var st = document.getElementById('send-status');
-      if (st && st.textContent.indexOf('Press again within 10s') >= 0) {
-        showSendStatus('Confirmation expired. Press Send again.', 'info');
-      }
-    }, 10000);
     btn.textContent = 'Confirm Send';
     btn.classList.add('armed');
-    var totalAtomic = entries.reduce(function (s, e) { return s + e.atomic; }, 0);
-    var confirmMsg;
-    if (entries.length === 1) {
-      confirmMsg = 'Send ' + formatBNT(entries[0].atomic) + ' BNT to ' + entries[0].displayRecipient + '?';
-      if (entries[0].memo) confirmMsg += '  Memo: "' + entries[0].memo + '"';
-    } else {
-      confirmMsg = 'Send ' + formatBNT(totalAtomic) + ' BNT total to ' + entries.length + ' recipients?';
-    }
-    if (entries.some(function (e) { return e.verified === false; })) {
-      confirmMsg = '⚠ UNVERIFIED handle: the shown address could not be cryptographically verified. ' + confirmMsg;
-    }
-    if (feePreview && typeof feePreview.fee === 'number') {
-      confirmMsg += '  Fee: ' + formatBNT(feePreview.fee) + ' BNT · Total ' + formatBNT(totalAtomic + feePreview.fee) + ' BNT';
-      if (typeof feePreview.change === 'number' && feePreview.change > 0) {
-        confirmMsg += ' · Change ' + formatBNT(feePreview.change) + ' BNT';
-      }
-      confirmMsg += '.';
-    } else {
-      confirmMsg += '  A network fee will be added on top.';
-    }
-    if (pendingSendIdempotency && pendingSendIdempotency.interrupted) {
-      confirmMsg = '⚠ Your last send was interrupted and may have gone out. Sending again can pay twice. ' + confirmMsg;
-    }
-    confirmMsg += '  Press again within 10s to confirm.';
-    showSendStatus(confirmMsg, 'info');
+    clearSendStatus();
+    renderSendConfirm(entries, feePreview);
     return;
   }
 
-  sendArmed = false;
-  pendingSendFingerprint = null;
-  if (sendArmTimer) { clearTimeout(sendArmTimer); sendArmTimer = null; }
-  btn.classList.remove('armed');
+  disarmSend();
 
   var recipientsPayload = entries.map(function (e) {
     var r = { address: e.address, amount: e.atomic };
@@ -3859,11 +3843,40 @@ async function resolveTimedOutSend(statusPath, idempotencyKey, entries, recipien
   return true;
 }
 
-function showSendStatus(msg, type) {
-  const el = document.getElementById('send-status');
-  el.textContent = msg || 'Request failed';
+var PLAIN_ERRORS = [
+  ['no wallet loaded', 'No wallet is open. Unlock your wallet first.'],
+  ['incorrect password', 'Wrong password. Try again.'],
+  ['wrong password', 'Wrong password. Try again.'],
+  ['view-only wallet cannot send', 'This is a watch-only wallet. It cannot send.'],
+  ['file_password must differ', 'Use a different password for the watch-only file.'],
+  ['wallet file already exists', 'A wallet with that name already exists. Choose another name.'],
+  ['wallet file not found', 'That wallet file is missing.'],
+  ['unauthorized', 'The wallet could not reach its node. Wait a moment and try again.'],
+  ['request failed: error sending request', 'The node did not answer. Check that it is running and try again.'],
+  ['operation timed out', 'The node took too long to answer. Try again.'],
+  ['insufficient funds', 'Not enough funds for this amount plus the network fee.'],
+  ['invalid address', 'That address is not valid. Check it and try again.'],
+  ['invalid mnemonic', 'That recovery phrase is not valid. Check the words and their order.']
+];
+
+function plainError(msg) {
+  var text = String(msg || '').trim();
+  var low = text.toLowerCase();
+  for (var i = 0; i < PLAIN_ERRORS.length; i++) {
+    if (low.indexOf(PLAIN_ERRORS[i][0]) >= 0) return PLAIN_ERRORS[i][1];
+  }
+  return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Something went wrong. Try again.';
+}
+
+function setStatusEl(el, msg, type) {
+  if (!el) return;
+  el.textContent = type === 'error' || type === 'warning' ? plainError(msg) : (msg || '');
   el.className = 'status-message ' + type;
   el.style.display = 'block';
+}
+
+function showSendStatus(msg, type) {
+  setStatusEl(document.getElementById('send-status'), msg || 'Request failed', type);
 }
 
 function clearSendStatus() {
@@ -3880,12 +3893,140 @@ function clearSendStatus() {
 // always sees the status change, even when the new attempt fails the same way.
 function onSendInputEdited() {
   clearSendStatus();
-  if (sendArmed) {
-    sendArmed = false;
-    pendingSendFingerprint = null;
-    var btn = document.getElementById('send-submit');
-    if (btn) { btn.textContent = 'Send'; btn.classList.remove('armed'); }
+  if (sendArmed) disarmSend();
+}
+
+async function refreshSendAvailable() {
+  var el = document.getElementById('send-available');
+  try {
+    var bal = await api('/api/wallet/balance');
+    el.textContent = formatBNTShort(bal.spendable) + ' BNT';
+    el.dataset.atomic = String(Number(bal.spendable) || 0);
+  } catch (_) {
+    el.textContent = '--';
+    delete el.dataset.atomic;
   }
+}
+
+async function handleSendMax() {
+  var amountEl = document.getElementById('send-amount');
+  await refreshSendAvailable();
+  var spendable = Number(document.getElementById('send-available').dataset.atomic) || 0;
+  if (!spendable) return;
+  var to = document.getElementById('send-address').value.trim();
+  try {
+    if (!/^[1-9A-HJ-NP-Za-km-z]{60,}$/.test(to)) to = (await api('/api/wallet/address')).address;
+  } catch (_) { return; }
+  var reserve = 100000;
+  for (var i = 0; i < 5 && reserve < spendable; i++) {
+    var amt = spendable - reserve;
+    try {
+      var est = await api('/api/wallet/send', { method: 'POST', body: { recipients: [{ address: to, amount: amt }], dry_run: true } });
+      var fee = Number(est && est.fee) || 0;
+      if (amt + fee <= spendable) {
+        amountEl.value = formatBNTRaw(spendable - fee);
+        onSendInputEdited();
+        return;
+      }
+      reserve = fee * 2;
+    } catch (_) {
+      reserve *= 4;
+    }
+  }
+  showSendStatus('Could not work out the largest amount. Enter an amount a little below your balance.', 'info');
+}
+
+function closeWalletSwitcher() {
+  var menu = document.getElementById('wallet-switcher-menu');
+  if (!menu || menu.style.display === 'none') return;
+  menu.style.display = 'none';
+  document.getElementById('dash-wallet-switch').setAttribute('aria-expanded', 'false');
+}
+
+async function toggleWalletSwitcher() {
+  var menu = document.getElementById('wallet-switcher-menu');
+  if (menu.style.display !== 'none') { closeWalletSwitcher(); return; }
+  var wallets = [];
+  try { wallets = await invoke('list_wallets'); } catch (_) {}
+  var others = wallets.filter(function (n) { return n !== activeWalletName; });
+  menu.innerHTML =
+    others.map(function (n) {
+      return '<button type="button" class="wallet-switcher-item" data-name="' + escapeHtml(n) + '">' + escapeHtml(n.replace(/\.dat$/, '')) + '</button>';
+    }).join('') +
+    (others.length ? '' : '<div class="wallet-switcher-empty">No other wallets</div>') +
+    '<button type="button" class="wallet-switcher-item wallet-switcher-manage">Manage Wallets</button>';
+  menu.querySelectorAll('.wallet-switcher-item[data-name]').forEach(function (b) {
+    b.addEventListener('click', function () { closeWalletSwitcher(); handleSwitchWallet(b.dataset.name); });
+  });
+  menu.querySelector('.wallet-switcher-manage').addEventListener('click', function () {
+    closeWalletSwitcher();
+    navigate('settings');
+    setTimeout(function () {
+      var h = Array.prototype.find.call(document.querySelectorAll('#view-settings h2'), function (x) { return x.textContent === 'Wallets'; });
+      if (h) h.scrollIntoView({ block: 'start' });
+    }, 300);
+  });
+  menu.style.display = 'block';
+  document.getElementById('dash-wallet-switch').setAttribute('aria-expanded', 'true');
+}
+
+const SEND_CONFIRM_SECONDS = 60;
+
+function disarmSend() {
+  sendArmed = false;
+  pendingSendFingerprint = null;
+  if (sendArmTimer) { clearInterval(sendArmTimer); sendArmTimer = null; }
+  var btn = document.getElementById('send-submit');
+  if (btn) { btn.textContent = 'Send'; btn.classList.remove('armed'); }
+  var card = document.getElementById('send-confirm');
+  if (card) { card.style.display = 'none'; card.innerHTML = ''; }
+  var cancel = document.getElementById('send-cancel');
+  if (cancel) cancel.style.display = 'none';
+}
+
+function renderSendConfirm(entries, feePreview) {
+  var card = document.getElementById('send-confirm');
+  var totalAtomic = entries.reduce(function (s, e) { return s + e.atomic; }, 0);
+  var hasFee = feePreview && typeof feePreview.fee === 'number';
+  var warnings = [];
+  if (entries.some(function (e) { return e.verified === false; })) {
+    warnings.push('Unverified handle. The address shown could not be verified.');
+  }
+  if (pendingSendIdempotency && pendingSendIdempotency.interrupted) {
+    warnings.push('Your last send was interrupted and may have gone out. Sending again can pay twice.');
+  }
+  var rows = '';
+  entries.forEach(function (e, i) {
+    var label = entries.length > 1 ? 'To #' + (i + 1) : 'To';
+    var name = e.displayRecipient && e.displayRecipient !== abbrAddr(e.address) ? '<div class="send-confirm-name">' + escapeHtml(e.displayRecipient) + '</div>' : '';
+    rows += '<div class="detail-label">' + label + '</div><div class="detail-value">' + name + '<span class="mono send-confirm-addr">' + escapeHtml(e.address) + '</span></div>';
+    rows += '<div class="detail-label">Amount</div><div class="detail-value mono">' + formatBNT(e.atomic) + ' BNT</div>';
+    if (e.memo) rows += '<div class="detail-label">Memo</div><div class="detail-value">' + escapeHtml(e.memo) + '</div>';
+  });
+  rows += '<div class="detail-label">Network fee</div><div class="detail-value mono">' + (hasFee ? formatBNT(feePreview.fee) + ' BNT' : 'Added on top') + '</div>';
+  if (hasFee && typeof feePreview.change === 'number' && feePreview.change > 0) {
+    rows += '<div class="detail-label">Change</div><div class="detail-value mono">' + formatBNT(feePreview.change) + ' BNT</div>';
+  }
+  card.innerHTML =
+    warnings.map(function (w) { return '<div class="status-message warning" style="display:block;margin-top:0;margin-bottom:12px">' + escapeHtml(w) + '</div>'; }).join('') +
+    '<div class="detail-grid">' + rows + '</div>' +
+    '<div class="send-confirm-total"><span>Total</span><span class="mono">' + formatBNT(totalAtomic + (hasFee ? feePreview.fee : 0)) + ' BNT</span></div>' +
+    '<div class="send-confirm-timer" id="send-confirm-timer"></div>';
+  card.style.display = 'block';
+  document.getElementById('send-cancel').style.display = '';
+  var left = SEND_CONFIRM_SECONDS;
+  var timerEl = document.getElementById('send-confirm-timer');
+  timerEl.textContent = 'Check the details, then press Confirm Send within ' + left + 's.';
+  if (sendArmTimer) clearInterval(sendArmTimer);
+  sendArmTimer = setInterval(function () {
+    left--;
+    if (left <= 0) {
+      disarmSend();
+      showSendStatus('Confirmation expired. Press Send again.', 'info');
+      return;
+    }
+    timerEl.textContent = 'Check the details, then press Confirm Send within ' + left + 's.';
+  }, 1000);
 }
 
 // --- Wallet Management ---
@@ -3910,9 +4051,9 @@ async function loadWalletList() {
     return '<div class="wallet-row" data-name="' + escapeHtml(name) + '">' +
       '<span class="wallet-row-name">' + escapeHtml(display) + '</span>' +
       '<div class="wallet-row-actions">' +
-        '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
-        '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Del</button>' +
         '<button class="wallet-switch-btn" data-name="' + escapeHtml(name) + '">Switch</button>' +
+        '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
+        '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Delete</button>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -4043,7 +4184,7 @@ async function handleImportWalletFile() {
     }
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Load from File';
+    btn.textContent = 'Open Wallet File';
   }
 }
 
@@ -4067,10 +4208,7 @@ function hideImportForm() {
 }
 
 function showImportStatus(msg, type) {
-  var el = document.getElementById('import-seed-status');
-  el.textContent = msg;
-  el.className = 'status-message ' + type;
-  el.style.display = 'block';
+  setStatusEl(document.getElementById('import-seed-status'), msg, type);
 }
 
 function showCreateForm() {
@@ -4156,7 +4294,7 @@ async function handleCreateWallet() {
     } catch (_) {}
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Create';
+    btn.textContent = 'Create Wallet';
   }
 }
 
@@ -4186,9 +4324,10 @@ function setImportMode(mode) {
   document.getElementById('import-seed-input').style.display = keys ? 'none' : '';
   document.getElementById('import-spend-key').style.display = keys ? '' : 'none';
   document.getElementById('import-view-key').style.display = keys ? '' : 'none';
+  document.getElementById('import-key-hint').style.display = keys ? '' : 'none';
   document.getElementById('import-spend-key').placeholder = mode === 'watch'
-    ? 'Spend public key (64 hex characters)'
-    : 'Spend private key (64 hex characters)';
+    ? 'Spend public key'
+    : 'Spend private key';
 }
 
 function readImportSecret() {
@@ -4235,7 +4374,7 @@ async function handleImportSeed() {
   }
 
   btn.disabled = true;
-  btn.textContent = 'Importing...';
+  btn.textContent = 'Restoring...';
   showImportStatus('Preparing wallet...', 'info');
 
   try {
@@ -4272,7 +4411,7 @@ async function handleImportSeed() {
     }
   } finally {
     btn.disabled = false;
-    btn.textContent = 'Import';
+    btn.textContent = 'Restore Wallet';
   }
 }
 
@@ -4285,9 +4424,7 @@ async function handlePasswordScreenImportSubmit() {
   var statusEl = document.getElementById('ps-import-status');
 
   function showPsStatus(msg, type) {
-    statusEl.textContent = msg;
-    statusEl.className = 'status-message ' + type;
-    statusEl.style.display = 'block';
+    setStatusEl(statusEl, msg, type);
   }
 
   if (!mnemonic) { showPsStatus('Enter your 12-word recovery phrase', 'error'); return; }
@@ -4303,7 +4440,7 @@ async function handlePasswordScreenImportSubmit() {
   }
 
   btn.disabled = true;
-  btn.textContent = 'Importing...';
+  btn.textContent = 'Restoring...';
   showPsStatus('Preparing daemon...', 'info');
 
   try {
@@ -4327,7 +4464,7 @@ async function handlePasswordScreenImportSubmit() {
   } catch (e) {
     showPsStatus(normalizeError(e), 'error');
     btn.disabled = false;
-    btn.textContent = 'Import';
+    btn.textContent = 'Restore Wallet';
   }
 }
 
@@ -4345,11 +4482,11 @@ async function handleLockWallet() {
   playLock();
   sessionPassword = '';
   resetUserData();
+  walletLocked = true;
   showUnlockScreen();
+  walletLocked = false;
   if (lockFailed) {
-    showStatus('Wallet UI locked. Warning: daemon lock may have failed. Restart the app if concerned.', 'warning');
-  } else {
-    showStatus('Wallet locked. Enter password to unlock.', 'info');
+    showStatus('The wallet screen is locked, but the node may still hold the wallet open. Restart the app to be sure.', 'warning');
   }
 }
 
@@ -4465,10 +4602,7 @@ async function handleResetChainData() {
 }
 
 function showSettingsStatus(msg, type) {
-  const el = document.getElementById('settings-status');
-  el.textContent = msg;
-  el.className = 'status-message ' + type;
-  el.style.display = 'block';
+  setStatusEl(document.getElementById('settings-status'), msg, type);
 }
 
 async function handleBackupWallet() {
@@ -4555,10 +4689,10 @@ async function handleWalletRescan() {
     var chain = Number(data.chain_height) || 0;
     if (data.status === 'already synced') {
       el.className = 'status-message success';
-      el.textContent = 'Already fully synced (block ' + synced.toLocaleString() + ').';
+      el.textContent = 'Already fully synced (block ' + synced.toLocaleString('en-US') + ').';
     } else {
       el.className = 'status-message success';
-      el.textContent = 'Rescanning from block ' + synced.toLocaleString() + ' to ' + chain.toLocaleString() + '. Watch the dashboard for progress.';
+      el.textContent = 'Rescanning from block ' + synced.toLocaleString('en-US') + ' to ' + chain.toLocaleString('en-US') + '. Watch the dashboard for progress.';
       dashForceRefresh = true;
     }
   } catch (e) {
@@ -4584,7 +4718,7 @@ async function handleCertifyChain() {
     var height = Number(data.height) || 0;
     if (data.clean) {
       el.className = 'status-message success';
-      el.innerHTML = '✓ Chain verified clean up to block ' + height.toLocaleString() + '.';
+      el.innerHTML = '✓ Chain verified clean up to block ' + height.toLocaleString('en-US') + '.';
     } else {
       var violations = Array.isArray(data.violations) ? data.violations : [];
       var lines = violations.slice(0, 5).map(function (v) {
@@ -4593,7 +4727,7 @@ async function handleCertifyChain() {
       }).join('<br>');
       el.className = 'status-message warning';
       el.innerHTML = '⚠ ' + violations.length + ' violation' + (violations.length === 1 ? '' : 's') +
-        ' found up to block ' + height.toLocaleString() + '.<br>' + lines +
+        ' found up to block ' + height.toLocaleString('en-US') + '.<br>' + lines +
         (violations.length > 5 ? '<br><span class="d">…and ' + (violations.length - 5) + ' more.</span>' : '');
     }
   } catch (e) {
@@ -4608,10 +4742,7 @@ async function handleCertifyChain() {
 function showSeedStatus(msg, type) {
   const globalStatus = document.getElementById('settings-status');
   if (globalStatus) globalStatus.style.display = 'none';
-  const el = document.getElementById('seed-status');
-  el.textContent = msg;
-  el.className = 'status-message ' + type;
-  el.style.display = 'block';
+  setStatusEl(document.getElementById('seed-status'), msg, type);
 }
 
 // --- Polling ---
@@ -4782,7 +4913,7 @@ function showPasswordScreen(newWallet) {
     currentPwMode = 'choice';
     onboardReturnMode = 'choice';
     hideUnlockChrome();
-    if (subtitle) subtitle.textContent = '';
+    setPasswordHeading('Welcome to Blocknet', '');
     if (form) form.style.display = 'none';
     if (choice) choice.style.display = 'flex';
     loadOnboardWalletList();
@@ -4812,7 +4943,8 @@ function showOnboardCreate() {
   currentPwMode = 'create';
   hideUnlockChrome();
   if (choice) choice.style.display = 'none';
-  subtitle.textContent = 'Create a password for your new wallet';
+  setPasswordHeading('Create Wallet', 'Choose a password for your new wallet');
+  document.getElementById('password-submit').textContent = 'Create Wallet';
   password2.style.display = 'block';
   form.style.display = 'flex';
   if (backLink) backLink.style.display = '';
@@ -4831,7 +4963,7 @@ function showOnboardImport() {
   hideUnlockChrome();
   if (choice) choice.style.display = 'none';
   form.style.display = 'none';
-  subtitle.textContent = 'Restore from recovery seed';
+  setPasswordHeading('Restore from Seed', 'Enter your 12-word recovery phrase');
   if (backLink) backLink.style.display = '';
   hideStatus();
 
@@ -4847,8 +4979,8 @@ function showOnboardImport() {
     '<textarea id="ps-import-seed" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>' +
     '<input type="password" id="ps-import-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">' +
     '<input type="password" id="ps-import-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">' +
-    '<input type="text" id="ps-import-filename" class="seed-pw-input" placeholder="Filename (optional, e.g. restored.dat)">' +
-    '<button type="button" class="btn-primary" id="ps-import-submit" style="width:100%">Import</button>' +
+    '<input type="text" id="ps-import-filename" class="seed-pw-input" placeholder="File name (optional)">' +
+    '<button type="button" class="btn-primary" id="ps-import-submit" style="width:100%">Restore Wallet</button>' +
     '<div id="ps-import-status" class="status-message" style="display:none"></div>';
   container.insertBefore(div, backLink);
 
@@ -4881,7 +5013,7 @@ function showOnboardBack() {
   currentPwMode = 'choice';
   if (choice) choice.style.display = 'flex';
   loadOnboardWalletList();
-  if (subtitle) subtitle.textContent = '';
+  setPasswordHeading('Welcome to Blocknet', '');
 }
 
 function showUnlockScreen() {
@@ -4891,15 +5023,12 @@ function showUnlockScreen() {
 
   const app = document.getElementById('app');
   const passwordScreen = document.getElementById('password-screen');
-  const passwordTitle = document.getElementById('password-title');
   const subtitle = document.getElementById('password-subtitle');
   const password1 = document.getElementById('password1');
   const password2 = document.getElementById('password2');
   const submitBtn = document.getElementById('password-submit');
   const settingsStatus = document.getElementById('settings-status');
 
-  if (passwordTitle) passwordTitle.textContent = 'Welcome to Blocknet';
-  if (subtitle) subtitle.textContent = 'Enter your wallet password';
   if (password1) password1.value = '';
   if (password2) {
     password2.value = '';
@@ -4910,10 +5039,7 @@ function showUnlockScreen() {
   var choice = document.getElementById('onboard-choice');
   if (choice) choice.style.display = 'none';
   enterUnlockMode();
-  if (submitBtn) {
-    submitBtn.disabled = false;
-    submitBtn.textContent = 'Continue';
-  }
+  if (submitBtn) submitBtn.disabled = false;
   hideSeed();
   if (settingsStatus) settingsStatus.style.display = 'none';
 
@@ -4962,10 +5088,7 @@ async function enterApp(hideEntryScreen) {
 }
 
 function showStatus(message, type) {
-  const el = document.getElementById('password-status');
-  el.textContent = message;
-  el.className = 'status-message ' + type;
-  el.style.display = 'block';
+  setStatusEl(document.getElementById('password-status'), message, type);
 }
 
 function hideStatus() {
@@ -4981,8 +5104,10 @@ async function loadOnboardWalletList() {
     var active = '';
     try { active = await invoke('get_active_wallet'); } catch (_) {}
 
+    var grid = listEl.closest('.onboard-grid');
+    if (grid) grid.classList.toggle('no-recent', !wallets || wallets.length === 0);
     if (!wallets || wallets.length === 0) {
-      listEl.innerHTML = '<div class="onboard-wallet-empty">No wallet files found yet.</div>';
+      listEl.innerHTML = '';
       return;
     }
 
@@ -5046,6 +5171,15 @@ function hideUnlockChrome() {
   if (layout) layout.classList.remove('multi');
 }
 
+var walletLocked = false;
+
+function setPasswordHeading(title, subtitle) {
+  var t = document.getElementById('password-title');
+  var st = document.getElementById('password-subtitle');
+  if (t) t.textContent = title;
+  if (st) st.textContent = subtitle;
+}
+
 function enterUnlockMode() {
   currentPwMode = 'unlock';
   onboardReturnMode = 'unlock';
@@ -5064,8 +5198,9 @@ function enterUnlockMode() {
   if (password2) { password2.value = ''; password2.style.display = 'none'; }
   var backLink = document.getElementById('password-back-link');
   if (backLink) backLink.style.display = 'none';
-  var subtitle = document.getElementById('password-subtitle');
-  if (subtitle) subtitle.textContent = 'Enter your wallet password';
+  setPasswordHeading(walletLocked ? 'Wallet Locked' : 'Unlock Wallet', 'Enter your wallet password');
+  var submit = document.getElementById('password-submit');
+  if (submit) submit.textContent = 'Unlock';
 
   var actions = document.getElementById('unlock-actions');
   if (actions) actions.style.display = 'grid';
@@ -5216,7 +5351,7 @@ async function handleUnlockOpenFile() {
   } catch (e) {
     var msg = normalizeError(e);
     if (msg.indexOf('already exists') !== -1) {
-      showStatus('That wallet is already in your list. Pick it from Your wallets.', 'info');
+      showStatus('That wallet is already in your list. Pick it from Your Wallets.', 'info');
     } else if (msg !== 'No file selected' && msg !== 'Dialog cancelled') {
       showStatus(msg, 'error');
     }
@@ -5313,7 +5448,7 @@ async function handlePasswordSubmit(e) {
       showStatus(raw + ' (details in daemon.log)', 'error');
     }
     submitBtn.disabled = false;
-    submitBtn.textContent = 'Continue';
+    submitBtn.textContent = isNewWallet ? 'Create Wallet' : 'Unlock';
   }
 }
 
@@ -5336,10 +5471,14 @@ function runSeedBackupFlow(password) {
         '<div class="security-blocked-modal seed-backup-modal">' +
           '<div class="security-blocked-icon">&#9888;</div>' +
           '<h2>Couldn\'t load your recovery phrase</h2>' +
-          '<p>' + escapeHtml(msg) + '</p>' +
-          '<button class="btn-primary" id="seed-backup-retry">Try Again</button>' +
+          '<p>' + escapeHtml(plainError(msg)) + '</p>' +
+          '<div class="modal-actions">' +
+            '<button class="btn-primary" id="seed-backup-retry">Try Again</button>' +
+            '<button class="btn-secondary" id="seed-backup-close">Close</button>' +
+          '</div>' +
         '</div>';
       document.getElementById('seed-backup-retry').addEventListener('click', loadAndReveal);
+      document.getElementById('seed-backup-close').addEventListener('click', finish);
     }
 
     function renderReveal() {
@@ -5672,16 +5811,16 @@ async function updateDaemonSyncStatus() {
       var pct = Math.min(100, (m / n) * 100);
       var pctStr = status.sync_percent || (Math.floor(pct * 10) / 10) + '%';
       setDaemonSyncStatus(
-        'Syncing blockchain: block ' + m.toLocaleString() + ' of ' + n.toLocaleString() + ' (' + pctStr + ')',
+        'Syncing blockchain: block ' + m.toLocaleString('en-US') + ' of ' + n.toLocaleString('en-US') + ' (' + pctStr + ')',
         { percent: pct }
       );
     } else {
-      setDaemonSyncStatus('Syncing blockchain: block ' + m.toLocaleString());
+      setDaemonSyncStatus('Syncing blockchain: block ' + m.toLocaleString('en-US'));
     }
   } else if (peers === 0) {
     setDaemonSyncStatus('Connecting to the network…');
   } else {
-    setDaemonSyncStatus('Blockchain synced: height ' + Number(status.chain_height || 0).toLocaleString(), { percent: 100 });
+    setDaemonSyncStatus('Blockchain synced: height ' + Number(status.chain_height || 0).toLocaleString('en-US'), { percent: 100 });
   }
 }
 
@@ -5768,6 +5907,16 @@ function formatTxTime(secs) {
   catch (_) { return new Date(secs * 1000).toLocaleString(); }
 }
 
+function findWalletTxRow(txid) {
+  var lists = [historyOutputs || [], getTxCache() || []];
+  for (var i = 0; i < lists.length; i++) {
+    for (var j = 0; j < lists[i].length; j++) {
+      if (lists[i][j] && lists[i][j].txid === txid) return lists[i][j];
+    }
+  }
+  return null;
+}
+
 async function showTxDetail(txid, opts) {
   navigate('tx-detail');
   var container = document.getElementById('tx-detail-content');
@@ -5777,11 +5926,33 @@ async function showTxDetail(txid, opts) {
     var tx = data.tx;
     var isCoinbaseTx = !tx.inputs || tx.inputs.length === 0;
     var canProve = !!(opts && opts.sent) && !isCoinbaseTx;
-    var status = data.in_mempool
-      ? '<span class="g">In mempool</span>'
-      : '<span class="d">' + data.confirmations + ' confirmation' + (data.confirmations !== 1 ? 's' : '') + '</span>';
+    var confs = Number(data.confirmations) || 0;
+    var status = data.in_mempool || !data.block_height
+      ? '<span class="tag tag-warn">Pending</span>'
+      : '<span class="tag tag-ok">Confirmed</span> <span class="d">' + fmtInt(confs) + ' confirmation' + (confs !== 1 ? 's' : '') + '</span>';
+    var mine = findWalletTxRow(txid);
+    var sendRec = historySends[txid] || null;
+    var summaryHtml = '';
+    var extraRows = '';
+    if (mine) {
+      var isSend = !!mine.is_send;
+      var kind = mine.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received');
+      summaryHtml = '<div class="tx-summary">' +
+        '<div class="tx-summary-amount ' + (isSend ? 'r' : 'g') + '">' + (isSend ? '-' : '+') + formatBNT(mine.amount) + ' BNT</div>' +
+        '<div class="tx-summary-kind">' + kind + '</div>' +
+      '</div>';
+      if (sendRec && sendRec.recipients && sendRec.recipients.length) {
+        sendRec.recipients.forEach(function (r, i) {
+          var who = contactNameForAddress(r.address);
+          extraRows += '<div class="detail-label">' + (sendRec.recipients.length > 1 ? 'To #' + (i + 1) : 'To') + '</div>' +
+            '<div class="detail-value">' + (who ? escapeHtml(who) + ' ' : '') + '<span class="mono">' + copyable(r.address) + '</span></div>';
+        });
+      }
+      var memoText = mine.memo_hex ? hexToUtf8(mine.memo_hex) : '';
+      if (memoText) extraRows += '<div class="detail-label">Memo</div><div class="detail-value">' + escapeHtml(memoText) + '</div>';
+    }
     var blockLink = data.block_height
-      ? '<a class="detail-link" data-block="' + data.block_height + '">Block ' + data.block_height + '</a>'
+      ? '<a class="detail-link" data-block="' + data.block_height + '">Block ' + fmtInt(data.block_height) + '</a>'
       : 'Pending';
 
     var blockTime = 0;
@@ -5791,7 +5962,9 @@ async function showTxDetail(txid, opts) {
     var dateHtml = blockTime ? escapeHtml(formatTxTime(blockTime)) : '<span class="d">Pending</span>';
 
     container.innerHTML =
+      summaryHtml +
       '<div class="detail-grid">' +
+        extraRows +
         '<div class="detail-label">TX Hash</div>' +
         '<div class="detail-value mono">' + copyable(txid) + '</div>' +
         '<div class="detail-label">Status</div>' +
@@ -5808,12 +5981,12 @@ async function showTxDetail(txid, opts) {
         '<div class="detail-value">' + (tx.outputs ? tx.outputs.length : 0) + '</div>' +
       '</div>' +
       '<div class="tx-note-block">' +
-        '<span class="detail-label">Note <span class="d">(private, saved on this device only)</span></span>' +
+        '<span class="detail-label">Private note</span>' +
         '<div class="tx-note-row">' +
           '<input class="tx-note-input" id="tx-note-input" type="text" placeholder="Add a private note for this transaction" autocorrect="off" autocapitalize="off" spellcheck="false">' +
           '<button class="btn-secondary" id="tx-note-save">Save</button>' +
         '</div>' +
-        '<div class="tx-note-hint">Never sent to the network. Your own label, separate from the on-chain memo.</div>' +
+        '<div class="tx-note-hint">Saved on this device only. Never sent to the network.</div>' +
       '</div>' +
       '<div class="detail-actions">' +
         '<button class="btn-secondary" id="tx-open-explorer">Open in Explorer</button>' +
@@ -5904,7 +6077,7 @@ async function showBlockDetail(id) {
   try {
     var block = await api('/api/block/' + id);
     var time = new Date(block.timestamp * 1000);
-    var timeStr = time.toLocaleString();
+    var timeStr = formatTxTime(block.timestamp);
 
     var txRows = '';
     if (block.transactions && block.transactions.length) {
@@ -5921,7 +6094,7 @@ async function showBlockDetail(id) {
     container.innerHTML =
       '<div class="detail-grid">' +
         '<div class="detail-label">Height</div>' +
-        '<div class="detail-value">' + block.height + '</div>' +
+        '<div class="detail-value">' + fmtInt(block.height) + '</div>' +
         '<div class="detail-label">Hash</div>' +
         '<div class="detail-value mono">' + copyable(block.hash) + '</div>' +
         '<div class="detail-label">Previous</div>' +
@@ -5933,11 +6106,11 @@ async function showBlockDetail(id) {
         '<div class="detail-label">Confirmations</div>' +
         '<div class="detail-value">' + block.confirmations + '</div>' +
         '<div class="detail-label">Reward</div>' +
-        '<div class="detail-value g">' + formatBNT(block.reward) + ' BNT</div>' +
+        '<div class="detail-value g">' + formatBNTShort(block.reward) + ' BNT</div>' +
         '<div class="detail-label">Difficulty</div>' +
-        '<div class="detail-value">' + block.difficulty.toLocaleString() + '</div>' +
+        '<div class="detail-value">' + block.difficulty.toLocaleString('en-US') + '</div>' +
         '<div class="detail-label">Nonce</div>' +
-        '<div class="detail-value">' + block.nonce.toLocaleString() + '</div>' +
+        '<div class="detail-value">' + block.nonce.toLocaleString('en-US') + '</div>' +
         '<div class="detail-label">Merkle Root</div>' +
         '<div class="detail-value mono">' + copyable(block.merkle_root) + '</div>' +
       '</div>' +
@@ -6217,6 +6390,7 @@ document.getElementById('send-form').addEventListener('submit', handleSend);
 wireCopyable();
 document.getElementById('qr-container').addEventListener('click', showQROverlay);
 document.getElementById('qr-overlay').addEventListener('click', dismissQROverlay);
+document.getElementById('receive-copy-btn').addEventListener('click', function () { document.getElementById('receive-address').click(); });
 document.getElementById('request-generate-btn').addEventListener('click', generatePaymentLink);
 document.getElementById('request-amount').addEventListener('input', clearPaymentLink);
 document.getElementById('request-memo').addEventListener('input', clearPaymentLink);
@@ -6231,6 +6405,30 @@ document.getElementById('threads-dec').addEventListener('click', function () { c
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
 document.getElementById('history-search').addEventListener('input', filterHistory);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
+document.getElementById('send-cancel').addEventListener('click', disarmSend);
+document.getElementById('send-max-btn').addEventListener('click', handleSendMax);
+(function buildSettingsNav() {
+  var nav = document.getElementById('settings-nav');
+  if (!nav) return;
+  document.querySelectorAll('#view-settings .settings-category > h2').forEach(function (h) {
+    var b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'settings-nav-link';
+    b.textContent = h.textContent;
+    b.addEventListener('click', function () {
+      var sc = document.getElementById('main-content');
+      sc.scrollTop += h.getBoundingClientRect().top - nav.getBoundingClientRect().bottom - 16;
+    });
+    nav.appendChild(b);
+  });
+})();
+document.getElementById('dash-send-btn').addEventListener('click', function () { navigate('send'); });
+document.getElementById('dash-receive-btn').addEventListener('click', function () { navigate('receive'); });
+document.getElementById('dash-view-all').addEventListener('click', function () { navigate('history'); });
+document.getElementById('dash-wallet-switch').addEventListener('click', toggleWalletSwitcher);
+document.addEventListener('click', function (e) {
+  if (!e.target.closest('.wallet-switcher')) closeWalletSwitcher();
+});
 (function () {
   var firstRow = getFirstRecipientRow();
   if (firstRow) wireRecipientRow(firstRow);
@@ -6290,7 +6488,14 @@ async function handleCreateWatchWallet() {
   var pwEl = document.getElementById('watch-wallet-password');
   var filePwEl = document.getElementById('watch-file-password');
   var el = document.getElementById('watch-create-status');
-  function status(msg, type) { el.textContent = msg; el.className = 'status-message ' + type; el.style.display = 'block'; }
+  function status(msg, type) { setStatusEl(el, msg, type); }
+  if (pwEl.style.display === 'none') {
+    pwEl.style.display = '';
+    filePwEl.style.display = '';
+    pwEl.focus();
+    status('Enter this wallet\'s password and a new password for the watch-only file, then press Create Watch-Only Wallet again.', 'info');
+    return;
+  }
   if (!pwEl.value || filePwEl.value.length < 8) {
     status('Enter this wallet\'s password and a new password of at least 8 characters.', 'error');
     return;
@@ -6307,6 +6512,8 @@ async function handleCreateWatchWallet() {
     });
     pwEl.value = '';
     filePwEl.value = '';
+    pwEl.style.display = 'none';
+    filePwEl.style.display = 'none';
     status('Created ' + (res.filename || 'the watch-only wallet') + '. It is in your wallet list; back it up to use it elsewhere.', 'success');
     await loadWalletList();
   } catch (e) {
@@ -6324,10 +6531,7 @@ document.querySelectorAll('#import-mode .payment-link-mode').forEach(function (b
 var nodeFullSync = false;
 
 function showNodeStatus(msg, type) {
-  var el = document.getElementById('node-settings-status');
-  el.textContent = msg;
-  el.className = 'status-message ' + type;
-  el.style.display = 'block';
+  setStatusEl(document.getElementById('node-settings-status'), msg, type);
 }
 
 function paintNodeFullSync() {

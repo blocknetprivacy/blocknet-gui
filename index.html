@@ -48,6 +48,11 @@
         <img src="icons/blocknet_bg_black.png" alt="Blocknet" id="password-logo">
         <h1 id="password-title">Welcome to Blocknet</h1>
         <p id="password-subtitle">Enter your wallet password</p>
+        <div id="daemon-sync-status" class="daemon-sync-status" style="display: none;">
+          <div class="daemon-sync-text"></div>
+          <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill"></div></div>
+          <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
+        </div>
       </div>
 
       <div class="password-main">
@@ -60,12 +65,12 @@
                 <span class="onboard-btn-hint">Generate a fresh wallet and recovery seed</span>
               </button>
               <button class="onboard-btn" id="onboard-import">
-                <span class="onboard-btn-label">Import from Seed</span>
+                <span class="onboard-btn-label">Restore from Seed</span>
                 <span class="onboard-btn-hint">Restore an existing wallet with a 12-word phrase</span>
               </button>
             </div>
             <div class="onboard-recent">
-              <h3 class="onboard-recent-title">Recent Wallets</h3>
+              <h3 class="onboard-recent-title">Your Wallets</h3>
               <div id="onboard-wallet-list" class="onboard-wallet-list"></div>
             </div>
           </div>
@@ -86,28 +91,23 @@
 
             <form id="password-form">
               <input type="password" id="password1" placeholder="Password" autocomplete="new-password" />
-              <input type="password" id="password2" placeholder="Confirm Password" style="display: none;" autocomplete="new-password" />
-              <button type="submit" id="password-submit">Continue</button>
+              <input type="password" id="password2" placeholder="Confirm password" style="display: none;" autocomplete="new-password" />
+              <button type="submit" id="password-submit">Unlock</button>
             </form>
 
             <div id="password-status" class="status-message"></div>
-            <div id="daemon-sync-status" class="daemon-sync-status" style="display: none;">
-              <div class="daemon-sync-text"></div>
-              <div class="daemon-sync-bar"><div class="daemon-sync-bar-fill"></div></div>
-              <div class="daemon-sync-credit">Checkpoints provided by <span class="bntpool-brand">bntpool.com</span></div>
-            </div>
 
             <div id="unlock-actions" class="unlock-actions" style="display: none;">
-              <button type="button" class="unlock-action" data-act="open">Open Wallet</button>
-              <button type="button" class="unlock-action" data-act="new">New Wallet</button>
-              <button type="button" class="unlock-action" data-act="seed">Enter Seed</button>
+              <button type="button" class="unlock-action" data-act="open">Open Wallet File</button>
+              <button type="button" class="unlock-action" data-act="new">Create New Wallet</button>
+              <button type="button" class="unlock-action" data-act="seed">Restore from Seed</button>
             </div>
 
-            <button type="button" id="password-back-link" class="text-link" style="display: none;">Back</button>
+            <button type="button" id="password-back-link" class="text-link" style="display: none;">← Back</button>
           </div>
 
           <aside id="unlock-wallets" class="unlock-wallets" style="display: none;">
-            <div class="unlock-wallets-title">Your wallets</div>
+            <div class="unlock-wallets-title">Your Wallets</div>
             <div id="unlock-wallet-list" class="unlock-wallet-list"></div>
           </aside>
         </div>
@@ -150,11 +150,11 @@
           <span class="nav-text">Network</span>
         </button>
         <button class="nav-link" data-view="economics">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M19 7l-6 6-4-4-4 4"/></svg>
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M19 7l-6 6-4-4-4 4"/></svg>
           <span class="nav-text">Economics</span>
         </button>
         <button class="nav-link" data-view="signverify">
-          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><path d="M9 12l2 2 4-4"/></svg>
           <span class="nav-text">Sign / Verify</span>
         </button>
         <button class="nav-link" data-view="settings">
@@ -170,12 +170,22 @@
         <div class="container">
           <div id="dash-upgrade-notice" class="upgrade-notice" style="display: none;"></div>
           <div class="balance-card">
-            <div class="balance-label"><span id="dash-wallet-name" class="g">wallet</span> <span class="watch-badge">watch-only</span> <span>Spendable Balance</span></div>
-            <div class="balance-shortname sv-copyable" id="dash-shortname" style="display: none;"></div>
-            <div class="balance-value"><span id="dash-balance">--</span> <span class="d" id="dash-balance-unit">BNT</span></div>
+            <div class="balance-head">
+              <span class="balance-label" id="dash-balance-label">Spendable Balance</span>
+              <div class="balance-chips">
+                <span class="watch-badge">watch-only</span>
+                <span class="balance-shortname sv-copyable" id="dash-shortname" style="display: none;"></span>
+                <div class="wallet-switcher">
+                  <button type="button" class="wallet-switcher-btn" id="dash-wallet-switch" aria-haspopup="true" aria-expanded="false"><span id="dash-wallet-name">wallet</span> <span aria-hidden="true">▾</span></button>
+                  <div class="wallet-switcher-menu" id="wallet-switcher-menu" style="display: none;"></div>
+                </div>
+              </div>
+            </div>
+            <div class="balance-value"><span id="dash-balance">--</span> <span class="balance-unit" id="dash-balance-unit">BNT</span></div>
+            <div class="balance-watch-note">This wallet can watch payments but cannot send.</div>
             <div class="balance-sub">
-              <span id="pending-label">Pending: <span id="dash-pending">--</span> BNT</span>
-              <span>Total: <span id="dash-total">--</span> BNT</span>
+              <span id="pending-label"><span class="k">Pending</span> <span id="dash-pending">--</span> BNT</span>
+              <span><span class="k">Total</span> <span id="dash-total">--</span> BNT</span>
             </div>
             <div class="balance-unconfirmed" id="dash-unconfirmed" style="display: none;">
               <span class="balance-unconfirmed-amt"><span id="dash-unconfirmed-amt">--</span> BNT incoming</span><span id="dash-unconfirmed-eta" class="d"></span>
@@ -186,6 +196,10 @@
               <div class="dash-scan-blocks" id="dash-scan-blocks"></div>
             </div>
             <div id="dash-sync-notice" class="sync-notice" style="display: none;"></div>
+            <div class="balance-actions">
+              <button type="button" class="btn-primary" id="dash-send-btn">Send</button>
+              <button type="button" class="btn-secondary" id="dash-receive-btn">Receive</button>
+            </div>
           </div>
           <div class="stats-grid">
             <div class="stat-card">
@@ -206,21 +220,8 @@
             </div>
           </div>
           <div class="recent-tx-section">
-            <h2>Recent Activity</h2>
+            <div class="section-head"><h2>Recent Activity</h2><button type="button" class="link-btn" id="dash-view-all">View All</button></div>
             <div id="dash-recent-tx" class="recent-tx-list"></div>
-          </div>
-          <div class="node-diag-section">
-            <h2>Node</h2>
-            <div class="detail-grid">
-              <div class="detail-label">Best Hash</div>
-              <div class="detail-value mono" id="dash-best-hash" title="">--</div>
-              <div class="detail-label">Total Work</div>
-              <div class="detail-value" id="dash-total-work">--</div>
-              <div class="detail-label">Mempool Size</div>
-              <div class="detail-value" id="dash-mempool-bytes">--</div>
-              <div class="detail-label">Identity Age</div>
-              <div class="detail-value" id="dash-identity-age">--</div>
-            </div>
           </div>
         </div>
       </div>
@@ -237,13 +238,13 @@
                   <button type="button" class="recipient-remove-btn" style="display: none;">Remove</button>
                 </div>
                 <div class="form-group">
-                  <label>Recipient</label>
-                  <input type="text" id="send-address" data-role="address" placeholder="Address, $handle, or @handle" autocorrect="off" autocapitalize="off" spellcheck="false">
+                  <div class="label-row"><label>Recipient</label><button type="button" class="link-btn" id="save-contact-btn">Save to Contacts</button></div>
+                  <input type="text" id="send-address" data-role="address" placeholder="Address or $handle" autocorrect="off" autocapitalize="off" spellcheck="false">
                   <div id="address-book-suggestions" class="address-suggestions" data-role="suggestions"></div>
                   <div id="send-resolved" class="send-resolved" data-role="resolved" style="display: none;"></div>
                 </div>
                 <div class="form-group">
-                  <label>Amount (BNT)</label>
+                  <div class="label-row"><label>Amount (BNT)</label><span class="send-available"><span id="send-available">--</span> available · <button type="button" class="link-btn" id="send-max-btn">Max</button></span></div>
                   <input type="number" id="send-amount" data-role="amount" step="0.00000001" min="0" placeholder="0.00">
                 </div>
                 <div class="form-group">
@@ -255,8 +256,8 @@
             <button type="button" class="add-recipient-btn" id="add-recipient-btn">+ Add Recipient</button>
             <div class="coin-control-panel" id="coin-control-panel" style="display: none;">
               <div class="cc-header">
-                <span class="cc-title">Coin control</span>
-                <button type="button" class="btn-secondary" id="cc-refresh-btn">Choose coins</button>
+                <span class="cc-title">Coin Control</span>
+                <button type="button" class="btn-secondary" id="cc-refresh-btn">Choose Coins</button>
               </div>
               <div class="cc-summary" id="cc-summary">Auto-select (no specific coins chosen)</div>
               <div class="cc-list" id="cc-list"></div>
@@ -265,9 +266,10 @@
               <span class="send-total-label">Total</span>
               <span class="send-total-value" id="send-total-value">0.00000000 BNT</span>
             </div>
+            <div id="send-confirm" class="send-confirm" style="display: none;"></div>
             <div class="send-actions">
               <button type="submit" class="btn-primary" id="send-submit">Send</button>
-              <button type="button" class="btn-secondary" id="save-contact-btn">Save Contact</button>
+              <button type="button" class="btn-secondary" id="send-cancel" style="display: none;">Cancel</button>
             </div>
           </form>
           <div id="send-status" class="status-message" style="display: none;"></div>
@@ -285,17 +287,18 @@
           <h1>Receive</h1>
           <div class="qr-container" id="qr-container"></div>
           <div class="form-group">
-            <label>Your Stealth Address <span class="d">(click to copy)</span></label>
+            <label>Your Address</label>
             <div class="address-display-row">
               <span class="address-identicon" id="receive-identicon"></span>
               <div class="address-display sv-copyable" id="receive-address">Loading...</div>
+              <button type="button" class="btn-secondary" id="receive-copy-btn">Copy</button>
             </div>
           </div>
           <div class="form-group receive-handle-section">
             <label>Preferred Shortname <span class="d">(for receive QR and links)</span></label>
             <input type="text" id="receive-shortname" placeholder="$yourname or yourname" autocorrect="off" autocapitalize="off" spellcheck="false">
             <div class="send-actions receive-handle-actions">
-              <button type="button" class="btn-primary" id="receive-shortname-save">Save Shortname</button>
+              <button type="button" class="btn-secondary" id="receive-shortname-save">Save Shortname</button>
               <button type="button" class="btn-secondary" id="receive-shortname-clear">Clear</button>
             </div>
             <div id="receive-shortname-status" class="send-resolved" style="display: none;"></div>
@@ -330,7 +333,7 @@
           <div class="history-header-row">
             <h1>History</h1>
           </div>
-          <input type="text" id="history-search" class="history-search" placeholder="Search amount, memo, note, txid" autocorrect="off" autocapitalize="off" spellcheck="false">
+          <input type="text" id="history-search" class="history-search" placeholder="Search transactions" autocorrect="off" autocapitalize="off" spellcheck="false">
           <div class="history-toolbar">
             <button id="export-csv-btn">Export CSV</button>
           </div>
@@ -410,6 +413,19 @@
           <div id="network-peers" style="margin: 16px 0 32px 0;">Loading...</div>
           <h2>Banned Peers (<span id="network-banned-count">0</span>)</h2>
           <div id="network-banned">Loading...</div>
+          <div class="node-diag-section">
+            <h2>Node Details</h2>
+            <div class="detail-grid">
+              <div class="detail-label">Best Hash</div>
+              <div class="detail-value mono" id="dash-best-hash" title="">--</div>
+              <div class="detail-label">Total Work</div>
+              <div class="detail-value" id="dash-total-work">--</div>
+              <div class="detail-label">Mempool Size</div>
+              <div class="detail-value" id="dash-mempool-bytes">--</div>
+              <div class="detail-label">Identity Age</div>
+              <div class="detail-value" id="dash-identity-age">--</div>
+            </div>
+          </div>
         </div>
       </div>
 
@@ -421,25 +437,25 @@
 
           <div class="econ-supply-card">
             <div class="econ-supply-head">
-              <span class="econ-supply-label">Supply emitted</span>
+              <span class="econ-supply-label">Supply Emitted</span>
               <span class="econ-supply-pct" id="econ-pct">--%</span>
             </div>
             <div class="econ-supply-bar"><div class="econ-supply-fill" id="econ-supply-fill"></div></div>
             <div class="econ-supply-sub">
-              <span><span class="g" id="econ-emitted">--</span> emitted</span>
-              <span><span id="econ-remaining">--</span> to reference cap</span>
-              <span><span id="econ-target">--</span> BNT reference</span>
+              <div><span class="econ-mini-label">Emitted</span><span class="econ-mini-value g mono" id="econ-emitted">--</span></div>
+              <div><span class="econ-mini-label">Left to Reference</span><span class="econ-mini-value mono" id="econ-remaining">--</span></div>
+              <div><span class="econ-mini-label">Reference Supply</span><span class="econ-mini-value mono" id="econ-target">--</span></div>
             </div>
             <p class="econ-tail-note">No hard cap: after month <span id="econ-months-to-tail">48</span> a perpetual tail of <span id="econ-tail">2.0</span> BNT/block keeps issuance alive forever.</p>
           </div>
 
-          <h2>Emission curve</h2>
+          <h2>Emission Curve</h2>
           <div class="econ-chart" id="econ-chart"><div class="d">Loading...</div></div>
           <p class="econ-chart-caption d">Block reward over time: smooth decay to the perpetual tail. The marker shows the current block.</p>
 
           <div class="stats-grid econ-stats-grid">
             <div class="stat-card">
-              <div class="stat-label">Block Reward (now)</div>
+              <div class="stat-label">Block Reward</div>
               <div class="stat-value g" id="econ-reward">--</div>
             </div>
             <div class="stat-card">
@@ -470,6 +486,7 @@
       <div id="view-settings" class="view">
         <div class="container">
           <h1>Settings</h1>
+          <nav class="settings-nav" id="settings-nav" aria-label="Settings sections"></nav>
           <div class="settings-layout">
             <section class="settings-category">
               <h2>Wallet Security</h2>
@@ -490,7 +507,7 @@
                   </div>
                   <div class="settings-item-control">
                     <input type="password" id="seed-password" class="seed-pw-input" placeholder="Wallet password" autocomplete="current-password" style="display: none;">
-                    <button class="btn-primary" id="view-seed-btn">View Recovery Seed</button>
+                    <button class="btn-secondary" id="view-seed-btn">View Recovery Seed</button>
                     <div id="seed-status" class="status-message" style="display: none;"></div>
                     <div id="seed-display" class="seed-display" style="display: none;"></div>
                   </div>
@@ -499,14 +516,14 @@
                 <div class="settings-item watch-only-hide">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Create watch-only wallet</span>
+                      <span class="settings-item-title">Create Watch-Only Wallet</span>
                     </div>
                     <p class="settings-item-desc">Makes a wallet file that sees incoming payments but cannot spend. Use it to watch your balance on another computer. Give it a different password.</p>
                   </div>
                   <div class="settings-item-control">
-                    <input type="password" id="watch-wallet-password" class="seed-pw-input" placeholder="This wallet's password" autocomplete="current-password">
-                    <input type="password" id="watch-file-password" class="seed-pw-input" placeholder="Password for the watch-only file" autocomplete="new-password">
-                    <button class="btn-primary" id="watch-create-btn">Create watch-only wallet</button>
+                    <input type="password" id="watch-wallet-password" class="seed-pw-input" style="display: none;" placeholder="This wallet's password" autocomplete="current-password">
+                    <input type="password" id="watch-file-password" class="seed-pw-input" style="display: none;" placeholder="Password for the watch-only file" autocomplete="new-password">
+                    <button class="btn-secondary" id="watch-create-btn">Create Watch-Only Wallet</button>
                     <div id="watch-create-status" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
@@ -526,7 +543,7 @@
                     <p class="settings-item-desc">Stops spending and balance calls until the wallet is unlocked again.</p>
                   </div>
                   <div class="settings-item-control">
-                    <button class="btn-primary" id="lock-wallet-btn">Lock Wallet</button>
+                    <button class="btn-secondary" id="lock-wallet-btn">Lock Wallet</button>
                   </div>
                 </div>
 
@@ -569,7 +586,7 @@
                     <p class="settings-item-desc">Scans your wallet outputs for duplicate key images: burned funds from a historical self-send bug. Read-only; nothing is changed.</p>
                   </div>
                   <div class="settings-item-control">
-                    <button class="btn-primary" id="wallet-audit-btn">Check Wallet Health</button>
+                    <button class="btn-secondary" id="wallet-audit-btn">Check Wallet Health</button>
                     <div id="wallet-audit-result" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
@@ -589,7 +606,7 @@
                     <p class="settings-item-desc">Save a copy of this wallet's encrypted .dat file somewhere safe. It stays encrypted; keep it offline.</p>
                   </div>
                   <div class="settings-item-control">
-                    <button class="btn-primary" id="backup-wallet-btn">Backup Wallet File</button>
+                    <button class="btn-secondary" id="backup-wallet-btn">Backup Wallet File</button>
                     <div id="backup-wallet-status" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
@@ -620,7 +637,7 @@
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Desktop notifications</span>
+                      <span class="settings-item-title">Desktop Notifications</span>
                       <span
                         class="settings-help"
                         name="desktop-notifications-help"
@@ -672,7 +689,7 @@
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Coin control</span>
+                      <span class="settings-item-title">Coin Control</span>
                       <span class="experimental-badge">Experimental</span>
                       <span
                         class="settings-help"
@@ -700,20 +717,20 @@
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Peer limits</span>
+                      <span class="settings-item-title">Peer Limits</span>
                     </div>
                     <p class="settings-item-desc">How many other nodes may connect to you, and how many you connect to. 0 uses the default.</p>
                   </div>
                   <div class="settings-item-control node-limits">
-                    <label class="d">Inbound <input type="number" id="node-max-inbound" class="seed-pw-input" min="0" step="1"></label>
-                    <label class="d">Outbound <input type="number" id="node-max-outbound" class="seed-pw-input" min="0" step="1"></label>
+                    <label>Inbound <input type="number" id="node-max-inbound" class="seed-pw-input" min="0" step="1"></label>
+                    <label>Outbound <input type="number" id="node-max-outbound" class="seed-pw-input" min="0" step="1"></label>
                   </div>
                 </div>
 
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Extra peers</span>
+                      <span class="settings-item-title">Extra Peers</span>
                     </div>
                     <p class="settings-item-desc">Nodes your node always tries to reach. One address per line, for example one copied from another node's Network page.</p>
                   </div>
@@ -725,7 +742,7 @@
                 <div class="settings-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
-                      <span class="settings-item-title">Full sync</span>
+                      <span class="settings-item-title">Full Sync</span>
                     </div>
                     <p class="settings-item-desc">Download and check every block from the start instead of trusting checkpoints. Much slower.</p>
                   </div>
@@ -740,8 +757,8 @@
                 <div class="settings-item">
                   <div class="settings-item-main"></div>
                   <div class="settings-item-control">
-                    <button class="btn-primary" id="node-settings-save">Save node settings</button>
-                    <button class="btn-secondary" id="node-restart" style="display: none;">Restart node</button>
+                    <button class="btn-primary" id="node-settings-save">Save Node Settings</button>
+                    <button class="btn-secondary" id="node-restart" style="display: none;">Restart Node</button>
                     <div id="node-settings-status" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
@@ -754,33 +771,34 @@
               <div class="wallet-list" id="wallet-list"></div>
               <div class="wallet-actions">
                 <button class="btn-secondary" id="create-wallet-btn">Create New Wallet</button>
-                <button class="btn-secondary" id="import-seed-btn">Import from Seed</button>
-                <button class="btn-secondary" id="import-file-btn">Load from File</button>
+                <button class="btn-secondary" id="import-seed-btn">Restore from Seed</button>
+                <button class="btn-secondary" id="import-file-btn">Open Wallet File</button>
               </div>
               <div id="create-wallet-form" class="wallet-import-form" style="display: none;">
-                <input type="text" id="create-wallet-filename" class="seed-pw-input" placeholder="Wallet name (e.g. savings.dat)" autocorrect="off" autocapitalize="off" spellcheck="false">
+                <input type="text" id="create-wallet-filename" class="seed-pw-input" placeholder="Wallet name" autocorrect="off" autocapitalize="off" spellcheck="false">
                 <input type="password" id="create-wallet-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">
                 <input type="password" id="create-wallet-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">
                 <div class="wallet-import-actions">
-                  <button class="btn-primary" id="create-wallet-submit">Create</button>
+                  <button class="btn-primary" id="create-wallet-submit">Create Wallet</button>
                   <button class="btn-secondary" id="create-wallet-cancel">Cancel</button>
                 </div>
                 <div id="create-wallet-status" class="status-message" style="display: none;"></div>
               </div>
               <div id="import-seed-form" class="wallet-import-form" style="display: none;">
                 <div class="payment-link-toggle" id="import-mode">
-                  <button type="button" class="payment-link-mode active" data-mode="seed">Seed phrase</button>
-                  <button type="button" class="payment-link-mode" data-mode="keys">Private keys</button>
-                  <button type="button" class="payment-link-mode" data-mode="watch">Watch-only</button>
+                  <button type="button" class="payment-link-mode active" data-mode="seed">Seed Phrase</button>
+                  <button type="button" class="payment-link-mode" data-mode="keys">Private Keys</button>
+                  <button type="button" class="payment-link-mode" data-mode="watch">Watch-Only</button>
                 </div>
                 <textarea id="import-seed-input" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>
-                <input type="text" id="import-spend-key" class="seed-pw-input" placeholder="Spend private key (64 hex characters)" spellcheck="false" autocomplete="off" style="display: none;">
-                <input type="text" id="import-view-key" class="seed-pw-input" placeholder="View private key (64 hex characters)" spellcheck="false" autocomplete="off" style="display: none;">
+                <input type="text" id="import-spend-key" class="seed-pw-input" placeholder="Spend private key" spellcheck="false" autocomplete="off" style="display: none;">
+                <input type="text" id="import-view-key" class="seed-pw-input" placeholder="View private key" spellcheck="false" autocomplete="off" style="display: none;">
+                <p class="form-hint" id="import-key-hint" style="display: none;">Each key is 64 hex characters.</p>
                 <input type="password" id="import-seed-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">
                 <input type="password" id="import-seed-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">
-                <input type="text" id="import-seed-filename" class="seed-pw-input" placeholder="Filename (optional, e.g. restored.dat)">
+                <input type="text" id="import-seed-filename" class="seed-pw-input" placeholder="File name (optional)">
                 <div class="wallet-import-actions">
-                  <button class="btn-primary" id="import-seed-submit">Import</button>
+                  <button class="btn-primary" id="import-seed-submit">Restore Wallet</button>
                   <button class="btn-secondary" id="import-seed-cancel">Cancel</button>
                 </div>
                 <div id="import-seed-status" class="status-message" style="display: none;"></div>
@@ -912,7 +930,7 @@
           <div id="sv-sign" class="sv-panel">
             <div class="form-group">
               <label>Message</label>
-              <textarea id="sign-message" rows="3" maxlength="1024" placeholder="Message to sign (max 1024 bytes)" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
+              <textarea id="sign-message" rows="3" maxlength="1024" placeholder="Message to sign" autocorrect="off" autocapitalize="off" spellcheck="false"></textarea>
             </div>
             <button class="btn-primary" id="sign-btn">Sign Message</button>
             <div id="sign-result" class="sv-result" style="display: none;"></div>
@@ -928,7 +946,7 @@
             </div>
             <div class="form-group">
               <label>Signature</label>
-              <input type="text" id="verify-signature" placeholder="Hex-encoded signature (128 chars)" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <input type="text" id="verify-signature" placeholder="Signature" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <button class="btn-primary" id="verify-btn">Verify Signature</button>
             <div id="verify-result" class="sv-result" style="display: none;"></div>
@@ -936,15 +954,15 @@
           <div id="sv-verifyproof" class="sv-panel" style="display: none;">
             <div class="form-group">
               <label>TX Hash</label>
-              <input type="text" id="verifyproof-txid" placeholder="64-character transaction hash" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <input type="text" id="verifyproof-txid" placeholder="Transaction hash" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="form-group">
               <label>TX Key</label>
-              <input type="text" id="verifyproof-txkey" placeholder="64-character tx key from the sender's proof" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <input type="text" id="verifyproof-txkey" placeholder="Transaction key" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <div class="form-group">
               <label>Recipient Address</label>
-              <input type="text" id="verifyproof-address" placeholder="Address that should have received the payment" autocorrect="off" autocapitalize="off" spellcheck="false">
+              <input type="text" id="verifyproof-address" placeholder="Recipient address" autocorrect="off" autocapitalize="off" spellcheck="false">
             </div>
             <button class="btn-primary" id="verifyproof-btn">Verify Payment</button>
             <div id="verifyproof-result" class="sv-result" style="display: none;"></div>
@@ -983,7 +1001,9 @@
   </div>
 
   <div id="qr-overlay" class="qr-overlay">
+    <button type="button" class="qr-overlay-close" aria-label="Close">&times;</button>
     <div id="qr-overlay-inner"></div>
+    <div id="qr-overlay-text" class="qr-overlay-text mono"></div>
   </div>
 
   <script src="qr.js"></script>
