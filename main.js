@@ -268,8 +268,16 @@ function setTxNote(txid, note) {
 function getTxCache() {
   return Array.isArray(userData.txCache) ? userData.txCache : [];
 }
+// Each write re-encrypts the whole store, so skip it when no output changed.
+var txCacheSig = '';
 function setTxCache(outputs) {
-  userData.txCache = Array.isArray(outputs) ? outputs : [];
+  var list = Array.isArray(outputs) ? outputs : [];
+  var sig = list.map(function (o) {
+    return o.txid + ':' + o.output_index + ':' + (o.spent ? 1 : 0) + ':' + (o.block_height || 0);
+  }).join('|');
+  if (sig === txCacheSig && userData.txCache && userData.txCache.length === list.length) return;
+  txCacheSig = sig;
+  userData.txCache = list;
   persistUserData();
 }
 function updateHistoryRowNote(txid, note) {
@@ -1451,7 +1459,10 @@ function dismissQROverlay() {
 
 // --- History ---
 
-async function loadHistory() {
+// quiet: a refresh while History is open (new block). It skips the first-page
+// preview and keeps the rows already shown and the scroll position.
+async function loadHistory(opts) {
+  var quiet = !!(opts && opts.quiet);
   const container = document.getElementById('history-list');
   historyPreviewShown = false;
 
@@ -1478,7 +1489,7 @@ async function loadHistory() {
 
   // Fast first paint: render the first page from the paginated endpoint before
   // the (potentially large) full-history fetch. Best-effort; ignore failures.
-  try {
+  if (!quiet) try {
     var pg = await api('/api/wallet/history/page?limit=' + HISTORY_PAGE + '&offset=0&order=desc');
     if (pg && Array.isArray(pg.outputs) && pg.outputs.length) {
       renderHistoryPreview(buildTxRows(pg.outputs, sendsCtx).slice(0, HISTORY_PAGE));
@@ -1494,6 +1505,7 @@ async function loadHistory() {
     loadFailed = true;
     console.warn('history load failed:', normalizeError(e));
   }
+  if (quiet && loadFailed) return;
 
   var hasOutputsArray = data && Array.isArray(data.outputs);
   var outputs = hasOutputsArray ? data.outputs : null;
@@ -1528,7 +1540,16 @@ async function loadHistory() {
   historyOutputs = rows;
   historyChainHeight = chainHeight;
   historyFromCache = fromCache;
+  if (!quiet) {
+    filterHistory();
+    return;
+  }
+  var scroller = document.getElementById('main-content');
+  var scrollTop = scroller ? scroller.scrollTop : 0;
+  var shown = historyRendered;
   filterHistory();
+  while (historyRendered < shown && historyRendered < historyView.length) appendHistoryPage();
+  if (scroller) scroller.scrollTop = scrollTop;
 }
 
 // Fetch /api/wallet/sends into a LOCAL context object (never shared globals).
@@ -4536,7 +4557,7 @@ async function handleRealtimeEvent(payload) {
 
   try {
     if (currentView === 'dashboard') await loadDashboard();
-    if (currentView === 'history') await loadHistory();
+    if (currentView === 'history') await loadHistory({ quiet: true });
     if (currentView === 'mining') await loadMining();
     if (currentView === 'network') await loadNetwork();
     if (currentView !== 'dashboard') await checkInboundTx();
