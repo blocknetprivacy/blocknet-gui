@@ -170,7 +170,7 @@
         <div class="container">
           <div id="dash-upgrade-notice" class="upgrade-notice" style="display: none;"></div>
           <div class="balance-card">
-            <div class="balance-label"><span id="dash-wallet-name" class="g">wallet</span> <span>Spendable Balance</span></div>
+            <div class="balance-label"><span id="dash-wallet-name" class="g">wallet</span> <span class="watch-badge">watch-only</span> <span>Spendable Balance</span></div>
             <div class="balance-shortname sv-copyable" id="dash-shortname" style="display: none;"></div>
             <div class="balance-value"><span id="dash-balance">--</span> <span class="d" id="dash-balance-unit">BNT</span></div>
             <div class="balance-sub">
@@ -474,7 +474,7 @@
             <section class="settings-category">
               <h2>Wallet Security</h2>
               <div class="settings-list">
-                <div class="settings-item">
+                <div class="settings-item seed-item">
                   <div class="settings-item-main">
                     <div class="settings-item-title-row">
                       <span class="settings-item-title">View Recovery Seed</span>
@@ -493,6 +493,21 @@
                     <button class="btn-primary" id="view-seed-btn">View Recovery Seed</button>
                     <div id="seed-status" class="status-message" style="display: none;"></div>
                     <div id="seed-display" class="seed-display" style="display: none;"></div>
+                  </div>
+                </div>
+
+                <div class="settings-item watch-only-hide">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Create watch-only wallet</span>
+                    </div>
+                    <p class="settings-item-desc">Makes a wallet file that sees incoming payments but cannot spend. Use it to watch your balance on another computer. Give it a different password.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <input type="password" id="watch-wallet-password" class="seed-pw-input" placeholder="This wallet's password" autocomplete="current-password">
+                    <input type="password" id="watch-file-password" class="seed-pw-input" placeholder="Password for the watch-only file" autocomplete="new-password">
+                    <button class="btn-secondary" id="watch-create-btn">Create watch-only wallet</button>
+                    <div id="watch-create-status" class="status-message" style="display: none;"></div>
                   </div>
                 </div>
 
@@ -753,7 +768,14 @@
                 <div id="create-wallet-status" class="status-message" style="display: none;"></div>
               </div>
               <div id="import-seed-form" class="wallet-import-form" style="display: none;">
+                <div class="payment-link-toggle" id="import-mode">
+                  <button type="button" class="payment-link-mode active" data-mode="seed">Seed phrase</button>
+                  <button type="button" class="payment-link-mode" data-mode="keys">Private keys</button>
+                  <button type="button" class="payment-link-mode" data-mode="watch">Watch-only</button>
+                </div>
                 <textarea id="import-seed-input" class="seed-input" rows="2" placeholder="12-word recovery phrase" spellcheck="false"></textarea>
+                <input type="text" id="import-spend-key" class="seed-pw-input" placeholder="Spend private key (64 hex characters)" spellcheck="false" autocomplete="off" style="display: none;">
+                <input type="text" id="import-view-key" class="seed-pw-input" placeholder="View private key (64 hex characters)" spellcheck="false" autocomplete="off" style="display: none;">
                 <input type="password" id="import-seed-password" class="seed-pw-input" placeholder="Password for new wallet" autocomplete="new-password">
                 <input type="password" id="import-seed-password2" class="seed-pw-input" placeholder="Confirm password" autocomplete="new-password">
                 <input type="text" id="import-seed-filename" class="seed-pw-input" placeholder="Filename (optional, e.g. restored.dat)">

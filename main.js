@@ -779,7 +779,31 @@ function identiconSvg(seedStr, dim) {
 
 var viewStack = [];
 
+// Watch-only wallets cannot send or sign, and wallets made from keys have no
+// seed to show; the body classes hide those controls.
+var walletViewOnly = false;
+function applyWalletCaps(w) {
+  if (!w || typeof w !== 'object') return;
+  walletViewOnly = !!w.view_only;
+  document.body.classList.toggle('wallet-view-only', walletViewOnly);
+  document.body.classList.toggle('wallet-no-seed', w.has_mnemonic === false);
+  if (walletViewOnly) {
+    var verifyTab = document.querySelector('.sv-tab[data-tab="verify"]');
+    var signTab = document.querySelector('.sv-tab[data-tab="sign"]');
+    if (verifyTab && signTab && signTab.classList.contains('active')) verifyTab.click();
+    if (currentView === 'send') navigate('dashboard');
+  }
+}
+
+async function refreshWalletCaps() {
+  try {
+    var st = await api('/api/status');
+    applyWalletCaps(st && st.wallet);
+  } catch (_) {}
+}
+
 function navigate(view) {
+  if (view === 'send' && walletViewOnly) view = 'dashboard';
   if (currentView && currentView !== view) viewStack.push(currentView);
   if (viewStack.length > 20) viewStack.splice(0, viewStack.length - 20);
   document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
@@ -973,6 +997,7 @@ async function refreshDashStatus() {
     if (totalWorkEl) totalWorkEl.textContent = (Number(status.total_work) || 0).toLocaleString();
     var mempoolBytesEl = document.getElementById('dash-mempool-bytes');
     if (mempoolBytesEl) mempoolBytesEl.textContent = formatBytes(status.mempool_bytes);
+    applyWalletCaps(status.wallet);
     var identityAgeEl = document.getElementById('dash-identity-age');
     if (identityAgeEl) identityAgeEl.textContent = status.identity_age || '--';
     var upgradeEl = document.getElementById('dash-upgrade-notice');
@@ -4034,6 +4059,9 @@ function showImportForm() {
   document.getElementById('import-seed-input').value = '';
   document.getElementById('import-seed-password').value = '';
   document.getElementById('import-seed-password2').value = '';
+  document.getElementById('import-spend-key').value = '';
+  document.getElementById('import-view-key').value = '';
+  setImportMode('seed');
   document.getElementById('import-seed-filename').value = '';
   document.getElementById('import-seed-status').style.display = 'none';
   document.getElementById('import-seed-input').focus();
@@ -4155,19 +4183,50 @@ async function pickImportWalletName(requested) {
   }
 }
 
+var importMode = 'seed';
+
+function setImportMode(mode) {
+  importMode = mode;
+  document.querySelectorAll('#import-mode .payment-link-mode').forEach(function (b) {
+    b.classList.toggle('active', b.dataset.mode === mode);
+  });
+  var keys = mode !== 'seed';
+  document.getElementById('import-seed-input').style.display = keys ? 'none' : '';
+  document.getElementById('import-spend-key').style.display = keys ? '' : 'none';
+  document.getElementById('import-view-key').style.display = keys ? '' : 'none';
+  document.getElementById('import-spend-key').placeholder = mode === 'watch'
+    ? 'Spend public key (64 hex characters)'
+    : 'Spend private key (64 hex characters)';
+}
+
+// The import body for the chosen mode: a seed, both private keys, or the
+// public spend key with the private view key for a watch-only wallet.
+function readImportSecret() {
+  if (importMode === 'seed') {
+    var mnemonic = document.getElementById('import-seed-input').value.trim();
+    if (!mnemonic) throw new Error('Enter your 12-word recovery phrase');
+    var words = mnemonic.split(/\s+/);
+    if (words.length !== 12) throw new Error('Recovery phrase must be exactly 12 words');
+    return { mnemonic: words.join(' ') };
+  }
+  var spend = document.getElementById('import-spend-key').value.trim().toLowerCase();
+  var view = document.getElementById('import-view-key').value.trim().toLowerCase();
+  if (!/^[0-9a-f]{64}$/.test(spend) || !/^[0-9a-f]{64}$/.test(view)) {
+    throw new Error('Each key must be 64 hex characters');
+  }
+  return importMode === 'watch' ? { spend_pub: spend, view_priv: view } : { spend_priv: spend, view_priv: view };
+}
+
 async function handleImportSeed() {
-  var mnemonic = document.getElementById('import-seed-input').value.trim();
   var password = document.getElementById('import-seed-password').value;
   var filename = document.getElementById('import-seed-filename').value.trim();
   var btn = document.getElementById('import-seed-submit');
 
-  if (!mnemonic) {
-    showImportStatus('Enter your 12-word recovery phrase', 'error');
-    return;
-  }
-  var words = mnemonic.split(/\s+/);
-  if (words.length !== 12) {
-    showImportStatus('Recovery phrase must be exactly 12 words', 'error');
+  var secret;
+  try {
+    secret = readImportSecret();
+  } catch (e) {
+    showImportStatus(normalizeError(e), 'error');
     return;
   }
   if (password.length < 8) {
@@ -4195,8 +4254,8 @@ async function handleImportSeed() {
     await ensureDaemonReady();
     await unloadWallet();
 
-    showImportStatus('Importing wallet from seed... this can take a while on larger chains.', 'info');
-    var body = { mnemonic: words.join(' '), password: password, filename: filename };
+    showImportStatus('Importing wallet... this can take a while on larger chains.', 'info');
+    var body = Object.assign({ password: password, filename: filename }, secret);
     var result = await api('/api/wallet/import', { method: 'POST', body: body });
 
     var importedName = result.filename || filename;
@@ -4205,7 +4264,7 @@ async function handleImportSeed() {
     sessionPassword = password;
 
     hideImportForm();
-    showSettingsStatus('Wallet imported' + (result.address ? ' — address ' + abbrAddr(result.address) : '') + '. Scanning blockchain for your outputs...', 'success');
+    showSettingsStatus((result.view_only ? 'Watch-only wallet imported' : 'Wallet imported') + (result.address ? ' — address ' + abbrAddr(result.address) : '') + '. Scanning blockchain for your outputs...', 'success');
     await loadWalletList();
     showApp();
   } catch (e) {
@@ -4901,6 +4960,7 @@ async function enterApp(hideEntryScreen) {
   recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
   await loadUserData();
+  await refreshWalletCaps();
   hideEntryScreen();
   document.getElementById('app').style.display = 'flex';
   navigate('dashboard');
@@ -6245,6 +6305,42 @@ document.getElementById('lock-wallet-btn').addEventListener('click', handleLockW
   offBtn.addEventListener('click', function () { coinControlEnabled = false; saveCoinControlPref(); paint(); updateCoinControlVisibility(); });
   if (refresh) refresh.addEventListener('click', loadCoinOutputs);
 })();
+async function handleCreateWatchWallet() {
+  var btn = document.getElementById('watch-create-btn');
+  var pwEl = document.getElementById('watch-wallet-password');
+  var filePwEl = document.getElementById('watch-file-password');
+  var el = document.getElementById('watch-create-status');
+  function status(msg, type) { el.textContent = msg; el.className = 'status-message ' + type; el.style.display = 'block'; }
+  if (!pwEl.value || filePwEl.value.length < 8) {
+    status('Enter this wallet\'s password and a new password of at least 8 characters.', 'error');
+    return;
+  }
+  if (pwEl.value === filePwEl.value) {
+    status('Use a different password for the watch-only file.', 'error');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    var res = await api('/api/wallet/viewkeys', {
+      method: 'POST',
+      body: { password: pwEl.value, create_file: true, file_password: filePwEl.value },
+    });
+    pwEl.value = '';
+    filePwEl.value = '';
+    status('Created ' + (res.filename || 'the watch-only wallet') + '. It is in your wallet list; back it up to use it elsewhere.', 'success');
+    await loadWalletList();
+  } catch (e) {
+    status(normalizeError(e), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+document.getElementById('watch-create-btn').addEventListener('click', handleCreateWatchWallet);
+document.querySelectorAll('#import-mode .payment-link-mode').forEach(function (b) {
+  b.addEventListener('click', function () { setImportMode(b.dataset.mode); });
+});
+
 // --- Node settings (core /api/settings) ---
 var nodeFullSync = false;
 

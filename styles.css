@@ -3178,3 +3178,24 @@ select, textarea,
   font-size: 12px;
   flex: 1;
 }
+
+.watch-badge {
+  display: none;
+  border: 1px solid #530;
+  color: #fa0;
+  font-size: 11px;
+  padding: 0 6px;
+}
+
+body.wallet-view-only .watch-badge {
+  display: inline;
+}
+
+body.wallet-view-only .nav-link[data-view="send"],
+body.wallet-view-only .sv-tab[data-tab="sign"],
+body.wallet-view-only #sv-sign,
+body.wallet-view-only .watch-only-hide,
+body.wallet-view-only .seed-item,
+body.wallet-no-seed .seed-item {
+  display: none !important;
+}
