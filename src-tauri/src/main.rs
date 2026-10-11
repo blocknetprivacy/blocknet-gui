@@ -43,6 +43,7 @@ impl Drop for DaemonState {
     }
 }
 
+#[cfg(unix)]
 const DAEMON_STOP_GRACE: std::time::Duration = std::time::Duration::from_secs(10);
 
 fn terminate_child(child: &mut std::process::Child) {
@@ -108,6 +109,7 @@ fn stop_orphan_daemon(app: &AppHandle, data_dir: &std::path::Path) {
         if !listed.contains("blocknet-amd64-windows.exe") {
             return;
         }
+        let _ = app.emit("daemon-phase", "Closing the previous node\u{2026}");
         let _ = std::process::Command::new("taskkill")
             .creation_flags(CREATE_NO_WINDOW)
             .args(["/f", "/pid", &pid.to_string()])
