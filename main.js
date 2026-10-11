@@ -70,6 +70,7 @@ function freshIdempotencyKey() {
     : ('send-' + now + '-' + Math.random().toString(16).slice(2));
 }
 let pendingDeepLink = null;
+let launchDeepLinkPulled = false;
 let dashLastHeight = -1;
 let dashLastTxCount = -1;
 let dashForceRefresh = false;
@@ -4812,32 +4813,31 @@ function showUnlockScreen() {
 }
 
 async function showApp() {
-  stopDaemonSyncPoller();
-  try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
-  recordWalletRecency(activeWalletName);
-  migrateLocalStorageKeys();
-  await loadUserData();
   const passwordScreen = document.getElementById('password-screen');
-  const app = document.getElementById('app');
-  if (passwordScreen) passwordScreen.style.display = 'none';
-  app.style.display = 'flex';
-  navigate('dashboard');
-  startPolling();
+  await enterApp(function () {
+    if (passwordScreen) passwordScreen.style.display = 'none';
+  });
   playTada();
-  invoke('set_tray_unlocked', { unlocked: true }).catch(function() {});
 }
 
 async function showAppFromSplash() {
+  const splash = document.getElementById('splash');
+  await enterApp(function () {
+    splash.classList.add('fade-out');
+    setTimeout(() => splash.remove(), 1000);
+  });
+}
+
+// A payment link that opened the app while it was locked waits in
+// pendingDeepLink, so every way into the app has to apply it.
+async function enterApp(hideEntryScreen) {
   stopDaemonSyncPoller();
   try { setActiveWalletName(await invoke('get_active_wallet')); } catch (_) {}
   recordWalletRecency(activeWalletName);
   migrateLocalStorageKeys();
   await loadUserData();
-  const splash = document.getElementById('splash');
-  const app = document.getElementById('app');
-  splash.classList.add('fade-out');
-  app.style.display = 'flex';
-  setTimeout(() => splash.remove(), 1000);
+  hideEntryScreen();
+  document.getElementById('app').style.display = 'flex';
   navigate('dashboard');
   startPolling();
   invoke('set_tray_unlocked', { unlocked: true }).catch(function() {});
@@ -4845,7 +4845,12 @@ async function showAppFromSplash() {
     applyPendingDeepLink();
     return;
   }
-  await pullCurrentDeepLinkWithRetries(24, 500);
+  // The launch link stays readable for the whole process, so read it once or
+  // every later unlock would prefill Send with it again.
+  if (!launchDeepLinkPulled) {
+    launchDeepLinkPulled = true;
+    pullCurrentDeepLinkWithRetries(24, 500);
+  }
 }
 
 function showStatus(message, type) {
