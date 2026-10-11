@@ -3642,20 +3642,14 @@ async function handleSend(e) {
           showSendStatus('A coin was already spent — reselecting inputs and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
           continue;
         }
-        if (ccActive && isStaleInputError(msg) && attempt < SEND_MAX_RETRIES) {
-          attempt++;
-          // A specifically-chosen coin was already spent — most often the change
-          // from a just-sent transaction that hasn't confirmed. Refresh the picker
-          // (drops the now-spent coins), then fall back to automatic selection so
-          // this payment still goes through using other outputs.
+        if (ccActive && isStaleInputError(msg)) {
+          // A picked coin is gone, most often change from a send that has not
+          // confirmed yet. The user chose these coins and confirmed their fee,
+          // so never swap in other coins without asking.
           try { await loadCoinOutputs(); } catch (_) {}
-          ccActive = false;
-          sendEndpoint = '/api/wallet/send';
-          delete sendPayload.inputs;
-          idempotencyKey = freshIdempotencyKey();
-          if (pendingSendIdempotency) pendingSendIdempotency.key = idempotencyKey;
-          showSendStatus('A chosen coin was already used — switching to automatic coin selection and retrying (' + attempt + '/' + SEND_MAX_RETRIES + ')...', 'info');
-          continue;
+          pendingSendIdempotency = null;
+          showSendStatus('A coin you picked was already spent. The coin list is updated. Pick coins again, or turn off coin control, then press Send.', 'error');
+          break;
         }
         if (isTransientSendError(msg) && attempt < SEND_MAX_RETRIES) {
           attempt++;
@@ -3670,7 +3664,7 @@ async function handleSend(e) {
           break;
         }
         if (msg.toLowerCase().includes('request failed:')) {
-          var handled = ccActive ? false : await resolveTimedOutSend(idempotencyKey, entries, recipientsPayload);
+          var handled = await resolveTimedOutSend(sendEndpoint + '/status', idempotencyKey, entries, recipientsPayload);
           if (!handled) {
             showSendStatus('Couldn’t confirm whether your send went through. Press Send again — it’s retry-safe and won’t double-send.', 'error');
           }
@@ -3756,10 +3750,10 @@ async function resolveInterruptedSend(recipientsPayload) {
   showSendStatus('The node stopped during this send. It may have gone out. Wait for the wallet to sync, then check History and your balance. Send again only if the payment is not there.', 'error');
 }
 
-async function resolveTimedOutSend(idempotencyKey, entries, recipientsPayload) {
+async function resolveTimedOutSend(statusPath, idempotencyKey, entries, recipientsPayload) {
   var status;
   try {
-    status = await api('/api/wallet/send/status?idempotency_key=' + encodeURIComponent(idempotencyKey));
+    status = await api(statusPath + '?idempotency_key=' + encodeURIComponent(idempotencyKey));
   } catch (_) {
     return false;
   }
