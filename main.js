@@ -1537,14 +1537,20 @@ async function loadHistory() {
 // longer suppressed and the row flipped back to "+received". Each caller now owns
 // its own snapshot. Builds one display row per recorded send (real recipient
 // amount + outgoing memo), plus recipient label + timestamp maps.
-async function fetchSendsCtx(chainHeight) {
+async function fetchSendsCtx(chainHeight, allPages) {
   var ctx = { sends: {}, sendRows: [], sendTo: {}, sendTime: {} };
   try {
     // limit is capped at 500 server-side; grab the max so older sends still
-    // render as sends rather than falling back to a raw change output.
-    var sd = await api('/api/wallet/sends?limit=500&order=desc');
-    if (!sd || !Array.isArray(sd.sends)) return ctx;
-    sd.sends.forEach(function (s) {
+    // render as sends rather than falling back to a raw change output. An
+    // export pages through every send.
+    var list = [];
+    for (var offset = 0; ; offset += 500) {
+      var sd = await api('/api/wallet/sends?limit=500&order=desc&offset=' + offset);
+      if (!sd || !Array.isArray(sd.sends)) break;
+      list = list.concat(sd.sends);
+      if (!allPages || sd.sends.length < 500) break;
+    }
+    list.forEach(function (s) {
       if (!s || !s.txid) return;
       ctx.sends[s.txid] = s;
       var first = (s.recipients && s.recipients[0]) || null;
@@ -1773,11 +1779,16 @@ function filterHistory() {
   renderHistoryList(list);
 }
 
+// Memos come from whoever paid, so a leading = + - @ must not reach a
+// spreadsheet as a formula.
 function csvField(s) {
   s = String(s == null ? '' : s);
+  if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;
   return /[",\r\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
+// One row per transaction, the same rows the History view shows: real sends
+// with their amount, fee and recipient; receives and mining rewards as received.
 async function exportHistoryCSV() {
   var btn = document.getElementById('export-csv-btn');
   if (btn.dataset.openPath) {
@@ -1791,51 +1802,36 @@ async function exportHistoryCSV() {
   btn.textContent = 'Exporting...';
   try {
     var data = await api('/api/wallet/history');
-    var hasOutputsArray = data && Array.isArray(data.outputs);
-    var outputs = hasOutputsArray ? data.outputs : null;
-    if (!hasOutputsArray) {
-      outputs = getTxCache();
-    }
-    if (!outputs || outputs.length === 0) {
+    var outputs = data && Array.isArray(data.outputs) ? data.outputs : getTxCache();
+    var ctx = await fetchSendsCtx(historyChainHeight, true);
+    var rows = buildTxRows(outputs || [], ctx);
+    if (rows.length === 0) {
       btn.textContent = 'No data';
       setTimeout(function () { btn.disabled = false; btn.textContent = 'Export CSV'; }, 2000);
       return;
     }
-    var sorted = outputs.slice().sort(function (a, b) {
-      if (!a.block_height && b.block_height) return -1;
-      if (a.block_height && !b.block_height) return 1;
-      return b.block_height - a.block_height;
-    });
-    var sendTo = {};
-    try {
-      var sdata = await api('/api/wallet/sends');
-      if (sdata && Array.isArray(sdata.sends)) {
-        sdata.sends.forEach(function (s) {
-          if (s && s.txid && s.recipients && s.recipients[0]) sendTo[s.txid] = s.recipients[0].address;
-        });
-      }
-    } catch (_) {}
-    var lines = ['txid,output_index,amount_bnt,block_height,type,spent,spent_height,memo,note,recipient'];
-    for (var i = 0; i < sorted.length; i++) {
-      var o = sorted[i];
-      var type = o.is_coinbase ? 'mining_reward' : (o.spent ? 'sent' : 'received');
+    var lines = ['txid,type,amount_bnt,fee_bnt,block_height,time_utc,memo,note,recipient'];
+    rows.forEach(function (o) {
+      var send = o.is_send ? ctx.sends[o.txid] : null;
+      var type = o.is_coinbase ? 'mining_reward' : (o.is_send ? 'sent' : 'received');
       var recipient = '';
-      if (o.spent) {
-        recipient = (userData.sendLabels && userData.sendLabels[o.txid]) || contactNameForAddress(sendTo[o.txid] || '') || (sendTo[o.txid] || '');
+      if (o.is_send) {
+        var addr = ctx.sendTo[o.txid] || '';
+        recipient = (userData.sendLabels && userData.sendLabels[o.txid]) || contactNameForAddress(addr) || addr;
       }
+      var t = ctx.sendTime[o.txid];
       lines.push(
         o.txid + ',' +
-        o.output_index + ',' +
-        formatBNT(o.amount) + ',' +
-        (o.block_height || '') + ',' +
         type + ',' +
-        o.spent + ',' +
-        (o.spent_height || '') + ',' +
+        (o.is_send ? '-' : '') + formatBNT(o.amount) + ',' +
+        (send && typeof send.fee === 'number' ? formatBNT(send.fee) : '') + ',' +
+        (o.block_height || '') + ',' +
+        (t ? new Date(t * 1000).toISOString() : '') + ',' +
         csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '') + ',' +
         csvField(getTxNote(o.txid)) + ',' +
         csvField(recipient)
       );
-    }
+    });
     var csv = lines.join('\n');
     var now = new Date();
     var ts = now.getFullYear().toString() +
