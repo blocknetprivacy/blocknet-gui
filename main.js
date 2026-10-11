@@ -589,7 +589,14 @@ async function pollTxNotifications() {
 
 // --- API Client (proxied through Rust, no CORS) ---
 
+var walletDirReady = false;
+var WALLET_FILE_ROUTES = /^\/api\/wallet\/(load|create|import)\b/;
+
 async function api(path, opts = {}) {
+  if (!walletDirReady && WALLET_FILE_ROUTES.test(path)) {
+    if (daemonStartPromise) await daemonStartPromise;
+    if (!walletDirReady) await pointDaemonAtWalletDir();
+  }
   const result = await invoke('api_call', {
     method: opts.method || 'GET',
     path: path,
@@ -3838,6 +3845,8 @@ var PLAIN_ERRORS = [
   ['wallet file already exists', 'A wallet with that name already exists. Choose another name.'],
   ['wallet file not found', 'That wallet file is missing.'],
   ['unauthorized', 'The wallet could not reach its node. Wait a moment and try again.'],
+  ['auth cookie', 'The node is still starting. Wait a moment and try again.'],
+  ['daemon not started', 'The node is still starting. Wait a moment and try again.'],
   ['request failed: error sending request', 'The node did not answer. Check that it is running and try again.'],
   ['operation timed out', 'The node took too long to answer. Try again.'],
   ['insufficient funds', 'Not enough funds for this amount plus the network fee.'],
@@ -5587,6 +5596,10 @@ async function waitForDaemon() {
 }
 
 async function ensureDaemonReady() {
+  if (daemonStartPromise) {
+    await daemonStartPromise;
+    return;
+  }
   const alreadyReady = await invoke('check_daemon_ready');
   if (alreadyReady) return;
 
@@ -5602,6 +5615,7 @@ async function ensureDaemonReady() {
     daemonStartPromise = (async () => {
       // A fresh process holds no wallet, whatever the last one held.
       loadedWalletName = '';
+      walletDirReady = false;
       await invoke('start_daemon');
       await waitForDaemon();
       await pointDaemonAtWalletDir();
@@ -5616,12 +5630,14 @@ async function ensureDaemonReady() {
 async function pointDaemonAtWalletDir() {
   const walletPath = await invoke('get_wallet_path_cmd');
   await api('/api/settings', { method: 'PATCH', body: { wallet_file: walletPath } });
+  walletDirReady = true;
 }
 
 async function restartDaemon() {
   if (daemonStartPromise) await daemonStartPromise;
   daemonStartPromise = (async () => {
     loadedWalletName = '';
+    walletDirReady = false;
     await invoke('start_daemon');
     await waitForDaemon();
     await pointDaemonAtWalletDir();
