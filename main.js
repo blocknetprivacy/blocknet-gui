@@ -3827,11 +3827,10 @@ async function loadWalletList() {
     return '<div class="wallet-row' + (isActive ? ' active' : '') + '" data-name="' + escapeHtml(name) + '">' +
       '<span class="wallet-row-name">' + escapeHtml(display) + '</span>' +
       '<div class="wallet-row-actions">' +
-        (isActive ? '<span class="wallet-row-badge">current</span>' : '') +
-        '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
         (isActive
-          ? ''
-          : '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Del</button>' +
+          ? '<span class="wallet-row-badge">current</span>'
+          : '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
+            '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Del</button>' +
             '<button class="wallet-switch-btn" data-name="' + escapeHtml(name) + '">Switch</button>') +
       '</div>' +
     '</div>';
@@ -3899,7 +3898,7 @@ function startWalletRename(name) {
     var newName = val.endsWith('.dat') ? val : val + '.dat';
     if (newName === name) { loadWalletList(); return; }
     invoke('rename_wallet', { oldName: name, newName: newName })
-      .then(function () { loadWalletList(); })
+      .then(function () { moveWalletLocalKeys(name, newName); loadWalletList(); })
       .catch(function (e) { showSettingsStatus(normalizeError(e), 'error'); loadWalletList(); });
   }
 
@@ -3908,6 +3907,18 @@ function startWalletRename(name) {
   input.addEventListener('keydown', function (ev) {
     if (ev.key === 'Enter') commitRename();
     if (ev.key === 'Escape') loadWalletList();
+  });
+}
+
+// Per-wallet localStorage entries are keyed by file name; carry them over on
+// rename and drop them on delete so a later wallet with the old name starts clean.
+function moveWalletLocalKeys(oldName, newName) {
+  ['pendingSends', 'txCache', 'addressBook'].forEach(function (base) {
+    try {
+      var v = localStorage.getItem(base + ':' + oldName);
+      localStorage.removeItem(base + ':' + oldName);
+      if (newName && v !== null) localStorage.setItem(base + ':' + newName, v);
+    } catch (_) {}
   });
 }
 
@@ -3932,7 +3943,7 @@ function handleDeleteWallet(name) {
   delYes.addEventListener('click', function () {
     if (delInput.value.trim() !== display) return;
     invoke('delete_wallet', { name: name })
-      .then(function () { loadWalletList(); })
+      .then(function () { moveWalletLocalKeys(name, null); loadWalletList(); })
       .catch(function (e) { showSettingsStatus(normalizeError(e), 'error'); loadWalletList(); });
   });
   actionsEl.querySelector('.ab-cancel-btn').addEventListener('click', function () { loadWalletList(); });

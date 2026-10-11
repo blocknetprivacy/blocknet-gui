@@ -929,6 +929,10 @@ async fn rename_wallet(app: AppHandle, old_name: String, new_name: String) -> Re
             return Err("Invalid wallet name".to_string());
         }
     }
+    // The daemon keeps the active wallet open and saves it by path.
+    if get_active_wallet_name(&app)? == old_name {
+        return Err("Switch to another wallet before renaming this one".to_string());
+    }
     let app_dir = get_app_dir(&app)?;
     let old_path = app_dir.join(&old_name);
     let new_path = app_dir.join(&new_name);
@@ -940,10 +944,16 @@ async fn rename_wallet(app: AppHandle, old_name: String, new_name: String) -> Re
     }
     std::fs::rename(&old_path, &new_path)
         .map_err(|e| format!("Rename failed: {}", e))?;
-    // If the renamed wallet was the active one, update the active reference
-    let active = get_active_wallet_name(&app)?;
-    if active == old_name {
-        set_active_wallet_name(&app, &new_name)?;
+    // Contacts and notes live beside the wallet under its name, so they move
+    // with it. A stale file left under the new name by a deleted wallet would
+    // fail to decrypt, so the wallet's own data replaces it.
+    let old_data = userdata_path(&app, &old_name)?;
+    let new_data = userdata_path(&app, &new_name)?;
+    if old_data.exists() {
+        std::fs::rename(&old_data, &new_data)
+            .map_err(|e| format!("Rename failed: {}", e))?;
+    } else {
+        let _ = std::fs::remove_file(&new_data);
     }
     Ok(())
 }
@@ -963,6 +973,7 @@ async fn delete_wallet(app: AppHandle, name: String) -> Result<(), String> {
     }
     std::fs::remove_file(&path)
         .map_err(|e| format!("Delete failed: {}", e))?;
+    let _ = std::fs::remove_file(userdata_path(&app, &name)?);
     Ok(())
 }
 
