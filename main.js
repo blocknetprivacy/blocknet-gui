@@ -4893,7 +4893,6 @@ function stopPolling() {
 
 function showPasswordScreen(newWallet) {
   isNewWallet = newWallet;
-  const splash = document.getElementById('splash');
   const passwordScreen = document.getElementById('password-screen');
   const password2 = document.getElementById('password2');
   const subtitle = document.getElementById('password-subtitle');
@@ -4920,9 +4919,8 @@ function showPasswordScreen(newWallet) {
     enterUnlockMode();
   }
 
-  splash.classList.add('fade-out');
   passwordScreen.style.display = 'flex';
-  setTimeout(() => splash.remove(), 1000);
+  hideSplash();
 }
 
 function showOnboardCreate() {
@@ -5053,11 +5051,46 @@ async function showApp() {
 }
 
 async function showAppFromSplash() {
-  const splash = document.getElementById('splash');
-  await enterApp(function () {
-    splash.classList.add('fade-out');
-    setTimeout(() => splash.remove(), 1000);
-  });
+  await enterApp(hideSplash);
+}
+
+var stopSplashLoader = null;
+var splashT0 = 0;
+var splashTimer = 0;
+
+function startSplash() {
+  var canvas = document.getElementById('splash-canvas');
+  if (canvas && window.startLoader) stopSplashLoader = window.startLoader(canvas, 88);
+  splashT0 = Date.now();
+  splashTimer = setInterval(tickSplash, 500);
+}
+
+function setSplashProgress(pct, text) {
+  var bar = document.getElementById('splash-bar');
+  var detail = document.getElementById('splash-detail');
+  if (bar) {
+    bar.style.visibility = pct == null ? 'hidden' : 'visible';
+    if (pct != null) bar.firstElementChild.style.width = pct + '%';
+  }
+  if (detail) detail.textContent = text || '';
+}
+
+function setSplashStatus(text) {
+  var el = document.getElementById('splash-status');
+  if (el && text) el.textContent = text;
+}
+
+function hideSplash() {
+  var splash = document.getElementById('splash');
+  if (!splash) return;
+  splash.classList.add('fade-out');
+  clearInterval(splashTimer);
+  splashT0 = 0;
+  setTimeout(function () {
+    if (stopSplashLoader) stopSplashLoader();
+    stopSplashLoader = null;
+    splash.remove();
+  }, 600);
 }
 
 async function enterApp(hideEntryScreen) {
@@ -5617,7 +5650,14 @@ async function ensureDaemonReady() {
       loadedWalletName = '';
       walletDirReady = false;
       await invoke('start_daemon');
-      await waitForDaemon();
+      beginCoreOpen();
+      try {
+        await waitForDaemon();
+        endCoreOpen(true);
+      } catch (e) {
+        endCoreOpen(false);
+        throw e;
+      }
       await pointDaemonAtWalletDir();
     })().finally(() => {
       daemonStartPromise = null;
@@ -5625,6 +5665,55 @@ async function ensureDaemonReady() {
   }
 
   await daemonStartPromise;
+}
+
+var coreOpen = null;
+var CORE_OPEN_SEC_PER_GB = 13;
+
+async function beginCoreOpen() {
+  var state = { t0: Date.now(), gb: 0, est: 0 };
+  coreOpen = state;
+  setSplashStatus('Opening the blockchain');
+  tickSplash();
+  var size = 0;
+  try { size = Number(await invoke('chain_db_size')) || 0; } catch (_) {}
+  if (coreOpen !== state || size < 50e6) return;
+  var rate = CORE_OPEN_SEC_PER_GB;
+  try { var saved = Number(localStorage.getItem('coreOpenSecPerGB')); if (saved > 0) rate = saved; } catch (_) {}
+  state.gb = size / 1e9;
+  state.est = Math.max(3, state.gb * rate);
+  setSplashStatus('Checking the blockchain (' + state.gb.toFixed(1) + ' GB)');
+  tickSplash();
+}
+
+function tickSplash() {
+  if (!splashT0) return;
+  var text = formatDuration(Date.now() - splashT0) + ' elapsed';
+  var pct = null;
+  if (coreOpen && coreOpen.est) {
+    var ms = Date.now() - coreOpen.t0;
+    var est = coreOpen.est * 1000;
+    pct = Math.min(97, 100 * ms / est);
+    text += ms < est ? ', about ' + formatDuration(est - ms + 999) + ' left' : ', taking longer than usual';
+  }
+  setSplashProgress(pct, text);
+}
+
+function endCoreOpen(ok) {
+  if (!coreOpen) return;
+  var sec = (Date.now() - coreOpen.t0) / 1000;
+  if (coreOpen.gb > 0.5 && ok) {
+    var rate = sec / coreOpen.gb;
+    try {
+      var saved = Number(localStorage.getItem('coreOpenSecPerGB'));
+      if (saved > 0) rate = (saved + rate) / 2;
+      localStorage.setItem('coreOpenSecPerGB', String(rate));
+    } catch (_) {}
+  }
+  coreOpen = null;
+  setSplashProgress(ok ? 100 : null, '');
+  splashT0 = 0;
+  if (ok) setSplashStatus('Node ready');
 }
 
 async function pointDaemonAtWalletDir() {
@@ -5748,6 +5837,7 @@ function listenDaemonPhase() {
   eventApi.listen('daemon-phase', function (evt) {
     daemonPhase = (evt && evt.payload) ? String(evt.payload) : '';
     if (daemonPhase) setDaemonSyncStatus(daemonPhase);
+    if (daemonPhase && !coreOpen) setSplashStatus(daemonPhase.replace(/\u2026$/, ''));
   }).then(function (un) {
     daemonPhaseUnlisten = un;
   }).catch(function () {});
@@ -5775,6 +5865,19 @@ function setDaemonSyncStatus(text, opts) {
     bar.style.display = 'none';
   }
   wrap.style.display = 'block';
+}
+
+var syncSamples = [];
+
+function syncEta(m, n) {
+  var now = Date.now();
+  syncSamples.push({ t: now, m: m });
+  while (syncSamples.length > 2 && now - syncSamples[0].t > 60000) syncSamples.shift();
+  var first = syncSamples[0];
+  if (m < first.m) { syncSamples = [{ t: now, m: m }]; return ''; }
+  if (now - first.t < 5000 || m === first.m) return '';
+  var perSec = (m - first.m) / ((now - first.t) / 1000);
+  return ', about ' + formatDuration((n - m) / perSec * 1000 + 999) + ' left';
 }
 
 async function updateDaemonSyncStatus() {
@@ -5813,7 +5916,7 @@ async function updateDaemonSyncStatus() {
       var pct = Math.min(100, (m / n) * 100);
       var pctStr = status.sync_percent || (Math.floor(pct * 10) / 10) + '%';
       setDaemonSyncStatus(
-        'Syncing blockchain: block ' + m.toLocaleString('en-US') + ' of ' + n.toLocaleString('en-US') + ' (' + pctStr + ')',
+        'Syncing blockchain: block ' + m.toLocaleString('en-US') + ' of ' + n.toLocaleString('en-US') + ' (' + pctStr + ')' + syncEta(m, n),
         { percent: pct }
       );
     } else {
@@ -5847,25 +5950,23 @@ async function init() {
       throw new Error('Tauri API not available');
     }
 
+    startSplash();
     loadAppVersion();
     listenDaemonPhase();
     startDaemonSyncPoller();
 
     // Check if daemon is already running
     const daemonReady = await invoke('check_daemon_ready');
-    if (!daemonReady) {
-      // Pre-start daemon in the background while splash/password is shown.
-      ensureDaemonReady().catch(e => {
-        if (String(e || '').includes('SECURITY_BLOCKED')) {
-          showSecurityBlockedModal();
-          return;
-        }
-        console.error('Daemon pre-start error:', e);
-      });
-    }
+    var startup = daemonReady ? Promise.resolve() : ensureDaemonReady().catch(e => {
+      if (String(e || '').includes('SECURITY_BLOCKED')) {
+        showSecurityBlockedModal();
+        return;
+      }
+      console.error('Daemon pre-start error:', e);
+    });
 
     playIntro();
-    await new Promise(r => setTimeout(r, 1000));
+    await Promise.all([startup, new Promise(r => setTimeout(r, 1000))]);
 
     if (daemonReady) {
       try {
@@ -5888,7 +5989,7 @@ async function init() {
     console.error('Init error:', error);
     const splash = document.getElementById('splash');
     if (splash) {
-      splash.innerHTML = '<div style="color: #000; padding: 20px; text-align: center; font-family: monospace;">' +
+      splash.innerHTML = '<div style="color: #eee; padding: 20px; text-align: center; font-family: monospace;">' +
         '<h1>Error</h1><p>' + error.toString() + '</p></div>';
     }
   }

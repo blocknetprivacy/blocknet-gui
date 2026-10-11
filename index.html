@@ -38,7 +38,13 @@
 
   <!-- Splash Screen -->
   <div id="splash">
-    <img src="blocknet.png" alt="blocknet" id="splash-logo">
+    <canvas id="splash-canvas"></canvas>
+    <div class="splash-center">
+      <svg id="splash-logo" viewBox="80 80 704 704" aria-label="Blocknet"><path fill="#af0" d="M666.35,567.2H197.65c-53.02,0-96,44.21-96,98.74s42.98,98.74,96,98.74h468.71c53.02,0,96-44.21,96-98.74s-42.98-98.74-96-98.74Z"/><path fill="#af0" d="M729.79,359.36l-225.26-225.26c-17.75-20.03-43.67-32.66-72.54-32.66-53.51,0-96.89,43.38-96.89,96.89,0,24.97,9.44,47.72,24.95,64.9l-.17.17,240.69,240.69.18-.18c17.17,15.46,39.89,24.87,64.81,24.87,53.51,0,96.89-43.38,96.89-96.89,0-28.87-12.63-54.79-32.66-72.54Z"/></svg>
+      <div id="splash-status">Starting node</div>
+      <div id="splash-bar"><div></div></div>
+      <div id="splash-detail"></div>
+    </div>
   </div>
 
   <!-- Password / Onboarding Screen (hidden initially) -->
@@ -1006,6 +1012,7 @@
     <div id="qr-overlay-text" class="qr-overlay-text mono"></div>
   </div>
 
+  <script src="loader.js"></script>
   <script src="qr.js"></script>
   <script src="main.js?v=17"></script>
 </body>

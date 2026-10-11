@@ -65,7 +65,7 @@ fn daemon_pid_path(data_dir: &std::path::Path) -> std::path::PathBuf {
     data_dir.join("gui-daemon.pid")
 }
 
-fn stop_orphan_daemon(data_dir: &std::path::Path) {
+fn stop_orphan_daemon(app: &AppHandle, data_dir: &std::path::Path) {
     let pid_path = daemon_pid_path(data_dir);
     let pid: u32 = match std::fs::read_to_string(&pid_path).ok().and_then(|s| s.trim().parse().ok()) {
         Some(p) => p,
@@ -85,6 +85,7 @@ fn stop_orphan_daemon(data_dir: &std::path::Path) {
             return;
         }
         let pid = pid as libc::pid_t;
+        let _ = app.emit("daemon-phase", "Closing the previous node\u{2026}");
         unsafe { libc::kill(pid, libc::SIGTERM); }
         let deadline = std::time::Instant::now() + DAEMON_STOP_GRACE;
         while std::time::Instant::now() < deadline {
@@ -514,7 +515,7 @@ fn open_daemon_log(data_dir: &std::path::Path) -> Option<(std::fs::File, std::fs
 async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: State<'_, ApiPortState>) -> Result<(), String> {
     // Kill any existing daemon before starting a new one
     stop_daemon_inner(&state);
-    stop_orphan_daemon(&get_data_dir(&app)?);
+    stop_orphan_daemon(&app, &get_data_dir(&app)?);
 
     let api_port = pick_gui_api_port()?;
     {
@@ -592,6 +593,22 @@ async fn start_daemon(app: AppHandle, state: State<'_, DaemonState>, api_state: 
         },
         Err(e) => Err(format!("Failed to check daemon status: {}", e)),
     }
+}
+
+#[tauri::command]
+fn chain_db_size(app: AppHandle) -> Result<u64, String> {
+    let data_dir = get_data_dir(&app)?;
+    let mut total = 0;
+    if let Ok(entries) = std::fs::read_dir(&data_dir) {
+        for entry in entries.flatten() {
+            if entry.file_name().to_string_lossy().contains(".chain.db") {
+                if let Ok(meta) = entry.metadata() {
+                    total += meta.len();
+                }
+            }
+        }
+    }
+    Ok(total)
 }
 
 #[tauri::command]
@@ -737,7 +754,7 @@ async fn fetch_url(url: String) -> Result<String, String> {
 #[tauri::command]
 async fn reset_blockchain_data(app: AppHandle, state: State<'_, DaemonState>) -> Result<(), String> {
     stop_daemon_inner(&state);
-    stop_orphan_daemon(&get_data_dir(&app)?);
+    stop_orphan_daemon(&app, &get_data_dir(&app)?);
 
     let data_dir = get_data_dir(&app)?;
     if data_dir.exists() {
@@ -1296,6 +1313,7 @@ async fn main() {
             wallet_exists,
             start_daemon,
             check_daemon_ready,
+            chain_db_size,
             api_call,
             reset_blockchain_data,
             save_file,
