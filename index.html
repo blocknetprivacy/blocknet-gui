@@ -680,6 +680,60 @@
             </section>
 
             <section class="settings-category">
+              <h2>Node</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Peer limits</span>
+                    </div>
+                    <p class="settings-item-desc">How many other nodes may connect to you, and how many you connect to. 0 uses the default.</p>
+                  </div>
+                  <div class="settings-item-control node-limits">
+                    <label class="d">Inbound <input type="number" id="node-max-inbound" class="seed-pw-input" min="0" step="1"></label>
+                    <label class="d">Outbound <input type="number" id="node-max-outbound" class="seed-pw-input" min="0" step="1"></label>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Extra peers</span>
+                    </div>
+                    <p class="settings-item-desc">Nodes your node always tries to reach. One address per line, for example one copied from another node's Network page.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <textarea id="node-extra-peers" class="seed-input" rows="3" spellcheck="false" placeholder="/ip4/1.2.3.4/tcp/28080/p2p/12D3Koo..."></textarea>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Full sync</span>
+                    </div>
+                    <p class="settings-item-desc">Download and check every block from the start instead of trusting checkpoints. Much slower.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <div class="payment-link-toggle">
+                      <button type="button" class="payment-link-mode" id="node-full-sync-on">On</button>
+                      <button type="button" class="payment-link-mode" id="node-full-sync-off">Off</button>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="settings-item">
+                  <div class="settings-item-main"></div>
+                  <div class="settings-item-control">
+                    <button class="btn-primary" id="node-settings-save">Save node settings</button>
+                    <button class="btn-secondary" id="node-restart" style="display: none;">Restart node</button>
+                    <div id="node-settings-status" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
               <h2>Wallets</h2>
               <div class="wallet-active" id="wallet-active-display"></div>
               <div class="wallet-list" id="wallet-list"></div>

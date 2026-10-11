@@ -3165,3 +3165,16 @@ select, textarea,
 /* Sign/Verify tabs have no frame, so round their own outer corners */
 .sv-tab:first-child { border-radius: var(--radius) 0 0 var(--radius); }
 .sv-tab:last-child { border-radius: 0 var(--radius) var(--radius) 0; }
+
+.node-limits {
+  display: flex;
+  gap: 12px;
+}
+
+.node-limits label {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  font-size: 12px;
+  flex: 1;
+}

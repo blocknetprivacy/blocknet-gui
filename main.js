@@ -819,7 +819,7 @@ async function loadView(view, gen) {
       case 'mining': await loadMining(); break;
       case 'network': await loadNetwork(); break;
       case 'economics': await loadEconomics(); break;
-      case 'settings': await loadWalletList(); if (gen !== navGeneration) return; await loadVersions(); break;
+      case 'settings': await loadWalletList(); if (gen !== navGeneration) return; await loadVersions(); if (gen !== navGeneration) return; await loadNodeSettings(); break;
     }
   } catch (e) {
     if (gen !== navGeneration) return;
@@ -5452,6 +5452,20 @@ async function pointDaemonAtWalletDir() {
   await api('/api/settings', { method: 'PATCH', body: { wallet_file: walletPath } });
 }
 
+// A fresh start of our own core, for settings that apply only after a restart.
+async function restartDaemon() {
+  if (daemonStartPromise) await daemonStartPromise;
+  daemonStartPromise = (async () => {
+    loadedWalletName = '';
+    await invoke('start_daemon');
+    await waitForDaemon();
+    await pointDaemonAtWalletDir();
+  })().finally(() => {
+    daemonStartPromise = null;
+  });
+  await daemonStartPromise;
+}
+
 async function daemonIsAlive() {
   try {
     return await invoke('daemon_alive');
@@ -6231,6 +6245,97 @@ document.getElementById('lock-wallet-btn').addEventListener('click', handleLockW
   offBtn.addEventListener('click', function () { coinControlEnabled = false; saveCoinControlPref(); paint(); updateCoinControlVisibility(); });
   if (refresh) refresh.addEventListener('click', loadCoinOutputs);
 })();
+// --- Node settings (core /api/settings) ---
+var nodeFullSync = false;
+
+function showNodeStatus(msg, type) {
+  var el = document.getElementById('node-settings-status');
+  el.textContent = msg;
+  el.className = 'status-message ' + type;
+  el.style.display = 'block';
+}
+
+function paintNodeFullSync() {
+  document.getElementById('node-full-sync-on').classList.toggle('active', nodeFullSync);
+  document.getElementById('node-full-sync-off').classList.toggle('active', !nodeFullSync);
+}
+
+async function loadNodeSettings() {
+  var data;
+  try {
+    data = await api('/api/settings');
+  } catch (e) {
+    showNodeStatus('Could not read node settings: ' + normalizeError(e), 'error');
+    return;
+  }
+  var st = (data && data.settings) || {};
+  document.getElementById('node-max-inbound').value = Number(st.p2p_max_inbound) || 0;
+  document.getElementById('node-max-outbound').value = Number(st.p2p_max_outbound) || 0;
+  document.getElementById('node-extra-peers').value = (st.extra_peers || []).join('\n');
+  nodeFullSync = !!st.full_sync;
+  paintNodeFullSync();
+}
+
+function readPeerLimit(id) {
+  var raw = String(document.getElementById(id).value || '').trim();
+  var n = raw === '' ? 0 : Number(raw);
+  if (!Number.isInteger(n) || n < 0) throw new Error('Peer limits must be whole numbers, 0 or more.');
+  return n;
+}
+
+async function saveNodeSettings() {
+  var btn = document.getElementById('node-settings-save');
+  var body;
+  try {
+    body = {
+      p2p_max_inbound: readPeerLimit('node-max-inbound'),
+      p2p_max_outbound: readPeerLimit('node-max-outbound'),
+      extra_peers: document.getElementById('node-extra-peers').value.split(/\s+/).filter(Boolean),
+      full_sync: nodeFullSync,
+    };
+  } catch (e) {
+    showNodeStatus(normalizeError(e), 'error');
+    return;
+  }
+  btn.disabled = true;
+  try {
+    var res = await api('/api/settings', { method: 'PATCH', body: body });
+    var pending = (res && res.restart_required) || [];
+    if (pending.length) {
+      showNodeStatus('Saved. Restart the node to apply.', 'info');
+      document.getElementById('node-restart').style.display = '';
+    } else {
+      showNodeStatus('Saved.', 'success');
+    }
+  } catch (e) {
+    showNodeStatus(normalizeError(e), 'error');
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+async function handleNodeRestart() {
+  var btn = document.getElementById('node-restart');
+  btn.disabled = true;
+  stopPolling();
+  try {
+    showNodeStatus('Restarting node...', 'info');
+    await restartDaemon();
+    if (sessionPassword) await loadOrUnlockWallet(sessionPassword, activeWalletName);
+    btn.style.display = 'none';
+    showNodeStatus('Node restarted with the new settings.', 'success');
+  } catch (e) {
+    showNodeStatus('Restart failed: ' + normalizeError(e), 'error');
+  } finally {
+    btn.disabled = false;
+    startPolling();
+  }
+}
+
+document.getElementById('node-full-sync-on').addEventListener('click', function () { nodeFullSync = true; paintNodeFullSync(); });
+document.getElementById('node-full-sync-off').addEventListener('click', function () { nodeFullSync = false; paintNodeFullSync(); });
+document.getElementById('node-settings-save').addEventListener('click', saveNodeSettings);
+document.getElementById('node-restart').addEventListener('click', handleNodeRestart);
 document.getElementById('view-seed-btn').addEventListener('click', handleViewSeed);
 document.getElementById('seed-password').addEventListener('keydown', function (e) { if (e.key === 'Enter') handleViewSeed(); });
 document.getElementById('reset-chain-btn').addEventListener('click', handleResetChainData);
