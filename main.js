@@ -694,10 +694,16 @@ async function unloadWallet() {
 
 // --- Formatting ---
 
-function formatBNT(atomic) {
+function formatBNTRaw(atomic) {
   const n = Number(atomic);
   if (!isFinite(n)) return '--';
   return (n / 100000000).toFixed(8);
+}
+
+function formatBNT(atomic) {
+  const n = Number(atomic);
+  if (!isFinite(n)) return '--';
+  return (n / 100000000).toLocaleString('en-US', { minimumFractionDigits: 8, maximumFractionDigits: 8 });
 }
 
 function formatBNTShort(atomic) {
@@ -705,8 +711,8 @@ function formatBNTShort(atomic) {
   if (!isFinite(n)) return '--';
   const val = n / 100000000;
   if (val === 0) return '0.00';
-  if (val < 0.01) return val.toFixed(8);
-  return val.toFixed(2);
+  if (Math.abs(val) < 0.01) return val.toFixed(8);
+  return val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
 function formatEta(secs) {
@@ -1706,7 +1712,7 @@ function historyRowHtml(o, allNotes, chainHeight) {
   }
   return '<div class="history-row' + (isSend ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
     '<div class="history-amount ' + (isSend ? 'r' : 'g') + '">' +
-      (isSend ? '-' : '+') + formatBNT(o.amount) + ' BNT' +
+      (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
     '</div>' +
     '<div class="history-meta">' +
       (o.block_height
@@ -1833,7 +1839,7 @@ function historyMatches(o, q) {
     getTxNote(o.txid),
     (userData.sendLabels && userData.sendLabels[o.txid]) || '',
     historySendTo[o.txid] || '',
-    formatBNT(o.amount),
+    formatBNTRaw(o.amount),
     o.is_coinbase ? 'mining reward' : (o.is_send ? 'sent' : 'received')
   ].join(' ').toLowerCase();
   return hay.indexOf(q) !== -1;
@@ -1886,8 +1892,8 @@ async function exportHistoryCSV() {
       lines.push(
         o.txid + ',' +
         type + ',' +
-        (o.is_send ? '-' : '') + formatBNT(o.amount) + ',' +
-        (send && typeof send.fee === 'number' ? formatBNT(send.fee) : '') + ',' +
+        (o.is_send ? '-' : '') + formatBNTRaw(o.amount) + ',' +
+        (send && typeof send.fee === 'number' ? formatBNTRaw(send.fee) : '') + ',' +
         (o.block_height || '') + ',' +
         (t ? new Date(t * 1000).toISOString() : '') + ',' +
         csvField(o.memo_hex ? hexToUtf8(o.memo_hex) : '') + ',' +
@@ -3899,17 +3905,14 @@ async function loadWalletList() {
     '<span class="wallet-active-name">' + escapeHtml(active.replace(/\.dat$/, '')) + '</span>' +
     (walletPath ? '<span class="wallet-active-path d">' + escapeHtml(walletPath) + '</span>' : '');
 
-  listEl.innerHTML = wallets.map(function (name) {
-    var isActive = name === active;
+  listEl.innerHTML = wallets.filter(function (name) { return name !== active; }).map(function (name) {
     var display = name.replace(/\.dat$/, '');
-    return '<div class="wallet-row' + (isActive ? ' active' : '') + '" data-name="' + escapeHtml(name) + '">' +
+    return '<div class="wallet-row" data-name="' + escapeHtml(name) + '">' +
       '<span class="wallet-row-name">' + escapeHtml(display) + '</span>' +
       '<div class="wallet-row-actions">' +
-        (isActive
-          ? '<span class="wallet-row-badge">current</span>'
-          : '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
-            '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Del</button>' +
-            '<button class="wallet-switch-btn" data-name="' + escapeHtml(name) + '">Switch</button>') +
+        '<button class="wallet-edit-btn" data-name="' + escapeHtml(name) + '">Rename</button>' +
+        '<button class="wallet-del-btn" data-name="' + escapeHtml(name) + '">Del</button>' +
+        '<button class="wallet-switch-btn" data-name="' + escapeHtml(name) + '">Switch</button>' +
       '</div>' +
     '</div>';
   }).join('');
@@ -4045,7 +4048,7 @@ async function handleImportWalletFile() {
 }
 
 function showImportForm() {
-  document.getElementById('import-seed-form').style.display = 'block';
+  document.getElementById('import-seed-form').style.display = 'flex';
   document.getElementById('import-seed-btn').style.display = 'none';
   document.getElementById('import-seed-input').value = '';
   document.getElementById('import-seed-password').value = '';

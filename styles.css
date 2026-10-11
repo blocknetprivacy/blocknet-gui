@@ -1094,7 +1094,7 @@ body.platform-windows #app {
 /* Balance Card */
 .upgrade-notice {
   border: 1px solid #530;
-  border-radius: 10px;
+  border-radius: var(--radius);
   padding: 12px 16px;
   margin-bottom: 16px;
   background: #000;
@@ -3209,6 +3209,21 @@ body.wallet-no-seed .seed-item {
 }
 
 @media (max-width: 560px) {
+  .balance-value {
+    font-size: 26px;
+    white-space: nowrap;
+  }
+
+  .balance-sub {
+    flex-wrap: wrap;
+    gap: 4px 16px;
+  }
+
+  .stats-grid {
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+  }
+
   .history-meta {
     flex-wrap: wrap;
     gap: 2px 10px;
@@ -3227,4 +3242,8 @@ body.wallet-no-seed .seed-item {
     flex-basis: 100%;
     text-align: left;
   }
+}
+
+.settings-item-control > .seed-pw-input {
+  margin-bottom: 8px;
 }
