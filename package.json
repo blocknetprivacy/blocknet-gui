@@ -1,6 +1,6 @@
 {
   "name": "blocknet-wallet",
-  "version": "0.21.0",
+  "version": "0.22.0",
   "description": "Blocknet GUI Wallet",
   "author": "Blocknet Privacy",
   "license": "BSD-3-Clause",
@@ -11,7 +11,8 @@
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:tauri\"",
     "dev:frontend": "python3 -m http.server 1420",
     "dev:tauri": "sleep 2 && tauri dev",
-    "build": "tauri build"
+    "build": "tauri build",
+    "tauri": "tauri"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.0.0",

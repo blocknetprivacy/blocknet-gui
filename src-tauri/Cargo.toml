@@ -1,11 +1,15 @@
 [package]
 name = "blocknet-wallet"
-version = "0.21.0"
+version = "0.22.0"
 description = "Blocknet Wallet"
 authors = ["Blocknet Privacy"]
 license = "BSD-3-Clause"
 repository = "https://github.com/blocknetprivacy/blocknet-tauri"
 edition = "2021"
+
+[lib]
+name = "blocknet_wallet_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
 tauri-build = { version = "2.0", features = [] }
@@ -16,9 +20,8 @@ tauri-plugin-shell = "2.0"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["full"] }
-reqwest = { version = "0.12", features = ["json"] }
+reqwest = { version = "0.12", default-features = false, features = ["json", "charset", "http2", "macos-system-configuration"] }
 dirs-next = "2"
-tauri-plugin-window-state = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-deep-link = "2"
 tauri-plugin-notification = "2"
@@ -28,6 +31,13 @@ rand = "0.8"
 
 [target."cfg(any(target_os = \"macos\", windows, target_os = \"linux\"))".dependencies]
 tauri-plugin-single-instance = { version = "2", features = ["deep-link"] }
+tauri-plugin-window-state = "2"
+
+[target."cfg(not(target_os = \"android\"))".dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["default-tls"] }
+
+[target."cfg(target_os = \"android\")".dependencies]
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls"] }
 
 [target."cfg(unix)".dependencies]
 libc = "0.2"
