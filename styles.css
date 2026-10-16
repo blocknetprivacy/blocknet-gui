@@ -1167,6 +1167,22 @@ body.platform-windows #app {
   line-height: 1.4;
 }
 
+.update-notice {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 12px;
+  border: 1px solid #330;
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  padding: 12px 16px;
+  margin-bottom: 16px;
+  background: #000;
+  color: #ccc;
+  font-size: var(--fs-sm);
+  line-height: 1.4;
+}
+
 .balance-card {
   border: 1px solid #111;
   padding: 24px;
@@ -3448,6 +3464,11 @@ select {
   margin-bottom: 8px;
 }
 
+.label-row-actions {
+  display: flex;
+  gap: 16px;
+}
+
 .label-row label {
   margin-bottom: 0;
 }
@@ -3704,4 +3725,47 @@ img.nav-icon[src*="network.svg"] {
   .balance-actions .btn-secondary {
     width: 100%;
   }
+}
+
+.qr-scan-overlay {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 9500;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 24px;
+  padding: 16px;
+}
+
+.qr-scan-frame {
+  width: min(70vw, 280px);
+  aspect-ratio: 1;
+  border: 2px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 0 0 100vmax rgba(0, 0, 0, 0.55);
+}
+
+.qr-scan-hint {
+  position: relative;
+  color: #fff;
+  text-align: center;
+}
+
+.qr-scan-overlay .btn-secondary {
+  position: relative;
+}
+
+html.qr-scanning,
+html.qr-scanning body {
+  background: transparent;
+}
+
+html.qr-scanning body > *:not(.qr-scan-overlay) {
+  visibility: hidden;
+}
+
+html.qr-scanning .qr-scan-overlay {
+  display: flex;
 }

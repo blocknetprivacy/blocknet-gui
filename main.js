@@ -5817,6 +5817,84 @@ async function loadAppVersion() {
   }
 }
 
+var UPDATE_CHECK_URL = 'https://api.github.com/repos/blocknetprivacy/blocknet-gui/releases/latest';
+var UPDATE_RELEASE_PREFIX = 'https://github.com/blocknetprivacy/blocknet-gui/releases/';
+var UPDATE_CHECK_INTERVAL_MS = 24 * 60 * 60 * 1000;
+var updateCheckEnabled = true;
+var updateCheckTimer = null;
+var updateCheckBusy = false;
+var availableUpdate = null;
+
+function loadUpdateCheckPref() {
+  try {
+    var v = localStorage.getItem('updateCheckEnabled');
+    if (v !== null) updateCheckEnabled = v !== 'false';
+  } catch (_) {}
+}
+
+function saveUpdateCheckPref() {
+  try { localStorage.setItem('updateCheckEnabled', updateCheckEnabled ? 'true' : 'false'); } catch (_) {}
+}
+
+function parseVersion(v) {
+  var m = String(v || '').trim().replace(/^v/i, '').match(/^(\d+)\.(\d+)\.(\d+)$/);
+  return m ? [Number(m[1]), Number(m[2]), Number(m[3])] : null;
+}
+
+function isNewerVersion(a, b) {
+  for (var i = 0; i < 3; i++) {
+    if (a[i] !== b[i]) return a[i] > b[i];
+  }
+  return false;
+}
+
+async function checkForUpdate() {
+  if (!updateCheckEnabled || updateCheckBusy) return;
+  updateCheckBusy = true;
+  try {
+    var current = parseVersion(await invoke('get_app_version'));
+    var rel = JSON.parse(await invoke('fetch_url', { url: UPDATE_CHECK_URL }));
+    var latest = parseVersion(rel && rel.tag_name);
+    var url = String((rel && rel.html_url) || '');
+    if (!current || !latest || rel.draft || rel.prerelease || url.indexOf(UPDATE_RELEASE_PREFIX) !== 0) return;
+    availableUpdate = isNewerVersion(latest, current)
+      ? { version: latest.join('.'), current: current.join('.'), url: url }
+      : null;
+    renderUpdateNotice();
+  } catch (e) {
+    console.warn('Update check failed:', e);
+  } finally {
+    updateCheckBusy = false;
+  }
+}
+
+function renderUpdateNotice() {
+  var el = document.getElementById('dash-update-notice');
+  if (!el) return;
+  if (!updateCheckEnabled || !availableUpdate) {
+    el.style.display = 'none';
+    el.innerHTML = '';
+    return;
+  }
+  el.innerHTML =
+    '<span>Blocknet wallet v' + escapeHtml(availableUpdate.version) + ' is out. You have v' + escapeHtml(availableUpdate.current) + '.</span>' +
+    '<button type="button" class="link-btn" id="dash-update-open">Download</button>';
+  el.style.display = 'flex';
+  var url = availableUpdate.url;
+  document.getElementById('dash-update-open').addEventListener('click', function () {
+    try { window.__TAURI__.shell.open(url); } catch (_) {}
+  });
+}
+
+function startUpdateChecks() {
+  loadUpdateCheckPref();
+  if (updateCheckTimer) clearInterval(updateCheckTimer);
+  updateCheckTimer = null;
+  if (!updateCheckEnabled) return;
+  checkForUpdate();
+  updateCheckTimer = setInterval(checkForUpdate, UPDATE_CHECK_INTERVAL_MS);
+}
+
 // --- Daemon startup / sync feedback on the welcome screen ---
 // Polls the daemon while the welcome/password screen is shown so the user sees
 // what's happening (starting, connecting, syncing block M of N) instead of a
@@ -5952,6 +6030,7 @@ async function init() {
 
     startSplash();
     loadAppVersion();
+    startUpdateChecks();
     listenDaemonPhase();
     startDaemonSyncPoller();
 
@@ -6437,13 +6516,69 @@ function handleDeepLinkUrls(urls) {
   prefillSend(parsed.address, parsed.amount || '', parsed.memo || '');
 }
 
-function prefillSend(address, amount, memo) {
+function prefillSend(address, amount, memo, message) {
   navigate('send');
   if (address) document.getElementById('send-address').value = address;
   if (amount) document.getElementById('send-amount').value = amount;
   if (memo) document.getElementById('send-memo').value = memo;
-  showSendStatus('Pre-filled from blocknet:// link. Review and confirm.', 'info');
+  showSendStatus(message || 'Pre-filled from blocknet:// link. Review and confirm.', 'info');
   if (address) debouncedResolve();
+}
+
+var isAndroid = /Android/i.test(navigator.userAgent || '');
+var qrScanCancel = null;
+
+function qrScanner() {
+  return isAndroid && window.__TAURI__ ? window.__TAURI__.barcodeScanner || null : null;
+}
+
+function scanErrorText(e) {
+  return String((e && e.message) || e || 'unknown error');
+}
+
+async function scanPaymentQr() {
+  var bs = qrScanner();
+  if (!bs) return;
+  try {
+    var perm = await bs.checkPermissions();
+    if (perm !== 'granted') perm = await bs.requestPermissions();
+    if (perm !== 'granted') {
+      showSendStatus('Camera access is off. Allow it for Blocknet in Android settings to scan QR codes.', 'error');
+      return;
+    }
+  } catch (e) {
+    showSendStatus('Could not open the camera: ' + scanErrorText(e), 'error');
+    return;
+  }
+  document.documentElement.classList.add('qr-scanning');
+  var content = '';
+  var cancelled = new Promise(function (_, reject) {
+    qrScanCancel = function () { reject(new Error('cancelled')); };
+  });
+  try {
+    var res = await Promise.race([bs.scan({ windowed: true, formats: ['QR_CODE'] }), cancelled]);
+    content = String((res && res.content) || '').trim();
+  } catch (e) {
+    var msg = scanErrorText(e);
+    if (!/cancel/i.test(msg)) showSendStatus('Scan failed: ' + msg, 'error');
+  } finally {
+    qrScanCancel = null;
+    document.documentElement.classList.remove('qr-scanning');
+  }
+  if (!content) return;
+  var parsed = parsePaymentRequestUri(content);
+  if (parsed) {
+    prefillSend(parsed.address, parsed.amount || '', parsed.memo || '', 'Filled from QR code. Review and confirm.');
+  } else {
+    prefillSend(content, '', '', 'Filled from QR code. Review and confirm.');
+  }
+}
+
+function cancelQrScan() {
+  var bs = qrScanner();
+  if (bs) bs.cancel().catch(function () {});
+  if (qrScanCancel) qrScanCancel();
+  document.documentElement.classList.remove('qr-scanning');
 }
 
 function applyPendingDeepLink() {
@@ -6508,6 +6643,9 @@ document.getElementById('threads-dec').addEventListener('click', function () { c
 document.getElementById('export-csv-btn').addEventListener('click', exportHistoryCSV);
 document.getElementById('history-search').addEventListener('input', filterHistory);
 document.getElementById('save-contact-btn').addEventListener('click', handleSaveContact);
+document.getElementById('scan-qr-btn').addEventListener('click', scanPaymentQr);
+document.getElementById('qr-scan-cancel').addEventListener('click', cancelQrScan);
+if (qrScanner()) document.getElementById('scan-qr-btn').style.display = '';
 document.getElementById('send-cancel').addEventListener('click', disarmSend);
 document.getElementById('send-max-btn').addEventListener('click', handleSendMax);
 (function buildSettingsNav() {
@@ -6798,6 +6936,33 @@ initSignVerifyTabs();
     saveNotifyPref();
     paint();
     if (hint) hint.style.display = 'none';
+  });
+})();
+(function () {
+  var onBtn = document.getElementById('update-check-on');
+  var offBtn = document.getElementById('update-check-off');
+  if (!onBtn || !offBtn) return;
+
+  loadUpdateCheckPref();
+
+  function paint() {
+    onBtn.classList.toggle('active', updateCheckEnabled);
+    offBtn.classList.toggle('active', !updateCheckEnabled);
+  }
+  paint();
+
+  onBtn.addEventListener('click', function () {
+    updateCheckEnabled = true;
+    saveUpdateCheckPref();
+    paint();
+    startUpdateChecks();
+  });
+  offBtn.addEventListener('click', function () {
+    updateCheckEnabled = false;
+    saveUpdateCheckPref();
+    paint();
+    startUpdateChecks();
+    renderUpdateNotice();
   });
 })();
 document.getElementById('create-wallet-btn').addEventListener('click', showCreateForm);

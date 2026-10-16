@@ -174,6 +174,7 @@
       <!-- Dashboard -->
       <div id="view-dashboard" class="view active">
         <div class="container">
+          <div id="dash-update-notice" class="update-notice" style="display: none;"></div>
           <div id="dash-upgrade-notice" class="upgrade-notice" style="display: none;"></div>
           <div class="balance-card">
             <div class="balance-head">
@@ -244,7 +245,7 @@
                   <button type="button" class="recipient-remove-btn" style="display: none;">Remove</button>
                 </div>
                 <div class="form-group">
-                  <div class="label-row"><label>Recipient</label><button type="button" class="link-btn" id="save-contact-btn">Save to Contacts</button></div>
+                  <div class="label-row"><label>Recipient</label><span class="label-row-actions"><button type="button" class="link-btn" id="scan-qr-btn" style="display: none;">Scan QR</button><button type="button" class="link-btn" id="save-contact-btn">Save to Contacts</button></span></div>
                   <input type="text" id="send-address" data-role="address" placeholder="Address or $handle" autocorrect="off" autocapitalize="off" spellcheck="false">
                   <div id="address-book-suggestions" class="address-suggestions" data-role="suggestions"></div>
                   <div id="send-resolved" class="send-resolved" data-role="resolved" style="display: none;"></div>
@@ -666,6 +667,33 @@
             </section>
 
             <section class="settings-category">
+              <h2>Updates</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Check for Updates</span>
+                      <span
+                        class="settings-help"
+                        name="update-check-help"
+                        tabindex="0"
+                        aria-label="Once a day, ask GitHub for the newest wallet release and show a notice on the dashboard when one is out. GitHub sees your IP address. Nothing downloads or installs on its own."
+                        title="Once a day, ask GitHub for the newest wallet release and show a notice on the dashboard when one is out. GitHub sees your IP address. Nothing downloads or installs on its own."
+                      >?</span>
+                    </div>
+                    <p class="settings-item-desc">Once a day, ask GitHub for the newest wallet release. GitHub sees your IP address. Nothing downloads or installs on its own.</p>
+                  </div>
+                  <div class="settings-item-control">
+                    <div class="payment-link-toggle" id="update-check-toggle">
+                      <button type="button" class="payment-link-mode" id="update-check-on">On</button>
+                      <button type="button" class="payment-link-mode" id="update-check-off">Off</button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
               <h2>Display</h2>
               <div class="settings-list">
                 <div class="settings-item">
@@ -1010,6 +1038,12 @@
     <button type="button" class="qr-overlay-close" aria-label="Close">&times;</button>
     <div id="qr-overlay-inner"></div>
     <div id="qr-overlay-text" class="qr-overlay-text mono"></div>
+  </div>
+
+  <div id="qr-scan-overlay" class="qr-scan-overlay">
+    <div class="qr-scan-frame"></div>
+    <p class="qr-scan-hint">Point the camera at a Blocknet QR code.</p>
+    <button type="button" class="btn-secondary" id="qr-scan-cancel">Cancel</button>
   </div>
 
   <script src="loader.js"></script>

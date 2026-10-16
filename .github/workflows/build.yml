@@ -56,4 +56,4 @@ jobs:
         with:
           files: releases/*
           draft: false
-          prerelease: false
+          prerelease: ${{ contains(github.ref_name, '-') }}

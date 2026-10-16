@@ -695,6 +695,7 @@ async fn check_daemon_ready(app: AppHandle, api_state: State<'_, ApiPortState>) 
 static HTTP: std::sync::LazyLock<reqwest::Client> = std::sync::LazyLock::new(|| {
     reqwest::Client::builder()
         .connect_timeout(std::time::Duration::from_secs(5))
+        .user_agent(concat!("blocknet-wallet/", env!("CARGO_PKG_VERSION")))
         .build()
         .expect("HTTP client")
 });
@@ -1240,6 +1241,11 @@ pub fn run() {
                     | tauri_plugin_window_state::StateFlags::FULLSCREEN
             )
             .build());
+    }
+
+    #[cfg(target_os = "android")]
+    {
+        builder = builder.plugin(tauri_plugin_barcode_scanner::init());
     }
 
     builder
