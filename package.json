@@ -6,6 +6,7 @@
   "license": "BSD-3-Clause",
   "repository": "https://github.com/blocknetprivacy/blocknet-tauri",
   "scripts": {
+    "test": "node --test tests/*.test.cjs",
     "sync:version": "node scripts/sync-daemon-version.js",
     "sync:version:check": "node scripts/sync-daemon-version.js --check",
     "dev": "concurrently \"npm run dev:frontend\" \"npm run dev:tauri\"",

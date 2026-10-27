@@ -3144,8 +3144,9 @@ function b64ToBytes(b64) {
   return Uint8Array.from(atob(b64), function (c) { return c.charCodeAt(0); });
 }
 
-async function verifyResolveSig(data) {
+async function verifyResolveSig(data, requestedHandle) {
   try {
+    if (!data || typeof data.payload !== 'string' || typeof data.sig !== 'string') return false;
     var pubKeyB64 = await getBlocknetIdPubKey();
     if (!pubKeyB64 || !data.payload || !data.sig) return false;
     var msg = new TextEncoder().encode(data.payload);
@@ -3153,18 +3154,30 @@ async function verifyResolveSig(data) {
     var pubBytes = b64ToBytes(pubKeyB64);
     if (sig.length !== 64 || pubBytes.length !== 32) return false;
     var key = await crypto.subtle.importKey('raw', pubBytes, { name: 'Ed25519' }, false, ['verify']);
-    return await crypto.subtle.verify('Ed25519', key, sig, msg);
+    if (!await crypto.subtle.verify('Ed25519', key, sig, msg)) return false;
+    // The signature authenticates these exact bytes, not the response envelope.
+    var signed = JSON.parse(data.payload);
+    if (!signed || typeof signed.handle !== 'string' || typeof requestedHandle !== 'string') return false;
+    var handle = requestedHandle.trim().toLowerCase();
+    if (!handle || signed.handle.trim().toLowerCase() !== handle) return false;
+    if (typeof signed.address !== 'string' || !signed.address || signed.address.trim() !== signed.address || signed.address !== data.address) return false;
+    if (!Number.isSafeInteger(signed.updated_at_unix) || signed.updated_at_unix < 0 || signed.updated_at_unix !== data.updated_at) return false;
+    if (data.handle !== undefined && (typeof data.handle !== 'string' || data.handle.trim().toLowerCase() !== handle)) return false;
+    return true;
   } catch (_) {
     return false;
   }
 }
 
 async function resolveHandle(handle) {
+  handle = handle.trim().toLowerCase();
+  if (!/^[a-z0-9_.-]{1,64}$/.test(handle)) throw new Error('Invalid handle');
   var raw = await invoke('fetch_url', { url: 'https://blocknet.id/api/v1/resolve/' + encodeURIComponent(handle) });
   var data = JSON.parse(raw);
-  if (!data.address) throw new Error('No address for handle');
-  data.verified = await verifyResolveSig(data);
-  return data;
+  if (!await verifyResolveSig(data, handle)) throw new Error("Couldn't verify this handle's destination. Try again.");
+  var signed = JSON.parse(data.payload);
+  // Only signed, validated fields may reach the display, cache, or send path.
+  return { handle: handle, address: signed.address, updated_at: signed.updated_at_unix, verified: true };
 }
 
 function isHandlePrefix(ch) { return ch === '$' || ch === '@'; }
@@ -3214,6 +3227,16 @@ function hideResolved(row) {
   if (el) { el.style.display = 'none'; el.innerHTML = ''; }
 }
 
+function showResolveError(row, err) {
+  hideResolved(row);
+  disarmSend();
+  var el = getRowResolvedEl(row);
+  if (el) {
+    el.innerHTML = '<span class="resolve-fail">' + escapeHtml(normalizeError(err)) + '</span>';
+    el.style.display = 'block';
+  }
+}
+
 function debouncedResolve(row) {
   row = row || getFirstRecipientRow();
   if (!row) return;
@@ -3225,12 +3248,13 @@ function debouncedResolve(row) {
     hideResolved(row);
     return;
   }
+  if (!row._resolved || row._resolved.handle !== val.slice(1) || row._resolved.verified !== true) hideResolved(row);
   row._resolveTimer = setTimeout(function () {
     var current = (addrInput.value || '').trim();
     if (current !== val) return;
     var prefix = val.charAt(0);
     var handle = val.slice(1);
-    if (row._resolved && row._resolved.handle === handle) return;
+    if (row._resolved && row._resolved.handle === handle && row._resolved.verified === true) return;
     var el = getRowResolvedEl(row);
     if (el) {
       el.textContent = 'Resolving ' + prefix + handle + '...';
@@ -3240,9 +3264,9 @@ function debouncedResolve(row) {
       if ((addrInput.value || '').trim() !== val) return;
       row._resolved = { handle: handle, address: data.address, verified: data.verified, updatedAt: data.updated_at };
       showResolved(row, prefix, handle, data.address, data.verified, data.updated_at);
-    }).catch(function () {
+    }).catch(function (err) {
       if ((addrInput.value || '').trim() !== val) return;
-      hideResolved(row);
+      showResolveError(row, err);
     });
   }, 2000);
 }
@@ -3574,14 +3598,18 @@ async function handleSend(e) {
           return;
         }
         var existing = entry.row._resolved;
-        if (!existing || existing.handle !== handle) {
+        if (!existing || existing.handle !== handle || existing.verified !== true) {
           showSendStatus('Resolving ' + prefix + handle + '...', 'info');
           try {
             var resolved = await resolveHandle(handle);
+            if ((getRowAddressInput(entry.row).value || '').trim() !== entry.rawAddress) {
+              disarmSend();
+              return;
+            }
             entry.row._resolved = { handle: handle, address: resolved.address, verified: resolved.verified, updatedAt: resolved.updated_at };
             showResolved(entry.row, prefix, handle, resolved.address, resolved.verified, resolved.updated_at);
           } catch (err) {
-            hideResolved(entry.row);
+            showResolveError(entry.row, err);
             showSendStatus(entry.labelPrefix + 'could not resolve ' + prefix + handle + ': ' + normalizeError(err), 'error');
             return;
           }

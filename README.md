@@ -157,6 +157,9 @@ npm install
 npm run dev
 ```
 
+Run the handle-resolution and payment-flow regression tests with `npm test`
+(Node.js 20+, no running daemon or dependency installation required).
+
 ---
 
 ## License
