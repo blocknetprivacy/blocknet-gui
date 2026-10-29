@@ -3,7 +3,7 @@
   "info": {
     "title": "Blocknet Daemon API",
     "description": "Network upgrade notice: Blocknet plans a network upgrade around 2027-02-16. After it, you will have 1 year to move your coins to the new format, until about 2028-02-16. Coins not moved by then cannot be spent. The wallet will guide you. JSON API for the Blocknet privacy blockchain daemon. The API starts when the core runs with `--api <addr>`. Private endpoints require Bearer token authentication with the token in `<dataDir>/api.cookie`, written on startup. Public blockchain routes (`GET /api/health`, `/api/status`, `/api/block/{id}`, `/api/tx/{hash}`, `/api/mempool`, `/api/mempool/txs`, `/api/peers`, `/api/peers/banned`, `/api/stats`, and `POST /api/verify`, `/api/verify-proof`) need no token. Node settings are read and changed with `GET` and `PATCH /api/settings`.",
-    "version": "0.21.0",
+    "version": "0.23.0",
     "license": {
       "name": "MIT"
     }
@@ -210,6 +210,10 @@
                             },
                             "notice": { "type": "string", "description": "Short notice text for users" }
                           }
+                        },
+                        "update_notice": {
+                          "type": "string",
+                          "description": "Present only when this core version is more than about 6 months old, measured by the node's own chain height. Clients should show it to users."
                         },
                         "wallet": { "$ref": "#/components/schemas/WalletDiagnostics" }
                       }
@@ -2792,6 +2796,127 @@
         }
       }
     },
+    "/api/wallet/outputs/audit": {
+      "post": {
+        "operationId": "auditWalletOutputs",
+        "tags": ["Wallet"],
+        "summary": "Audit wallet outputs against the canonical chain",
+        "description": "Checks each wallet output against the canonical block at its recorded height. Reports missing blocks and outputs whose transaction, output index, public key, or commitment no longer matches the canonical chain. Set repair=true to remove all reported outputs from the wallet file, including outputs whose blocks are unavailable. Run the read-only audit first and wait for chain sync before repairing. Requires loaded, unlocked wallet.",
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repair": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "When true, remove reported noncanonical outputs and save the wallet."
+                  }
+                }
+              },
+              "example": { "repair": true }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Canonical output audit results",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total_outputs": { "type": "integer" },
+                    "stale_outputs": { "type": "integer" },
+                    "stale_amount": {
+                      "type": "integer",
+                      "description": "Total amount in reported stale outputs, in atomic units"
+                    },
+                    "repaired": { "type": "boolean" },
+                    "removed_outputs": { "type": "integer" },
+                    "removed_amount": {
+                      "type": "integer",
+                      "description": "Total amount removed from the wallet, in atomic units"
+                    },
+                    "issues": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "txid": { "type": "string" },
+                          "output_index": { "type": "integer" },
+                          "amount": { "type": "integer" },
+                          "spent": { "type": "boolean" },
+                          "block_height": { "type": "integer" },
+                          "reason": {
+                            "type": "string",
+                            "enum": [
+                              "missing_canonical_block",
+                              "tx_not_in_canonical_block",
+                              "output_index_out_of_range",
+                              "output_public_key_mismatch",
+                              "output_commitment_mismatch",
+                              "negative_output_index"
+                            ]
+                          },
+                          "canonical_block_hash": { "type": "string" },
+                          "one_time_pub": { "type": "string" },
+                          "commitment": { "type": "string" }
+                        }
+                      }
+                    }
+                  }
+                },
+                "example": {
+                  "total_outputs": 12,
+                  "stale_outputs": 1,
+                  "stale_amount": 100000000,
+                  "repaired": true,
+                  "removed_outputs": 1,
+                  "removed_amount": 100000000,
+                  "issues": [
+                    {
+                      "txid": "b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b1c2d3e4f5a6b7c8d9e0f1a2b3c4",
+                      "output_index": 0,
+                      "amount": 100000000,
+                      "spent": false,
+                      "block_height": 1200,
+                      "reason": "tx_not_in_canonical_block",
+                      "canonical_block_hash": "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9f0a1b2",
+                      "one_time_pub": "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff",
+                      "commitment": "ffeeddccbbaa99887766554433221100ffeeddccbbaa99887766554433221100"
+                    }
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "invalid JSON body" }
+              }
+            }
+          },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/WalletLocked" },
+          "500": {
+            "description": "Wallet repair could not be saved",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/Error" },
+                "example": { "error": "internal error" }
+              }
+            }
+          },
+          "503": { "$ref": "#/components/responses/NoWallet" }
+        }
+      }
+    },
     "/api/wallet/viewkeys": {
       "post": {
         "operationId": "getViewKeys",
@@ -3320,7 +3445,7 @@
         "operationId": "getBlockTemplate",
         "tags": ["Mining"],
         "summary": "Get block template for pool mining",
-        "description": "Returns a complete block template ready for proof-of-work solving. Includes a pre-built coinbase transaction (paying to the loaded wallet by default, or to the optional `address` override), selected mempool transactions, and the computed merkle root. The `target` field (hex) is the PoW target that the Argon2id hash must be less than. The `header_base` field (hex) is the 92-byte serialized header without the nonce. PoW hash = Argon2id(password = nonce as 8 bytes little-endian, salt = header_base bytes), 32-byte output. The `block` field is the raw consensus form (PascalCase header keys, byte arrays as integer arrays), not the `GET /api/block` summary. The `template_id` field identifies this template and can be used with compact submit payloads (`template_id` + `nonce`) via `POST /api/mining/submitblock`. Its compact-submission lease expires at `template_expires_at_unix_ms`; clients may extend a live, current-tip lease with `POST /api/mining/renewtemplate`. The daemon retains at most 512 live leases for one tip and returns 503 rather than evicting a lease before its advertised expiry. Requires a loaded wallet (for coinbase keys) but does not require it to be unlocked.",
+        "description": "Returns a complete block template ready for proof-of-work solving. Includes a pre-built coinbase transaction (paying to the loaded wallet by default, or to the optional `address` override), selected mempool transactions, and the computed merkle root. The `target` field (hex) is the PoW target that the Argon2id hash must be less than. The `header_base` field (hex) is the 92-byte serialized header without the nonce. PoW hash = Argon2id(password = nonce as 8 bytes little-endian, salt = header_base bytes), 32-byte output. The `block` field is the raw consensus form (PascalCase header keys, byte arrays as integer arrays), not the `GET /api/block` summary. The `template_id` field identifies this template and can be used with compact submit payloads (`template_id` + `nonce`) via `POST /api/mining/submitblock`. Its compact-submission lease expires at `template_expires_at_unix_ms`; clients may extend a live, current-tip lease with `POST /api/mining/renewtemplate`. The daemon retains at most 512 live leases for one tip and returns 503 rather than evicting a lease before its advertised expiry. Without `address`, requires a loaded wallet (for coinbase keys) but not an unlocked one; with `address`, no wallet is needed, so a pool gets templates as soon as a restarted daemon is serving.",
         "parameters": [
           {
             "name": "address",
@@ -3389,7 +3514,7 @@
           },
           "401": { "$ref": "#/components/responses/Unauthorized" },
           "503": {
-            "description": "A template cannot currently be served because no wallet is loaded, the node is syncing, the chain tip changed during construction, or all 512 same-tip lease slots are live. Capacity responses include Retry-After with the number of seconds until the earliest lease expiry.",
+            "description": "A template cannot currently be served because no wallet is loaded (and no `address` was given), the node has just started and has not yet compared its tip with a peer (for up to 15 seconds after it starts syncing), the node is syncing, the chain tip changed during construction, or all 512 same-tip lease slots are live. Capacity responses include Retry-After with the number of seconds until the earliest lease expiry.",
             "headers": {
               "Retry-After": {
                 "description": "Seconds until the earliest live template lease expires. Present for mining_template_cache_full responses.",
@@ -3402,6 +3527,12 @@
                 "examples": {
                   "no_wallet": {
                     "value": { "error": "no wallet loaded" }
+                  },
+                  "node_starting": {
+                    "value": {
+                      "code": "node_starting",
+                      "error": "waiting for peer chain height, retry"
+                    }
                   },
                   "syncing": {
                     "value": { "error": "node is syncing" }
@@ -4153,11 +4284,16 @@
             "type": "array",
             "items": { "type": "string" },
             "description": "Remote multiaddrs of active connections to this peer"
+          },
+          "agent": {
+            "type": "string",
+            "description": "Software version the peer reported in its handshake, such as blocknet/0.23.0. Self-reported; omitted when unknown."
           }
         },
         "example": {
           "peer_id": "12D3KooWN7z3vEqr4C8pMk2axGfRbLVJzqPEasiY4L9DMqFjVnGq",
-          "addrs": ["/ip4/203.0.113.10/tcp/28080"]
+          "addrs": ["/ip4/203.0.113.10/tcp/28080"],
+          "agent": "blocknet/0.23.0"
         }
       },
       "BanEntry": {
