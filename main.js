@@ -1366,7 +1366,15 @@ async function verifyReceiveShortname(handle, persist) {
     }
     return true;
   } catch (e) {
-    setReceiveShortnameStatus('<span class="resolve-fail">✗ Could not resolve</span> <span class="d">' + escapeHtml(normalizeError(e)) + '</span>');
+    var message = normalizeError(e);
+    if (/^HTTP 404(?:\s|$)/.test(message)) {
+      setReceiveShortnameStatus(
+        '<span class="resolve-fail">✗ Shortname not found</span> ' +
+        '<span class="d">$' + escapeHtml(handle) + ' was not found on blocknet.id. Check the spelling, or register it there and link it to this wallet address before saving.</span>'
+      );
+    } else {
+      setReceiveShortnameStatus('<span class="resolve-fail">✗ Could not resolve</span> <span class="d">' + escapeHtml(message) + '</span>');
+    }
     return false;
   }
 }
@@ -6665,6 +6673,12 @@ document.getElementById('request-link-mode-bntpay').addEventListener('click', fu
 document.getElementById('receive-shortname').addEventListener('input', debouncedVerifyReceiveShortname);
 document.getElementById('receive-shortname-save').addEventListener('click', saveReceiveShortname);
 document.getElementById('receive-shortname-clear').addEventListener('click', clearReceiveShortname);
+document.getElementById('receive-shortname-register').addEventListener('click', function (e) {
+  if (window.__TAURI__ && window.__TAURI__.shell) {
+    e.preventDefault();
+    window.__TAURI__.shell.open('https://blocknet.id');
+  }
+});
 document.getElementById('mining-toggle').addEventListener('click', toggleMining);
 document.getElementById('threads-inc').addEventListener('click', function () { changeThreads(1); });
 document.getElementById('threads-dec').addEventListener('click', function () { changeThreads(-1); });

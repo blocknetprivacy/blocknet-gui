@@ -186,6 +186,38 @@ test('receive handle cannot be saved using a substituted address', async () => {
   assert.equal(h.receivePrefs.handle, 'alice');
 });
 
+test('a missing receive shortname explains registration without saving the preference', async () => {
+  const h = harness();
+  h.invoke = async () => { throw 'HTTP 404 Not Found'; };
+  assert.equal(await h.verifyReceiveShortname('ghoul', true), false);
+  assert.match(h.receiveStatus, /Shortname not found/);
+  assert.match(h.receiveStatus, /\$ghoul was not found on blocknet.id/);
+  assert.match(h.receiveStatus, /register it there and link it to this wallet address/);
+  assert.doesNotMatch(h.receiveStatus, /HTTP 404/);
+  assert.equal(h.receivePrefs, undefined);
+});
+
+test('other lookup failures and missing signing keys are not reported as unregistered names', async () => {
+  for (const failure of ['HTTP 500 Internal Server Error', 'fetch failed: timed out', 'HTTP 4040']) {
+    const h = harness();
+    h.invoke = async () => { throw failure; };
+    assert.equal(await h.verifyReceiveShortname('alice', true), false);
+    assert.match(h.receiveStatus, /Could not resolve/);
+    assert.doesNotMatch(h.receiveStatus, /Shortname not found|register it/);
+    assert.equal(h.receivePrefs, undefined);
+  }
+  const h = harness();
+  const invoke = h.invoke;
+  h.invoke = async (cmd, args) => {
+    if (args.url.includes('.well-known')) throw 'HTTP 404 Not Found';
+    return invoke(cmd, args);
+  };
+  assert.equal(await h.verifyReceiveShortname('alice', true), false);
+  assert.match(h.receiveStatus, /Couldn't verify/);
+  assert.doesNotMatch(h.receiveStatus, /Shortname not found|register it/);
+  assert.equal(h.receivePrefs, undefined);
+});
+
 test('editing the handle clears the old badge immediately and stale lookup results are ignored', async () => {
   const h = harness();
   let finish;

@@ -302,13 +302,14 @@
             </div>
           </div>
           <div class="form-group receive-handle-section">
-            <label>Preferred Shortname <span class="d">(for receive QR and links)</span></label>
-            <input type="text" id="receive-shortname" placeholder="$yourname or yourname" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <label for="receive-shortname">Preferred Shortname <span class="d">(for receive QR and links)</span></label>
+            <input type="text" id="receive-shortname" placeholder="$yourname or yourname" aria-describedby="receive-shortname-help" autocorrect="off" autocapitalize="off" spellcheck="false">
+            <p class="form-hint" id="receive-shortname-help">Use a name already registered on <a href="https://blocknet.id" target="_blank" rel="noopener noreferrer" class="link-btn" id="receive-shortname-register">blocknet.id</a> and linked to this wallet address. Saving here only sets your preference; it does not register a name.</p>
             <div class="send-actions receive-handle-actions">
               <button type="button" class="btn-secondary" id="receive-shortname-save">Save Shortname</button>
               <button type="button" class="btn-secondary" id="receive-shortname-clear">Clear</button>
             </div>
-            <div id="receive-shortname-status" class="send-resolved" style="display: none;"></div>
+            <div id="receive-shortname-status" class="send-resolved" role="status" aria-live="polite" style="display: none;"></div>
           </div>
 
           <div class="payment-request-section">
