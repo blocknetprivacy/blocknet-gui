@@ -26,6 +26,30 @@ let sendArmed = false;
 let pendingSendFingerprint = null;
 let sendArmTimer = null;
 let pendingSendIdempotency = null;
+const FEE_PRIORITY_CORE_VERSION = [0, 24, 0];
+const FEE_EXTRA_MAX_DIGITS = 13;
+const FEE_CRAZY_MULTIPLE = 100;
+const FEE_LEVELS = [
+  { name: 'Normal', extra: 0 },
+  { name: 'Fast', extra: 10 },
+  { name: 'Urgent', extra: 40 },
+  { name: 'Custom', extra: null },
+];
+let feeSupported = false;
+let feePolicyState = 'unknown';
+let feePolicyRetry = null;
+let feePolicyTries = 0;
+const FEE_POLICY_MAX_TRIES = 20;
+let sendMaxState = null;
+let feeBase = 0;
+let feeMinTx = 0;
+let feeLevel = 0;
+let feeCustomExtra = 100;
+let feeDefault = { level: 0, custom: 100 };
+let feeTxBytes = 0;
+let feeEstimate = null;
+let feeAck = false;
+let feeAckCrazy = false;
 const SEND_IDEMPOTENCY_WINDOW_MS = 10 * 60 * 1000;
 const SEND_MAX_RETRIES = 2;
 
@@ -136,7 +160,7 @@ async function mergeWithPending(outputs) {
 }
 // --- Encrypted user-data store (contacts, notes, and per-wallet caches), keyed by the wallet password ---
 function emptyUserData() {
-  return { contacts: [], txNotes: {}, txCache: [], pendingSends: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {}, sendLabels: {} };
+  return { contacts: [], txNotes: {}, txCache: [], pendingSends: [], receivePrefs: {}, peerGeoCache: {}, peerObservationCache: {}, sendLabels: {}, dismissedFailedSends: {} };
 }
 function udObj(x) { return (x && typeof x === 'object' && !Array.isArray(x)) ? x : {}; }
 
@@ -163,6 +187,7 @@ async function loadUserData() {
     userData.peerGeoCache = udObj(parsed.peerGeoCache);
     userData.peerObservationCache = udObj(parsed.peerObservationCache);
     userData.sendLabels = udObj(parsed.sendLabels);
+    userData.dismissedFailedSends = udObj(parsed.dismissedFailedSends);
     userDataReady = true;
   } catch (e) {
     userDataReady = false;
@@ -562,7 +587,7 @@ async function pollTxNotifications() {
     var key = bal ? [bal.outputs_total, bal.outputs_unspent, bal.spendable, bal.pending].join(':') : '';
     if (!key || key === txPollKey) return;
     var data = null;
-    try { data = await sharedGet('/api/wallet/history'); } catch (_) {}
+    try { data = await sharedGet('/api/wallet/history/page?limit=' + HISTORY_FETCH_PAGE + '&offset=0&order=desc'); } catch (_) {}
     if (data && Array.isArray(data.outputs)) {
       txPollKey = key;
       // Local sends context: must not touch the shared globals the History view uses.
@@ -852,7 +877,7 @@ async function loadView(view, gen) {
     if (gen !== navGeneration) return;
     switch (view) {
       case 'dashboard': await loadDashboard(); break;
-      case 'send': renderAddressBook(); updateCoinControlVisibility(); refreshSendAvailable(); break;
+      case 'send': renderAddressBook(); updateCoinControlVisibility(); refreshSendAvailable(); feePolicyTries = 0; loadFeePolicy(); break;
       case 'receive': await loadReceive(); break;
       case 'history': await loadHistory(); break;
       case 'mining': await loadMining(); break;
@@ -1165,6 +1190,7 @@ function hideDashScan() {
 }
 
 async function loadDashboard() {
+  if (feePolicyState === 'unknown') await loadFeePolicy();
   try {
     var walletTitle = String(activeWalletName || 'wallet.dat').replace(/\.dat$/i, '');
     var walletNameEl = document.getElementById('dash-wallet-name');
@@ -1220,10 +1246,12 @@ async function loadDashboard() {
         var recent = txRows.slice(0, limit);
         container.innerHTML = recent.map(function (o) {
           var isSend = !!o.is_send;
-          var typeLabel = o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received');
+          var typeLabel = o.failed ? 'Failed send' : (o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received'));
           var memoText = o.memo_hex ? hexToUtf8(o.memo_hex) : '';
           var blockLabel;
-          if (o.block_height) {
+          if (o.failed) {
+            blockLabel = 'Not confirmed';
+          } else if (o.block_height) {
             blockLabel = 'Block ' + fmtInt(o.block_height);
             if (statusHeight >= o.block_height) {
               var dconfs = statusHeight - o.block_height + 1;
@@ -1234,18 +1262,23 @@ async function loadDashboard() {
           } else {
             blockLabel = 'Pending';
           }
-          return '<div class="recent-tx-row' + (isSend ? ' spent' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
+          return '<div class="recent-tx-row' + (isSend ? ' spent' : '') + (o.failed ? ' failed' : '') + (fromCache ? ' cached' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
             '<span class="recent-tx-amount ' + (isSend ? 'r' : 'g') + '">' +
               (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT' +
             '</span>' +
             '<span class="recent-tx-type ' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>' +
             (memoText ? '<span class="recent-tx-memo d">"' + escapeHtml(memoText) + '"</span>' : '') +
             '<span class="recent-tx-block d">' + blockLabel + '</span>' +
+            speedUpButtonHtml(o) +
             '<span class="recent-tx-chevron" aria-hidden="true">›</span>' +
           '</div>';
         }).join('');
         container.querySelectorAll('.recent-tx-row[data-txid]').forEach(function (row) {
-          row.addEventListener('click', function () { showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' }); });
+          row.addEventListener('click', function (e) {
+            var speedEl = e.target.closest('[data-speedup]');
+            if (speedEl) { e.stopPropagation(); openSpeedUp(speedEl.dataset.speedup); return; }
+            showTxDetail(row.dataset.txid, { sent: row.dataset.spent === '1' });
+          });
         });
         if (fromCache) {
           container.insertAdjacentHTML('beforeend', '<div class="tx-cache-note d">Cached ; resyncing blockchain</div>');
@@ -1521,6 +1554,7 @@ function dismissQROverlay() {
 // --- History ---
 
 async function loadHistory(opts) {
+  if (feePolicyState === 'unknown') await loadFeePolicy();
   var quiet = !!(opts && opts.quiet);
   const container = document.getElementById('history-list');
   historyPreviewShown = false;
@@ -1555,11 +1589,16 @@ async function loadHistory(opts) {
     }
   } catch (_) {}
 
-  // Background: load the full list so search and full infinite-scroll work.
   var data = null;
   var loadFailed = false;
   try {
-    data = await sharedGet('/api/wallet/history');
+    var allSends = fetchSendsCtx(chainHeight, true);
+    data = { outputs: await fetchAllHistoryOutputs(quiet ? null : showHistoryLoading) };
+    sendsCtx = await allSends;
+    historySends = sendsCtx.sends;
+    historySendRows = sendsCtx.sendRows;
+    historySendTo = sendsCtx.sendTo;
+    historySendTime = sendsCtx.sendTime;
   } catch (e) {
     loadFailed = true;
     console.warn('history load failed:', normalizeError(e));
@@ -1611,6 +1650,36 @@ async function loadHistory(opts) {
   if (scroller) scroller.scrollTop = scrollTop;
 }
 
+var HISTORY_FETCH_PAGE = 500;
+
+async function fetchAllHistoryOutputs(onProgress) {
+  var all = [];
+  var seen = {};
+  for (var offset = 0; ; offset += HISTORY_FETCH_PAGE) {
+    var pg = await api('/api/wallet/history/page?limit=' + HISTORY_FETCH_PAGE + '&offset=' + offset + '&order=desc');
+    if (!pg || !Array.isArray(pg.outputs)) throw new Error('history page missing outputs');
+    pg.outputs.forEach(function (o) {
+      var key = o.txid + ':' + o.output_index;
+      if (seen[key]) return;
+      seen[key] = true;
+      all.push(o);
+    });
+    if (onProgress) onProgress(all.length, Number(pg.total) || 0);
+    if (pg.outputs.length < HISTORY_FETCH_PAGE) return all;
+  }
+}
+
+function showHistoryLoading(loaded, total) {
+  var container = document.getElementById('history-list');
+  if (!container || !historyPreviewShown || total <= loaded) return;
+  var el = document.getElementById('history-loading');
+  if (!el) {
+    container.insertAdjacentHTML('beforeend', '<div class="tx-cache-note d" id="history-loading"></div>');
+    el = document.getElementById('history-loading');
+  }
+  el.textContent = 'Loading older history: ' + fmtInt(loaded) + ' of ' + fmtInt(total) + ' outputs';
+}
+
 // Fetch /api/wallet/sends into a LOCAL context object (never shared globals).
 // Sharing a global here caused a flicker bug: background pollers reset the map to
 // {} mid-fetch, and if a history build ran in that window the change output was no
@@ -1645,6 +1714,7 @@ async function fetchSendsCtx(chainHeight, allPages) {
         output_index: 0,
         is_send: true,
         is_coinbase: false,
+        failed: s.chain_state === 'not_found',
         amount: Number(s.total_amount) || 0,
         block_height: bh,
         memo_hex: (first && first.memo_hex) || undefined
@@ -1659,9 +1729,19 @@ async function fetchSendsCtx(chainHeight, allPages) {
 // of recorded sends are dropped (the send row already represents that
 // transaction); remaining outputs are receives or mining rewards regardless of
 // whether they were later spent.
+function failedSendDismissed(txid) {
+  return !!(userData.dismissedFailedSends && userData.dismissedFailedSends[txid]);
+}
+
+function dismissFailedSend(txid) {
+  if (!userData.dismissedFailedSends) userData.dismissedFailedSends = {};
+  userData.dismissedFailedSends[txid] = true;
+  persistUserData();
+}
+
 function buildTxRows(outputs, ctx) {
   var sends = (ctx && ctx.sends) || {};
-  var rows = ((ctx && ctx.sendRows) || []).slice();
+  var rows = ((ctx && ctx.sendRows) || []).filter(function (r) { return !(r.failed && failedSendDismissed(r.txid)); });
   (outputs || []).forEach(function (o) {
     if (!o || !o.txid) return;
     if (o.is_send) {
@@ -1696,7 +1776,7 @@ var historySendRows = [];   // one display row per recorded send
 
 function historyRowHtml(o, allNotes, chainHeight) {
   var isSend = !!o.is_send;
-  var typeLabel = o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received');
+  var typeLabel = o.failed ? 'Failed send' : (o.is_coinbase ? 'Mining reward' : (isSend ? 'Sent' : 'Received'));
   var noteText = allNotes[o.txid] || '';
   var meta = ['<span class="' + (isSend ? 'r' : 'g') + '">' + typeLabel + '</span>'];
   if (isSend) {
@@ -1707,7 +1787,10 @@ function historyRowHtml(o, allNotes, chainHeight) {
     }
     if (lbl) meta.push('<span>to ' + escapeHtml(lbl) + '</span>');
   }
-  if (o.block_height) {
+  if (o.failed) {
+    meta.push('<span>Not confirmed. The coins return to your balance.</span>');
+    meta.push('<button type="button" class="link-btn" data-dismiss="' + o.txid + '">Dismiss</button>');
+  } else if (o.block_height) {
     meta.push('<a class="detail-link" data-block="' + o.block_height + '">Block ' + fmtInt(o.block_height) + '</a>');
     if (chainHeight >= o.block_height) {
       var confs = chainHeight - o.block_height + 1;
@@ -1716,13 +1799,15 @@ function historyRowHtml(o, allNotes, chainHeight) {
   } else {
     meta.push('<span>Pending</span>');
   }
+  var speedUpHtml = speedUpButtonHtml(o);
   meta.push('<span class="history-tx">' + copyable(o.txid, o.txid.substring(0, 12) + '…') + '</span>');
   var sentAt = isSend ? historySendTime[o.txid] : 0;
   var cachedTs = o.block_height ? blockTimeCache[o.block_height] : 0;
   var dateText = sentAt ? formatTxTime(sentAt) : (cachedTs ? formatTxTime(cachedTs) : '');
-  return '<div class="history-row' + (isSend ? ' spent' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
+  return '<div class="history-row' + (isSend ? ' spent' : '') + (o.failed ? ' failed' : '') + '" tabindex="0" role="button" data-txid="' + o.txid + '" data-spent="' + (isSend ? '1' : '0') + '">' +
     '<div class="history-line">' +
       '<span class="history-amount ' + (isSend ? 'r' : 'g') + '">' + (isSend ? '-' : '+') + formatBNTShort(o.amount) + ' BNT</span>' +
+      speedUpHtml +
       '<span class="history-date"' + (!dateText && o.block_height ? ' data-date-height="' + o.block_height + '"' : '') + '>' + escapeHtml(dateText) + '</span>' +
     '</div>' +
     '<div class="history-meta">' + meta.join('<span class="sep">·</span>') + '</div>' +
@@ -1773,6 +1858,20 @@ function stopHistoryObserver() {
 // per-row wiring. Reassigned each render, so it never stacks.
 function bindHistoryClicks(container) {
   container.onclick = function (e) {
+    var speedEl = e.target.closest('[data-speedup]');
+    if (speedEl) {
+      e.stopPropagation();
+      openSpeedUp(speedEl.dataset.speedup);
+      return;
+    }
+    var dismissEl = e.target.closest('[data-dismiss]');
+    if (dismissEl) {
+      e.stopPropagation();
+      dismissFailedSend(dismissEl.dataset.dismiss);
+      historyOutputs = historyOutputs.filter(function (o) { return !(o.failed && o.txid === dismissEl.dataset.dismiss); });
+      filterHistory();
+      return;
+    }
     var blockEl = e.target.closest('[data-block]');
     if (blockEl) { e.stopPropagation(); showBlockDetail(blockEl.dataset.block); return; }
     if (e.target.closest('.sv-copyable')) return; // copy has its own handler
@@ -1896,8 +1995,9 @@ async function exportHistoryCSV() {
   btn.disabled = true;
   btn.textContent = 'Exporting...';
   try {
-    var data = await api('/api/wallet/history');
-    var outputs = data && Array.isArray(data.outputs) ? data.outputs : getTxCache();
+    var outputs = null;
+    try { outputs = await fetchAllHistoryOutputs(null); } catch (_) {}
+    if (!outputs) outputs = getTxCache();
     var ctx = await fetchSendsCtx(historyChainHeight, true);
     var rows = buildTxRows(outputs || [], ctx);
     if (rows.length === 0) {
@@ -3112,6 +3212,7 @@ function wireCopyable(container) {
 }
 
 document.addEventListener('keydown', function (e) {
+  if (e.key === 'Escape' && speedUp) { closeSpeedUp(); return; }
   if (e.key !== 'Enter' && e.key !== ' ') return;
   var t = e.target;
   if (t && t.classList && (t.classList.contains('recent-tx-row') || t.classList.contains('history-row') || t.classList.contains('peer-row-link'))) {
@@ -3649,7 +3750,8 @@ async function handleSend(e) {
   var ccActive = coinControlEnabled && getSelectedInputs().length > 0;
   var ccInputs = ccActive ? getSelectedInputs() : null;
   var sendEndpoint = ccActive ? '/api/wallet/send/advanced' : '/api/wallet/send';
-  var fingerprint = JSON.stringify([entries.map(function (e) { return [e.address, e.atomic, e.memo]; }), ccInputs]);
+  if (feePolicyState === 'unknown' || feePolicyState === 'retry') await loadFeePolicy();
+  var fingerprint = JSON.stringify([entries.map(function (e) { return [e.address, e.atomic, e.memo]; }), ccInputs, feeSupported ? feeExtraPerByte() : null]);
   if (!sendArmed || fingerprint !== pendingSendFingerprint) {
     var dryRunRecipients = entries.map(function (e) {
       var r = { address: e.address, amount: e.atomic };
@@ -3661,14 +3763,14 @@ async function handleSend(e) {
     btn.textContent = 'Estimating fee...';
     showSendStatus('Estimating network fee...', 'info');
     try {
-      var dryBody = { recipients: dryRunRecipients, dry_run: true };
+      var dryBody = { recipients: dryRunRecipients, dry_run: true, extra_fee_per_byte: feeExtraPerByte() };
       if (ccActive) dryBody.inputs = ccInputs;
       feePreview = await api(sendEndpoint, {
         method: 'POST',
         body: dryBody,
       });
     } catch (err) {
-      showSendStatus(normalizeError(err), 'error');
+      showSendStatus(sendErrorText(normalizeError(err)), 'error');
       // A coin-control estimate most often fails because a chosen coin is no
       // longer spendable; refresh the picker so spent/pending coins drop out.
       if (coinControlEnabled) loadCoinOutputs();
@@ -3683,10 +3785,18 @@ async function handleSend(e) {
     btn.textContent = 'Confirm Send';
     btn.classList.add('armed');
     clearSendStatus();
+    noteFeeEstimate(entries, feePreview);
     renderSendConfirm(entries, feePreview);
+    renderFeePriority();
     return;
   }
 
+  if (!feeConfirmed()) {
+    showSendStatus(feeIsCrazy() ? 'Tick both boxes to confirm this fee before you send.' : 'Tick the box to confirm the fee before you send.', 'error');
+    return;
+  }
+
+  var sendExtraFee = feeExtraPerByte();
   disarmSend();
 
   var recipientsPayload = entries.map(function (e) {
@@ -3695,8 +3805,9 @@ async function handleSend(e) {
     return r;
   });
   const sendPayload = { recipients: recipientsPayload };
+  if (feeSupported) sendPayload.extra_fee_per_byte = sendExtraFee;
   if (ccActive) sendPayload.inputs = ccInputs;
-  const payloadKey = JSON.stringify(sendPayload);
+  const payloadKey = JSON.stringify({ recipients: recipientsPayload, inputs: ccActive ? ccInputs : null });
   const now = Date.now();
   let idempotencyKey = null;
   if (
@@ -3767,8 +3878,10 @@ async function handleSend(e) {
           if (!handled) {
             showSendStatus('Couldn’t confirm whether your send went through. Press Send again. It is retry-safe and will not double-send.', 'error');
           }
+        } else if (msg.toLowerCase().includes('idempotency key reuse')) {
+          showSendStatus('Your last send may still go through, so its fee cannot change now. Check History before you send again.', 'error');
         } else {
-          showSendStatus(msg, 'error');
+          showSendStatus(sendErrorText(msg), 'error');
           pendingSendIdempotency = null;
         }
         break;
@@ -3818,6 +3931,7 @@ function finalizeSend(result, entries, recipientsPayload) {
     }
   });
   pendingSendIdempotency = null;
+  resetFeeToDefault();
   clearCoinSelection();
   // Reflect the just-spent coins (and the new unconfirmed change) in the picker,
   // so a follow-up send sees only coins it can actually use.
@@ -3885,6 +3999,7 @@ var PLAIN_ERRORS = [
   ['daemon not started', 'The node is still starting. Wait a moment and try again.'],
   ['request failed: error sending request', 'The node did not answer. Check that it is running and try again.'],
   ['operation timed out', 'The node took too long to answer. Try again.'],
+  [' to send plus ', null],
   ['insufficient funds', 'Not enough funds for this amount plus the network fee.'],
   ['invalid address', 'That address is not valid. Check it and try again.'],
   ['invalid mnemonic', 'That recovery phrase is not valid. Check the words and their order.']
@@ -3894,7 +4009,10 @@ function plainError(msg) {
   var text = String(msg || '').trim();
   var low = text.toLowerCase();
   for (var i = 0; i < PLAIN_ERRORS.length; i++) {
-    if (low.indexOf(PLAIN_ERRORS[i][0]) >= 0) return PLAIN_ERRORS[i][1];
+    if (low.indexOf(PLAIN_ERRORS[i][0]) >= 0) {
+      if (PLAIN_ERRORS[i][1] === null) break;
+      return PLAIN_ERRORS[i][1];
+    }
   }
   return text ? text.charAt(0).toUpperCase() + text.slice(1) : 'Something went wrong. Try again.';
 }
@@ -3952,10 +4070,12 @@ async function handleSendMax() {
   for (var i = 0; i < 5 && reserve < spendable; i++) {
     var amt = spendable - reserve;
     try {
-      var est = await api('/api/wallet/send', { method: 'POST', body: { recipients: [{ address: to, amount: amt }], dry_run: true } });
+      var est = await api('/api/wallet/send', { method: 'POST', body: { recipients: [{ address: to, amount: amt }], dry_run: true, extra_fee_per_byte: feeExtraPerByte() } });
       var fee = Number(est && est.fee) || 0;
       if (amt + fee <= spendable) {
         amountEl.value = formatBNTRaw(spendable - fee);
+        var rate = Number(est && est.fee_per_byte);
+        sendMaxState = rate ? { bytes: Math.round(fee / rate), spendable: spendable, value: amountEl.value } : null;
         onSendInputEdited();
         return;
       }
@@ -4003,8 +4123,548 @@ async function toggleWalletSwitcher() {
 
 const SEND_CONFIRM_SECONDS = 60;
 
+function feeDigitsOnly(v) {
+  return String(v == null ? '' : v).replace(/\D/g, '').replace(/^0+(?=\d)/, '').slice(0, FEE_EXTRA_MAX_DIGITS);
+}
+
+function clampFeeExtra(v) {
+  var digits = feeDigitsOnly(v);
+  return digits ? Number(digits) : 0;
+}
+
+function wireFeeExtraInput(el, onValue) {
+  el.maxLength = FEE_EXTRA_MAX_DIGITS;
+  el.addEventListener('input', function () {
+    var clean = feeDigitsOnly(el.value);
+    if (el.value !== clean) {
+      var caret = feeDigitsOnly(el.value.slice(0, el.selectionStart || 0)).length;
+      el.value = clean;
+      el.setSelectionRange(caret, caret);
+    }
+    onValue(clampFeeExtra(clean), false);
+  });
+  el.addEventListener('blur', function () {
+    var clean = feeDigitsOnly(el.value) || '0';
+    if (el.value !== clean) el.value = clean;
+    onValue(clampFeeExtra(clean), true);
+  });
+}
+
+function coreVersionAtLeast(version, min) {
+  var m = /(\d+)\.(\d+)\.(\d+)/.exec(String(version || ''));
+  if (!m) return false;
+  for (var i = 0; i < 3; i++) {
+    var n = Number(m[i + 1]);
+    if (n !== min[i]) return n > min[i];
+  }
+  return true;
+}
+
+async function loadFeePolicy() {
+  if (feePolicyRetry) { clearTimeout(feePolicyRetry); feePolicyRetry = null; }
+  var state = 'unsupported';
+  try {
+    if (coreVersionAtLeast(await invoke('get_daemon_version'), FEE_PRIORITY_CORE_VERSION)) {
+      var mp = await api('/api/mempool');
+      if (mp && Number(mp.base_fee_per_byte) > 0) {
+        feeBase = Number(mp.base_fee_per_byte);
+        feeMinTx = Number(mp.min_tx_fee) || 0;
+        state = 'ok';
+      }
+    }
+  } catch (_) {
+    state = 'retry';
+  }
+  feePolicyState = state;
+  feeSupported = state === 'ok';
+  feePolicyTries = state === 'retry' ? feePolicyTries + 1 : 0;
+  if (state === 'retry' && feePolicyTries < FEE_POLICY_MAX_TRIES) feePolicyRetry = setTimeout(loadFeePolicy, 3000);
+  renderFeePriority();
+}
+
+function sendErrorText(msg) {
+  var text = plainError(msg);
+  if (feeSupported && feeLevel > 0 && /insufficient funds|not enough funds/i.test(String(msg))) {
+    text += ' Lower the fee priority or the amount.';
+  }
+  return text;
+}
+
+function refigureSendMax() {
+  if (!sendMaxState || !feeSupported) return;
+  var amountEl = document.getElementById('send-amount');
+  if (!amountEl || amountEl.value !== sendMaxState.value) { sendMaxState = null; return; }
+  var fee = Math.max(feeMinTx, sendMaxState.bytes * feeRatePerByte());
+  if (fee >= sendMaxState.spendable) {
+    amountEl.value = '';
+    sendMaxState = null;
+    showSendStatus('Your balance cannot cover this fee. Lower the fee priority.', 'error');
+    return;
+  }
+  amountEl.value = formatBNTRaw(sendMaxState.spendable - fee);
+  sendMaxState.value = amountEl.value;
+}
+
+function feeExtraPerByte() {
+  if (!feeSupported) return 0;
+  var extra = FEE_LEVELS[feeLevel].extra;
+  return extra === null ? feeCustomExtra : extra;
+}
+
+function feeRatePerByte() {
+  return feeBase + feeExtraPerByte();
+}
+
+function feeMultipleFor(rate) {
+  return parseFloat((rate / feeBase).toFixed(1)) + 'x';
+}
+
+function feeMultiple() {
+  return feeMultipleFor(feeRatePerByte());
+}
+
+function feeNeedsAck() {
+  return feeSupported && feeLevel >= 2;
+}
+
+function feeIsCrazy() {
+  return feeSupported && feeLevel === 3 && feeRatePerByte() >= FEE_CRAZY_MULTIPLE * feeBase;
+}
+
+function feeConfirmed() {
+  return (!feeNeedsAck() || feeAck) && (!feeIsCrazy() || feeAckCrazy);
+}
+
+function feeHeatFor(level, custom) {
+  if (level < 3) return level;
+  if (custom <= FEE_LEVELS[1].extra) return 1;
+  return custom <= FEE_LEVELS[2].extra ? 2 : 3;
+}
+
+function feeHeat() {
+  return feeHeatFor(feeLevel, feeCustomExtra);
+}
+
+function currentFeeAtomic() {
+  return feeTxBytes ? Math.max(feeMinTx, feeTxBytes * feeRatePerByte()) : null;
+}
+
+function noteFeeEstimate(entries, preview) {
+  var fee = Number(preview && preview.fee);
+  var rate = Number(preview && preview.fee_per_byte);
+  if (!fee || !rate) { feeTxBytes = 0; feeEstimate = null; return; }
+  feeTxBytes = Math.round(fee / rate);
+  feeEstimate = {
+    entries: entries,
+    amount: entries.reduce(function (s, e) { return s + e.atomic; }, 0),
+    inputTotal: Number(preview.input_total) || 0,
+  };
+}
+
+function loadFeePrefs() {
+  try {
+    var v = JSON.parse(localStorage.getItem('feePriority') || 'null');
+    if (v && Number.isInteger(v.level) && v.level >= 0 && v.level < FEE_LEVELS.length) {
+      feeDefault = { level: v.level, custom: clampFeeExtra(v.custom) };
+    }
+  } catch (_) {}
+  feeLevel = feeDefault.level;
+  feeCustomExtra = feeDefault.custom;
+}
+
+function saveFeePrefs() {
+  try { localStorage.setItem('feePriority', JSON.stringify(feeDefault)); } catch (_) {}
+  var sel = document.getElementById('fee-default-select');
+  var custom = document.getElementById('fee-default-custom');
+  if (sel) {
+    sel.innerHTML = FEE_LEVELS.map(function (l, i) { return '<option value="' + i + '">' + escapeHtml(feeLevelLabel(i)) + '</option>'; }).join('');
+    sel.value = String(feeDefault.level);
+  }
+  if (custom) {
+    custom.value = String(feeDefault.custom);
+    custom.style.display = feeDefault.level === 3 ? '' : 'none';
+  }
+}
+
+function feeChanged() {
+  feeAck = false;
+  feeAckCrazy = false;
+  refigureSendMax();
+  if (sendArmed) {
+    var bytes = feeTxBytes;
+    var estimate = feeEstimate;
+    disarmSend();
+    feeTxBytes = bytes;
+    feeEstimate = estimate;
+    showSendStatus('The fee changed. Press Send to get a new estimate.', 'info');
+  }
+  renderFeePriority();
+}
+
+function setFeeLevel(level) {
+  feeLevel = level;
+  feeChanged();
+}
+
+function resetFeeToDefault() {
+  feeLevel = feeDefault.level;
+  feeCustomExtra = feeDefault.custom;
+  var customEl = document.getElementById('fee-custom-extra');
+  if (customEl) customEl.value = String(feeCustomExtra);
+  feeAck = false;
+  feeAckCrazy = false;
+  renderFeePriority();
+}
+
+function feeLevelLabel(i) {
+  var extra = FEE_LEVELS[i].extra;
+  return FEE_LEVELS[i].name + (extra ? ' (+' + extra + ' per byte)' : '');
+}
+
+function renderFeePriority() {
+  var sub = document.getElementById('fee-sub');
+  if (!sub) return;
+  var panel = document.getElementById('fee-priority');
+  panel.style.display = feeSupported ? '' : 'none';
+  if (!feeSupported) return;
+  document.getElementById('fee-custom-base').textContent = 'on top of the base ' + feeBase;
+  var heat = feeHeat();
+  var colors = ['#8a8a8a', 'var(--warn)', 'var(--danger)', '#f35'];
+  var range = document.getElementById('fee-level');
+  if (range) range.value = String(feeLevel);
+  document.getElementById('fee-fill').style.width = (feeLevel / 3 * 100) + '%';
+  document.getElementById('fee-fill').style.background = colors[heat];
+  document.querySelectorAll('#fee-priority .fee-dot').forEach(function (dot) {
+    var l = Number(dot.dataset.level);
+    dot.classList.toggle('on', l === feeLevel);
+    dot.style.borderColor = l <= feeLevel ? colors[heat] : '';
+    dot.style.background = l === feeLevel ? colors[heat] : '';
+  });
+  document.querySelectorAll('#fee-priority .fee-labels button').forEach(function (b) {
+    b.classList.toggle('on', Number(b.dataset.level) === feeLevel);
+  });
+  document.getElementById('fee-custom').style.display = feeLevel === 3 ? '' : 'none';
+
+  var def = document.getElementById('fee-default');
+  var same = feeLevel === feeDefault.level && (feeLevel !== 3 || feeCustomExtra === feeDefault.custom);
+  def.innerHTML = 'Default: ' + FEE_LEVELS[feeDefault.level].name +
+    (same ? '' : ' · <button type="button" class="link-btn" id="fee-make-default">Make ' + FEE_LEVELS[feeLevel].name + ' my default</button>');
+
+  var moods = [
+    'Standard fee.',
+    'You pay ' + feeMultiple() + ' the fee to jump ahead of normal sends.',
+    'You pay ' + feeMultiple() + ' the fee. Only use this if it must confirm now.',
+    'Custom fee. You set the rate yourself. Check it twice.',
+  ];
+  var html = '';
+  if (feeIsCrazy()) {
+    html += '<span class="fee-mood fee-crazy">This fee is crazy. You pay ' + feeMultiple() + ' a normal fee. Nobody needs this to get into a block.</span>';
+  }
+  if (feeLevel === 3) {
+    html += '<span class="fee-mood">Custom fees are easy to get wrong. A rate of ' + feeRatePerByte() + ' per byte costs ' + feeMultiple() + ' a normal send.</span>';
+  }
+  html += '<span class="fee-mood">' + moods[feeLevel] + '</span>';
+  var fee = currentFeeAtomic();
+  if (fee !== null && feeEstimate) {
+    html += 'Fee <b>' + formatBNT(fee) + ' BNT</b> (' + feeRatePerByte() + ' per byte) · You spend <b>' + formatBNT(feeEstimate.amount + fee) + ' BNT</b> in total';
+  } else {
+    html += feeRatePerByte() + ' per byte. Press Send to see the fee and your total.';
+  }
+  sub.className = 'fee-sub lv' + heat;
+  sub.innerHTML = html;
+
+  var ack = document.getElementById('fee-ack');
+  ack.style.display = feeNeedsAck() ? '' : 'none';
+  document.getElementById('fee-ack-box').checked = feeAck;
+  document.getElementById('fee-ack-text').textContent = fee !== null
+    ? 'I understand I am paying ' + formatBNT(fee) + ' BNT in fees, ' + feeMultiple() + ' a normal send.'
+    : 'I understand I am paying ' + feeMultiple() + ' the normal fee.';
+  document.getElementById('fee-ack-crazy').style.display = feeIsCrazy() ? '' : 'none';
+  document.getElementById('fee-ack-crazy-box').checked = feeAckCrazy;
+  document.getElementById('fee-ack-crazy-text').textContent = fee !== null
+    ? 'Yes, I really want to pay ' + formatBNT(fee) + ' BNT in fees. I know this is crazy.'
+    : 'Yes, I really want to pay ' + feeMultiple() + ' the normal fee. I know this is crazy.';
+
+  var btn = document.getElementById('send-submit');
+  if (btn && sendArmed) btn.disabled = !feeConfirmed();
+}
+
+var SPEEDUP_BOLT = '<svg class="su-bolt" viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path fill="currentColor" d="M13 2 3 14h7l-1 8 10-12h-7z"/></svg>';
+var SPEEDUP_TIP = 'Pay a higher fee so this send confirms sooner. The faster version replaces this one, so only one can confirm.';
+var speedUp = null;
+
+function speedUpButtonHtml(o) {
+  if (!feeSupported || !o || !o.is_send || o.block_height || o.failed) return '';
+  return '<span class="su-wrap"><button type="button" class="su-btn" data-speedup="' + o.txid + '" aria-label="Speed up this send">' + SPEEDUP_BOLT + 'Speed up</button>' +
+    '<span class="su-tip" role="tooltip">' + SPEEDUP_TIP + '</span></span>';
+}
+
+function speedUpExtra() {
+  var extra = FEE_LEVELS[speedUp.level].extra;
+  return extra === null ? speedUp.custom : extra;
+}
+
+function speedUpRate() {
+  return Math.max(speedUp.minRate, feeBase + speedUpExtra());
+}
+
+function speedUpLocked(level) {
+  return level < 3 && feeBase + FEE_LEVELS[level].extra < speedUp.minRate;
+}
+
+function speedUpCrazy() {
+  return speedUp.level === 3 && speedUpRate() >= FEE_CRAZY_MULTIPLE * feeBase;
+}
+
+function speedUpConfirmed() {
+  return (speedUp.level < 2 || speedUp.ack) && (!speedUpCrazy() || speedUp.ackCrazy);
+}
+
+function speedUpNewFee() {
+  if (speedUp.preview) return Number(speedUp.preview.fee) || 0;
+  return Math.max(feeMinTx, speedUp.bytes * speedUpRate());
+}
+
+function speedUpChanged() {
+  speedUp.ack = false;
+  speedUp.ackCrazy = false;
+  speedUp.preview = null;
+  speedUp.status = null;
+  updateSpeedUp();
+}
+
+function closeSpeedUp() {
+  var modal = document.getElementById('speedup-modal');
+  if (modal) { modal.style.display = 'none'; modal.innerHTML = ''; }
+  speedUp = null;
+}
+
+async function openSpeedUp(txid) {
+  if (!feeSupported) await loadFeePolicy();
+  if (!feeSupported) return;
+  var send = historySends[txid] || null;
+  if (!send) {
+    try {
+      var sd = await api('/api/wallet/sends?limit=500&order=desc');
+      (sd && sd.sends || []).forEach(function (s) { if (s && s.txid === txid) send = s; });
+    } catch (_) {}
+  }
+  speedUp = { txid: txid, send: send, minRate: 0, oldFee: send ? Number(send.fee) || 0 : 0, bytes: 0, level: 0, custom: feeDefault.custom, ack: false, ackCrazy: false, preview: null, status: null, busy: true, blocked: false };
+  renderSpeedUpShell();
+  try {
+    var p = await api('/api/wallet/send/bump', { method: 'POST', body: { txid: txid, extra_fee_per_byte: 0, dry_run: true } });
+    if (!speedUp || speedUp.txid !== txid) return;
+    speedUp.minRate = Number(p.fee_per_byte) || 0;
+    speedUp.oldFee = Number(p.old_fee) || speedUp.oldFee;
+    speedUp.bytes = speedUp.minRate ? Math.round(Number(p.fee) / speedUp.minRate) : 0;
+    speedUp.level = 3;
+    for (var i = 0; i < 3; i++) {
+      if (!speedUpLocked(i)) { speedUp.level = i; break; }
+    }
+    if (speedUp.level === 3) speedUp.custom = Math.max(speedUp.custom, speedUp.minRate - feeBase);
+  } catch (e) {
+    if (!speedUp || speedUp.txid !== txid) return;
+    speedUp.blocked = true;
+    speedUp.status = { type: 'error', text: sendErrorText(normalizeError(e)) };
+  }
+  speedUp.busy = false;
+  var customEl = document.getElementById('su-custom-extra');
+  if (customEl) customEl.value = String(speedUp.custom);
+  updateSpeedUp();
+}
+
+function renderSpeedUpShell() {
+  var modal = document.getElementById('speedup-modal');
+  if (!modal) return;
+  var s = speedUp.send;
+  var to = (userData.sendLabels && userData.sendLabels[speedUp.txid]) || (s && s.recipients && s.recipients[0] && (contactNameForAddress(s.recipients[0].address) || abbrAddr(s.recipients[0].address))) || '';
+  var waited = s && s.timestamp ? Math.max(0, Math.floor(Date.now() / 1000) - Number(s.timestamp)) : 0;
+  var dots = '', labels = '';
+  FEE_LEVELS.forEach(function (l, i) {
+    dots += '<span class="fee-dot" data-level="' + i + '"></span>';
+    labels += '<button type="button" data-level="' + i + '">' + escapeHtml(l.name) + '</button>';
+  });
+  modal.innerHTML =
+    '<div class="su-modal" role="dialog" aria-modal="true" aria-labelledby="su-title">' +
+      '<h3 id="su-title">' + SPEEDUP_BOLT + 'Speed up this send</h3>' +
+      '<div class="su-explain">' +
+        '<p>This send is still waiting to get into a block. Miners take the highest fee per byte first, so a send with a low fee can wait a long time when blocks are full.</p>' +
+        '<p>Speed up sends the same payment again, to the same address, with a higher fee. The new version replaces the waiting one. Only one of them can ever confirm, so the payment is never made twice.</p>' +
+      '</div>' +
+      '<div class="detail-grid su-old">' +
+        (to ? '<div class="detail-label">To</div><div class="detail-value">' + escapeHtml(to) + '</div>' : '') +
+        (s ? '<div class="detail-label">Amount</div><div class="detail-value mono">' + formatBNT(Number(s.total_amount) || 0) + ' BNT</div>' : '') +
+        '<div class="detail-label">Current fee</div><div class="detail-value mono" id="su-old-fee"></div>' +
+        (waited ? '<div class="detail-label">Waiting</div><div class="detail-value">' + humanAge(waited) + '</div>' : '') +
+      '</div>' +
+      '<div class="fp form-group fee-priority su-fee">' +
+        '<div class="label-row"><label for="su-range">New fee priority</label><span class="fee-default" id="su-min"></span></div>' +
+        '<div class="fee-track"><div class="fee-rail"><div class="fee-fill" id="su-fill"></div></div>' + dots +
+          '<input type="range" id="su-range" class="fee-range" min="0" max="3" step="1" value="0" aria-label="New fee priority"></div>' +
+        '<div class="fee-labels" id="su-labels">' + labels + '</div>' +
+        '<div class="fee-custom" id="su-custom" style="display: none;"><label for="su-custom-extra">Extra per byte</label>' +
+          '<input type="text" id="su-custom-extra" class="fee-extra-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false" value="' + speedUp.custom + '">' +
+          '<span id="su-custom-base"></span></div>' +
+        '<div class="fee-sub" id="su-sub"></div>' +
+        '<label class="fee-ack" id="su-ack" style="display: none;"><input type="checkbox" id="su-ack-box"><span id="su-ack-text"></span></label>' +
+        '<label class="fee-ack fee-ack-crazy" id="su-ack-crazy" style="display: none;"><input type="checkbox" id="su-ack-crazy-box"><span id="su-ack-crazy-text"></span></label>' +
+      '</div>' +
+      '<div class="su-note">Some nodes may not be updated yet. They keep the old version, and a miner on one of them can still confirm it at the old fee. Your payment is safe either way: it goes through once, at the old fee or the new one.</div>' +
+      '<div class="status-message" id="su-status"></div>' +
+      '<div class="su-actions"><button type="button" class="btn-primary" id="su-go"></button><button type="button" class="btn-secondary" id="su-cancel">Cancel</button></div>' +
+    '</div>';
+  modal.style.display = 'flex';
+  modal.onclick = function (e) {
+    if (e.target === modal || e.target.id === 'su-cancel') { closeSpeedUp(); return; }
+    if (e.target.id === 'su-go') { speedUpGo(); return; }
+    var lb = e.target.closest('#su-labels button');
+    if (lb) pickSpeedUpLevel(Number(lb.dataset.level));
+  };
+  document.getElementById('su-range').addEventListener('input', function (e) { pickSpeedUpLevel(Number(e.target.value)); });
+  wireFeeExtraInput(document.getElementById('su-custom-extra'), function (n) {
+    if (!speedUp || n === speedUp.custom) return;
+    speedUp.custom = n;
+    speedUpChanged();
+  });
+  document.getElementById('su-ack-box').addEventListener('change', function (e) { speedUp.ack = e.target.checked; updateSpeedUp(); });
+  document.getElementById('su-ack-crazy-box').addEventListener('change', function (e) { speedUp.ackCrazy = e.target.checked; updateSpeedUp(); });
+  updateSpeedUp();
+}
+
+function pickSpeedUpLevel(level) {
+  if (!speedUp || speedUp.busy || speedUp.blocked) return;
+  while (level < 3 && speedUpLocked(level)) level++;
+  speedUp.level = level;
+  speedUpChanged();
+}
+
+function updateSpeedUp() {
+  if (!speedUp) return;
+  var sub = document.getElementById('su-sub');
+  if (!sub) return;
+  var rate = speedUpRate();
+  var heat = feeHeatFor(speedUp.level, speedUp.custom);
+  var colors = ['#8a8a8a', 'var(--warn)', 'var(--danger)', '#f35'];
+  var ready = !speedUp.busy && !speedUp.blocked;
+  document.getElementById('su-old-fee').textContent = speedUp.oldFee
+    ? formatBNT(speedUp.oldFee) + ' BNT' + (speedUp.bytes ? ' (' + Math.floor(speedUp.oldFee / speedUp.bytes) + ' per byte)' : '')
+    : '--';
+  document.getElementById('su-min').textContent = ready ? 'Lowest for a speed-up: ' + speedUp.minRate + ' per byte' : '';
+  document.getElementById('su-range').value = String(speedUp.level);
+  document.getElementById('su-fill').style.width = (speedUp.level / 3 * 100) + '%';
+  document.getElementById('su-fill').style.background = colors[heat];
+  document.querySelectorAll('#speedup-modal .fee-dot').forEach(function (dot) {
+    var l = Number(dot.dataset.level);
+    dot.classList.toggle('on', l === speedUp.level);
+    dot.classList.toggle('locked', ready && speedUpLocked(l));
+    dot.style.borderColor = l <= speedUp.level ? colors[heat] : '';
+    dot.style.background = l === speedUp.level ? colors[heat] : '';
+  });
+  document.querySelectorAll('#su-labels button').forEach(function (b) {
+    var l = Number(b.dataset.level);
+    var locked = ready && speedUpLocked(l);
+    b.classList.toggle('on', l === speedUp.level);
+    b.classList.toggle('locked', locked);
+    b.disabled = locked;
+    b.title = locked ? 'Too low: a speed-up must pay more than the current fee' : '';
+  });
+  document.getElementById('su-custom').style.display = speedUp.level === 3 ? '' : 'none';
+  document.getElementById('su-custom-base').textContent = 'on top of the base ' + feeBase;
+
+  var html = '';
+  if (speedUp.busy) {
+    html = 'Working out the fee...';
+  } else if (!speedUp.blocked) {
+    var moods = [
+      'Standard fee.',
+      'You pay ' + feeMultipleFor(rate) + ' the fee to jump ahead of normal sends.',
+      'You pay ' + feeMultipleFor(rate) + ' the fee. Only use this if it must confirm now.',
+      'Custom fee. You set the rate yourself. Check it twice.',
+    ];
+    if (speedUpCrazy()) html += '<span class="fee-mood fee-crazy">This fee is crazy. You pay ' + feeMultipleFor(rate) + ' a normal fee. Nobody needs this to get into a block.</span>';
+    html += '<span class="fee-mood">' + moods[speedUp.level] + '</span>';
+    if (speedUp.level === 3 && feeBase + speedUp.custom < speedUp.minRate) html += '<span class="fee-mood">This is below the lowest rate for a speed-up, so it is raised to ' + speedUp.minRate + ' per byte.</span>';
+    var newFee = speedUpNewFee();
+    var cost = speedUp.preview ? Number(speedUp.preview.bump_cost) || 0 : Math.max(0, newFee - speedUp.oldFee);
+    html += 'New fee <b>' + formatBNT(newFee) + ' BNT</b> (' + rate + ' per byte) · This speed-up costs <b>' + formatBNT(cost) + ' BNT</b> more';
+  }
+  sub.className = 'fee-sub lv' + (ready ? heat : 0);
+  sub.innerHTML = html;
+
+  var newFeeText = formatBNT(speedUpNewFee()) + ' BNT';
+  document.getElementById('su-ack').style.display = ready && speedUp.level >= 2 ? '' : 'none';
+  document.getElementById('su-ack-box').checked = speedUp.ack;
+  document.getElementById('su-ack-text').textContent = 'I understand the new fee is ' + newFeeText + ', ' + feeMultipleFor(rate) + ' a normal send.';
+  document.getElementById('su-ack-crazy').style.display = ready && speedUpCrazy() ? '' : 'none';
+  document.getElementById('su-ack-crazy-box').checked = speedUp.ackCrazy;
+  document.getElementById('su-ack-crazy-text').textContent = 'Yes, I really want to pay ' + newFeeText + ' in fees. I know this is crazy.';
+
+  var status = document.getElementById('su-status');
+  if (speedUp.status) {
+    status.className = 'status-message ' + speedUp.status.type;
+    status.textContent = speedUp.status.text;
+    status.style.display = 'block';
+  } else {
+    status.style.display = 'none';
+  }
+  var go = document.getElementById('su-go');
+  go.disabled = !ready || !speedUpConfirmed();
+  go.innerHTML = SPEEDUP_BOLT + (speedUp.preview ? 'Confirm speed-up' : 'Speed up');
+  go.classList.toggle('armed', !!speedUp.preview);
+}
+
+async function speedUpGo() {
+  if (!speedUp || speedUp.busy || speedUp.blocked || !speedUpConfirmed()) return;
+  var txid = speedUp.txid;
+  var extra = Math.max(0, speedUpRate() - feeBase);
+  speedUp.busy = true;
+  updateSpeedUp();
+  try {
+    if (!speedUp.preview || speedUp.previewExtra !== extra) {
+      var p = await api('/api/wallet/send/bump', { method: 'POST', body: { txid: txid, extra_fee_per_byte: extra, dry_run: true } });
+      if (!speedUp || speedUp.txid !== txid) return;
+      speedUp.preview = p;
+      speedUp.previewExtra = extra;
+      speedUp.status = { type: 'info', text: 'Check the new fee, then press Confirm speed-up.' };
+      return;
+    }
+    var res = await api('/api/wallet/send/bump', { method: 'POST', body: { txid: txid, extra_fee_per_byte: extra }, headers: { 'Idempotency-Key': freshIdempotencyKey() } });
+    finishSpeedUp(txid, res);
+  } catch (e) {
+    if (!speedUp || speedUp.txid !== txid) return;
+    speedUp.preview = null;
+    speedUp.status = { type: 'error', text: sendErrorText(normalizeError(e)) };
+  } finally {
+    if (speedUp && speedUp.txid === txid) {
+      speedUp.busy = false;
+      updateSpeedUp();
+    }
+  }
+}
+
+function finishSpeedUp(oldTxid, res) {
+  var newTxid = String(res && res.txid || '');
+  if (newTxid) {
+    if (userData.sendLabels && userData.sendLabels[oldTxid]) userData.sendLabels[newTxid] = userData.sendLabels[oldTxid];
+    if (userData.txNotes && userData.txNotes[oldTxid]) userData.txNotes[newTxid] = userData.txNotes[oldTxid];
+    persistUserData();
+  }
+  closeSpeedUp();
+  sharedGets = {};
+  var active = document.querySelector('.view.active');
+  var id = active ? active.id : '';
+  if (id === 'view-history') loadHistory({ quiet: true });
+  if (id === 'view-dashboard') loadDashboard();
+  if (id === 'view-tx-detail' && newTxid) showTxDetail(newTxid, { sent: true });
+}
+
 function disarmSend() {
   sendArmed = false;
+  feeTxBytes = 0;
+  feeEstimate = null;
+  feeAck = false;
+  feeAckCrazy = false;
+  renderFeePriority();
   pendingSendFingerprint = null;
   if (sendArmTimer) { clearInterval(sendArmTimer); sendArmTimer = null; }
   var btn = document.getElementById('send-submit');
@@ -4034,7 +4694,7 @@ function renderSendConfirm(entries, feePreview) {
     rows += '<div class="detail-label">Amount</div><div class="detail-value mono">' + formatBNT(e.atomic) + ' BNT</div>';
     if (e.memo) rows += '<div class="detail-label">Memo</div><div class="detail-value">' + escapeHtml(e.memo) + '</div>';
   });
-  rows += '<div class="detail-label">Network fee</div><div class="detail-value mono">' + (hasFee ? formatBNT(feePreview.fee) + ' BNT' : 'Added on top') + '</div>';
+  rows += '<div class="detail-label">Network fee</div><div class="detail-value mono">' + (hasFee ? formatBNT(feePreview.fee) + ' BNT' + (feeSupported ? ' (' + FEE_LEVELS[feeLevel].name + ', ' + feeRatePerByte() + ' per byte)' : '') : 'Added on top') + '</div>';
   if (hasFee && typeof feePreview.change === 'number' && feePreview.change > 0) {
     rows += '<div class="detail-label">Change</div><div class="detail-value mono">' + formatBNT(feePreview.change) + ' BNT</div>';
   }
@@ -6209,6 +6869,7 @@ async function showTxDetail(txid, opts) {
       '<div class="detail-actions">' +
         '<button class="btn-secondary" id="tx-open-explorer">Open in Explorer</button>' +
         (canProve ? '<button class="btn-secondary" id="tx-prove">Prove I sent this</button>' : '') +
+        (canProve && data.in_mempool && feeSupported ? '<span class="su-wrap"><button class="btn-secondary su-btn-detail" id="tx-speedup" aria-label="Speed up this send">' + SPEEDUP_BOLT + 'Speed up</button><span class="su-tip" role="tooltip">' + SPEEDUP_TIP + '</span></span>' : '') +
       '</div>' +
       '<div id="tx-proof" class="tx-proof" style="display: none;"></div>';
 
@@ -6234,13 +6895,17 @@ async function showTxDetail(txid, opts) {
       window.__TAURI__.shell.open('https://explorer.blocknetcrypto.com/tx/' + txid);
     });
     if (canProve) wireProveButton(txid);
+    var speedBtn = document.getElementById('tx-speedup');
+    if (speedBtn) speedBtn.addEventListener('click', function () { openSpeedUp(txid); });
     wireCopyable(container);
 
     container.querySelectorAll('[data-block]').forEach(function (el) {
       el.addEventListener('click', function () { showBlockDetail(el.dataset.block); });
     });
   } catch (e) {
-    container.innerHTML = '<div class="status-message error">' + escapeHtml(normalizeError(e)) + '</div>';
+    var msg = normalizeError(e);
+    if (/not found/i.test(msg)) msg = 'This transaction is not on the chain or in the mempool. If it was a send, it failed, and the coins return to your balance.';
+    container.innerHTML = '<div class="status-message error">' + escapeHtml(msg) + '</div>';
   }
 }
 
@@ -6720,6 +7385,50 @@ document.addEventListener('click', function (e) {
   if (addBtn) addBtn.addEventListener('click', function () { addRecipientRow(); });
 })();
 document.getElementById('lock-wallet-btn').addEventListener('click', handleLockWallet);
+(function () {
+  loadFeePrefs();
+  saveFeePrefs();
+  var range = document.getElementById('fee-level');
+  range.addEventListener('input', function () { setFeeLevel(Number(range.value)); });
+  document.querySelectorAll('#fee-priority .fee-labels button').forEach(function (b) {
+    b.addEventListener('click', function () { setFeeLevel(Number(b.dataset.level)); });
+  });
+  var customEl = document.getElementById('fee-custom-extra');
+  customEl.value = String(feeCustomExtra);
+  wireFeeExtraInput(customEl, function (n) {
+    if (n === feeCustomExtra) return;
+    feeCustomExtra = n;
+    feeChanged();
+  });
+  document.getElementById('fee-ack-box').addEventListener('change', function (e) {
+    feeAck = e.target.checked;
+    renderFeePriority();
+  });
+  document.getElementById('fee-ack-crazy-box').addEventListener('change', function (e) {
+    feeAckCrazy = e.target.checked;
+    renderFeePriority();
+  });
+  document.getElementById('fee-default').addEventListener('click', function (e) {
+    if (e.target.id !== 'fee-make-default') return;
+    feeDefault = { level: feeLevel, custom: feeLevel === 3 ? feeCustomExtra : feeDefault.custom };
+    saveFeePrefs();
+    renderFeePriority();
+  });
+  var defSel = document.getElementById('fee-default-select');
+  var defCustom = document.getElementById('fee-default-custom');
+  defSel.addEventListener('change', function () {
+    feeDefault = { level: Number(defSel.value), custom: feeDefault.custom };
+    saveFeePrefs();
+    renderFeePriority();
+  });
+  wireFeeExtraInput(defCustom, function (n, done) {
+    if (!done) return;
+    feeDefault = { level: feeDefault.level, custom: n };
+    saveFeePrefs();
+    renderFeePriority();
+  });
+  renderFeePriority();
+})();
 (function () {
   var sel = document.getElementById('auto-lock-select');
   if (!sel) return;

@@ -269,6 +269,37 @@
               <div class="cc-summary" id="cc-summary">Auto-select (no specific coins chosen)</div>
               <div class="cc-list" id="cc-list"></div>
             </div>
+            <div class="form-group fee-priority" id="fee-priority" style="display: none;">
+              <div class="label-row"><label for="fee-level">Fee priority</label><span class="fee-default" id="fee-default"></span></div>
+              <div class="fee-track">
+                <div class="fee-rail"><div class="fee-fill" id="fee-fill"></div></div>
+                <span class="fee-dot" data-level="0"></span>
+                <span class="fee-dot" data-level="1"></span>
+                <span class="fee-dot" data-level="2"></span>
+                <span class="fee-dot" data-level="3"></span>
+                <input type="range" id="fee-level" class="fee-range" min="0" max="3" step="1" value="0" aria-label="Fee priority">
+              </div>
+              <div class="fee-labels">
+                <button type="button" data-level="0">Normal</button>
+                <button type="button" data-level="1">Fast</button>
+                <button type="button" data-level="2">Urgent</button>
+                <button type="button" data-level="3">Custom</button>
+              </div>
+              <div class="fee-custom" id="fee-custom" style="display: none;">
+                <label for="fee-custom-extra">Extra per byte</label>
+                <input type="text" id="fee-custom-extra" class="fee-extra-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false" value="100">
+                <span id="fee-custom-base"></span>
+              </div>
+              <div class="fee-sub" id="fee-sub"></div>
+              <label class="fee-ack" id="fee-ack" style="display: none;">
+                <input type="checkbox" id="fee-ack-box">
+                <span id="fee-ack-text"></span>
+              </label>
+              <label class="fee-ack fee-ack-crazy" id="fee-ack-crazy" style="display: none;">
+                <input type="checkbox" id="fee-ack-crazy-box">
+                <span id="fee-ack-crazy-text"></span>
+              </label>
+            </div>
             <div class="send-total" id="send-total" style="display: none;">
               <span class="send-total-label">Total</span>
               <span class="send-total-value" id="send-total-value">0.00000000 BNT</span>
@@ -616,6 +647,24 @@
                   <div class="settings-item-control">
                     <button class="btn-secondary" id="backup-wallet-btn">Backup Wallet File</button>
                     <div id="backup-wallet-status" class="status-message" style="display: none;"></div>
+                  </div>
+                </div>
+              </div>
+            </section>
+
+            <section class="settings-category">
+              <h2>Sending</h2>
+              <div class="settings-list">
+                <div class="settings-item">
+                  <div class="settings-item-main">
+                    <div class="settings-item-title-row">
+                      <span class="settings-item-title">Default fee priority</span>
+                    </div>
+                    <p class="settings-item-desc">The fee level the Send screen starts at. Miners take the highest fee per byte first, so a higher level confirms sooner when blocks are full.</p>
+                  </div>
+                  <div class="settings-item-control fee-default-control">
+                    <select id="fee-default-select" class="auto-lock-select"></select>
+                    <input type="text" id="fee-default-custom" class="fee-default-custom fee-extra-input" inputmode="numeric" pattern="[0-9]*" autocomplete="off" spellcheck="false" value="100" aria-label="Custom extra per byte" style="display: none;">
                   </div>
                 </div>
               </div>
@@ -1041,6 +1090,7 @@
     <div id="qr-overlay-text" class="qr-overlay-text mono"></div>
   </div>
 
+  <div id="speedup-modal" class="speedup-modal-bg" style="display: none;"></div>
   <div id="qr-scan-overlay" class="qr-scan-overlay">
     <div class="qr-scan-frame"></div>
     <p class="qr-scan-hint">Point the camera at a Blocknet QR code.</p>

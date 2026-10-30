@@ -35,6 +35,9 @@ function harness(response = signedResponse(), recipients = ['$alice']) {
     blocknetIdPubKey: null, sendArmed: false, pendingSendFingerprint: null, sendArmTimer: null,
     pendingSendIdempotency: null, SEND_IDEMPOTENCY_WINDOW_MS: 600000, SEND_MAX_RETRIES: 0,
     coinControlEnabled: false, receiveAddress: address,
+    feeSupported: false, feePolicyState: 'unsupported', feeBase: 0, feeMinTx: 0, plainError: String,
+    FEE_LEVELS: [{ name: 'Normal', extra: 0 }, { name: 'Fast', extra: 10 }, { name: 'Urgent', extra: 40 }, { name: 'Custom', extra: null }],
+    feeLevel: 0, feeCustomExtra: 100, feeDefault: { level: 0, custom: 100 }, feeTxBytes: 0, feeEstimate: null, feeAck: false, feeAckCrazy: false, FEE_CRAZY_MULTIPLE: 100,
     response, keyResponse: publicKey, rows, calls, statuses, timers,
     invoke: async (cmd, args) => {
       calls.push({ cmd, ...args });
@@ -63,7 +66,8 @@ function harness(response = signedResponse(), recipients = ['$alice']) {
   });
   const names = ['getBlocknetIdPubKey', 'b64ToBytes', 'verifyResolveSig', 'resolveHandle', 'isHandlePrefix',
     'abbrAddr', 'humanAge', 'showResolved', 'hideResolved', 'showResolveError', 'debouncedResolve',
-    'disarmSend', 'handleSend', 'verifyReceiveShortname'];
+    'disarmSend', 'handleSend', 'verifyReceiveShortname', 'clampFeeExtra', 'feeExtraPerByte', 'feeRatePerByte',
+    'feeMultipleFor', 'feeMultiple', 'feeHeatFor', 'feeNeedsAck', 'feeIsCrazy', 'feeConfirmed', 'sendErrorText', 'feeHeat', 'currentFeeAtomic', 'noteFeeEstimate', 'renderFeePriority'];
   vm.runInContext(names.map(shipped).join('\n'), context);
   context.submit = () => context.handleSend({ preventDefault() {} });
   context.elements = elements;
